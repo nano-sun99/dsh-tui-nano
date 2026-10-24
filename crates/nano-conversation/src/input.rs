@@ -73,6 +73,8 @@ pub struct InputBuffer {
     text: String,
     cursor: usize,
     mode: InputMode,
+    /// Fixed end of a selection; `cursor` is the moving end.
+    selection_anchor: Option<usize>,
 }
 
 impl InputBuffer {
@@ -89,6 +91,7 @@ impl InputBuffer {
             text,
             cursor,
             mode: InputMode::Normal,
+            selection_anchor: None,
         }
     }
 
@@ -124,6 +127,7 @@ impl InputBuffer {
     pub fn set_text(&mut self, text: impl Into<String>) {
         let text = text.into();
         self.cursor = text.len();
+        self.selection_anchor = None;
         self.text = text;
     }
 
@@ -131,6 +135,7 @@ impl InputBuffer {
     pub fn take(&mut self) -> String {
         self.cursor = 0;
         self.mode = InputMode::Normal;
+        self.selection_anchor = None;
         std::mem::take(&mut self.text)
     }
 
@@ -138,16 +143,122 @@ impl InputBuffer {
     pub fn clear(&mut self) {
         self.text.clear();
         self.cursor = 0;
+        self.selection_anchor = None;
     }
 
     /// Place the cursor at a byte offset on a character boundary.
     pub fn set_cursor(&mut self, cursor: usize) -> bool {
-        if cursor > self.text.len() || !self.text.is_char_boundary(cursor) {
+        let Some(cursor) = self.valid_cursor(cursor) else {
             return false;
+        };
+        let changed = self.cursor != cursor || self.selection_anchor.is_some();
+        self.cursor = cursor;
+        self.selection_anchor = None;
+        changed
+    }
+
+    /// Normalized selection range, when an anchor differs from the cursor.
+    pub fn selection(&self) -> Option<(usize, usize)> {
+        let anchor = self.selection_anchor?;
+        if anchor == self.cursor {
+            return None;
+        }
+        Some(if anchor < self.cursor {
+            (anchor, self.cursor)
+        } else {
+            (self.cursor, anchor)
+        })
+    }
+
+    /// Selected text, when a non-empty selection exists.
+    pub fn selected_text(&self) -> Option<&str> {
+        self.selection().map(|(start, end)| &self.text[start..end])
+    }
+
+    /// Whether a non-empty selection exists.
+    pub fn has_selection(&self) -> bool {
+        self.selection().is_some()
+    }
+
+    /// Drop the selection without moving the cursor.
+    pub fn clear_selection(&mut self) {
+        self.selection_anchor = None;
+    }
+
+    /// Extend or start a selection to `cursor`.
+    pub fn select_to(&mut self, cursor: usize) -> bool {
+        let Some(cursor) = self.valid_cursor(cursor) else {
+            return false;
+        };
+        if self.selection_anchor.is_none() {
+            self.selection_anchor = Some(self.cursor);
         }
         let changed = self.cursor != cursor;
         self.cursor = cursor;
         changed
+    }
+
+    /// Extend the selection one character left.
+    pub fn select_left(&mut self) -> bool {
+        match self.previous_boundary(self.cursor) {
+            Some(target) => self.select_to(target),
+            None => false,
+        }
+    }
+
+    /// Extend the selection one character right.
+    pub fn select_right(&mut self) -> bool {
+        match self.next_boundary(self.cursor) {
+            Some(target) => self.select_to(target),
+            None => false,
+        }
+    }
+
+    /// Extend the selection one display line up.
+    pub fn select_up(&mut self) -> bool {
+        match self.up_target() {
+            Some(target) => self.select_to(target),
+            None => false,
+        }
+    }
+
+    /// Extend the selection one display line down.
+    pub fn select_down(&mut self) -> bool {
+        match self.down_target() {
+            Some(target) => self.select_to(target),
+            None => false,
+        }
+    }
+
+    /// Extend the selection to the start of the logical line.
+    pub fn select_home(&mut self) -> bool {
+        self.select_to(self.line_start(self.cursor))
+    }
+
+    /// Extend the selection to the end of the logical line.
+    pub fn select_end(&mut self) -> bool {
+        self.select_to(self.line_end(self.cursor))
+    }
+
+    /// Extend the selection to the buffer start.
+    pub fn select_buffer_start(&mut self) -> bool {
+        self.select_to(0)
+    }
+
+    /// Extend the selection to the buffer end.
+    pub fn select_buffer_end(&mut self) -> bool {
+        self.select_to(self.text.len())
+    }
+
+    /// Delete the selected range, leaving the cursor at its start.
+    pub fn delete_selection(&mut self) -> bool {
+        let Some((start, end)) = self.selection() else {
+            return false;
+        };
+        self.text.replace_range(start..end, "");
+        self.cursor = start;
+        self.selection_anchor = None;
+        true
     }
 
     /// Replace a byte range and leave the cursor after the replacement.
@@ -161,12 +272,19 @@ impl InputBuffer {
         }
         self.text.replace_range(start..end, value);
         self.cursor = start + value.len();
+        self.selection_anchor = None;
         true
     }
 
     /// Insert literal text at the cursor.
     pub fn insert_str(&mut self, value: &str) {
         if value.is_empty() {
+            return;
+        }
+        if let Some((start, end)) = self.selection() {
+            self.text.replace_range(start..end, value);
+            self.cursor = start + value.len();
+            self.selection_anchor = None;
             return;
         }
         self.text.insert_str(self.cursor, value);
@@ -186,6 +304,9 @@ impl InputBuffer {
 
     /// Delete the character before the cursor.
     pub fn backspace(&mut self) -> bool {
+        if self.delete_selection() {
+            return true;
+        }
         let Some(previous) = self.previous_boundary(self.cursor) else {
             return false;
         };
@@ -196,6 +317,9 @@ impl InputBuffer {
 
     /// Delete the character after the cursor.
     pub fn delete(&mut self) -> bool {
+        if self.delete_selection() {
+            return true;
+        }
         let Some(next) = self.next_boundary(self.cursor) else {
             return false;
         };
@@ -205,56 +329,78 @@ impl InputBuffer {
 
     /// Move one character left.
     pub fn move_left(&mut self) -> bool {
+        let had_selection = self.selection_anchor.take().is_some();
         match self.previous_boundary(self.cursor) {
             Some(previous) => {
                 self.cursor = previous;
                 true
             }
-            None => false,
+            None => had_selection,
         }
     }
 
     /// Move one character right.
     pub fn move_right(&mut self) -> bool {
+        let had_selection = self.selection_anchor.take().is_some();
         match self.next_boundary(self.cursor) {
             Some(next) => {
                 self.cursor = next;
                 true
             }
-            None => false,
+            None => had_selection,
         }
     }
 
     /// Move one display line up, preserving the display column when possible.
     pub fn move_up(&mut self) -> bool {
-        let (start, _) = self.line_bounds(self.cursor);
-        if start == 0 {
-            return false;
+        let had_selection = self.selection_anchor.take().is_some();
+        match self.up_target() {
+            Some(target) => {
+                self.cursor = target;
+                true
+            }
+            None => had_selection,
         }
-        let column = self.display_column(start, self.cursor);
-        let previous_end = start - 1;
-        let (previous_start, _) = self.line_bounds(previous_end);
-        self.cursor = self.byte_at_column(previous_start, previous_end, column);
-        true
     }
 
     /// Move one display line down, preserving the display column when possible.
     pub fn move_down(&mut self) -> bool {
+        let had_selection = self.selection_anchor.take().is_some();
+        match self.down_target() {
+            Some(target) => {
+                self.cursor = target;
+                true
+            }
+            None => had_selection,
+        }
+    }
+
+    fn up_target(&self) -> Option<usize> {
+        let (start, _) = self.line_bounds(self.cursor);
+        if start == 0 {
+            return None;
+        }
+        let column = self.display_column(start, self.cursor);
+        let previous_end = start - 1;
+        let (previous_start, _) = self.line_bounds(previous_end);
+        Some(self.byte_at_column(previous_start, previous_end, column))
+    }
+
+    fn down_target(&self) -> Option<usize> {
         let (_, end) = self.line_bounds(self.cursor);
         if end >= self.text.len() {
-            return false;
+            return None;
         }
         let column = self.display_column(self.line_start(self.cursor), self.cursor);
         let next_start = end + 1;
         let (_, next_end) = self.line_bounds(next_start);
-        self.cursor = self.byte_at_column(next_start, next_end, column);
-        true
+        Some(self.byte_at_column(next_start, next_end, column))
     }
 
     /// Move to the start of the current display line.
     pub fn move_home(&mut self) -> bool {
         let start = self.line_start(self.cursor);
-        let changed = start != self.cursor;
+        let changed = start != self.cursor || self.selection_anchor.take().is_some();
         self.cursor = start;
         changed
     }
@@ -262,21 +408,21 @@ impl InputBuffer {
     /// Move to the end of the current display line.
     pub fn move_end(&mut self) -> bool {
         let end = self.line_end(self.cursor);
-        let changed = end != self.cursor;
+        let changed = end != self.cursor || self.selection_anchor.take().is_some();
         self.cursor = end;
         changed
     }
 
     /// Move to the start of the buffer.
     pub fn move_buffer_start(&mut self) -> bool {
-        let changed = self.cursor != 0;
+        let changed = self.cursor != 0 || self.selection_anchor.take().is_some();
         self.cursor = 0;
         changed
     }
 
     /// Move to the end of the buffer.
     pub fn move_buffer_end(&mut self) -> bool {
-        let changed = self.cursor != self.text.len();
+        let changed = self.cursor != self.text.len() || self.selection_anchor.take().is_some();
         self.cursor = self.text.len();
         changed
     }
@@ -361,6 +507,10 @@ impl InputBuffer {
 
     fn changed(&mut self) -> InputOutcome {
         InputOutcome::Changed
+    }
+
+    fn valid_cursor(&self, cursor: usize) -> Option<usize> {
+        (cursor <= self.text.len() && self.text.is_char_boundary(cursor)).then_some(cursor)
     }
 
     fn line_start(&self, index: usize) -> usize {
@@ -608,6 +758,77 @@ mod tests {
         let removed = store.remove(&root).unwrap();
         assert_eq!(removed.text(), "draft");
         assert!(store.current().is_empty());
+    }
+
+    #[test]
+    fn selection_replaces_text_on_insert() {
+        let mut input = InputBuffer::from_text("hello world");
+        input.set_cursor(0);
+        assert!(input.select_to(5));
+        assert_eq!(input.selected_text(), Some("hello"));
+        input.insert_str("bye");
+        assert_eq!(input.text(), "bye world");
+        assert_eq!(input.cursor(), 3);
+        assert!(!input.has_selection());
+    }
+
+    #[test]
+    fn backspace_and_delete_remove_the_selection_without_extra_characters() {
+        let mut input = InputBuffer::from_text("abcdef");
+        input.set_cursor(2);
+        assert!(input.select_to(5));
+        assert_eq!(input.selected_text(), Some("cde"));
+        assert!(input.backspace());
+        assert_eq!(input.text(), "abf");
+        assert_eq!(input.cursor(), 2);
+
+        let mut input = InputBuffer::from_text("abcdef");
+        input.set_cursor(4);
+        assert!(input.select_to(1));
+        assert!(input.delete());
+        assert_eq!(input.text(), "aef");
+        assert_eq!(input.cursor(), 1);
+    }
+
+    #[test]
+    fn unshifted_movement_clears_the_selection() {
+        let mut input = InputBuffer::from_text("abcd");
+        input.set_cursor(1);
+        assert!(input.select_to(2));
+        assert!(input.has_selection());
+        assert!(input.move_left());
+        assert!(!input.has_selection());
+        assert_eq!(input.cursor(), 1);
+    }
+
+    #[test]
+    fn select_up_and_down_keep_the_anchor() {
+        let mut input = InputBuffer::from_text("abc\ndef");
+        assert!(input.select_up());
+        assert_eq!(input.selection(), Some((3, 7)));
+        assert_eq!(input.selected_text(), Some("\ndef"));
+        assert!(input.select_down());
+        assert!(!input.has_selection());
+    }
+
+    #[test]
+    fn selection_respects_cjk_boundaries() {
+        let mut input = InputBuffer::from_text("你好");
+        input.set_cursor(0);
+        assert!(input.select_right());
+        assert_eq!(input.selected_text(), Some("你"));
+        assert!(input.select_right());
+        assert_eq!(input.selected_text(), Some("你好"));
+    }
+
+    #[test]
+    fn set_cursor_clears_the_selection() {
+        let mut input = InputBuffer::from_text("abcd");
+        input.set_cursor(1);
+        assert!(input.select_to(2));
+        assert!(input.set_cursor(4));
+        assert!(!input.has_selection());
+        assert_eq!(input.cursor(), 4);
     }
 
     #[test]

@@ -46,10 +46,12 @@ export function buildCapabilities(ctx, config, facts = {}) {
     }
   }
 
-  // Model selection is served either by the Web session controller or by the
-  // official CLI primitives (llm registry + agentDefaultModel + selection hooks).
+  // Model selection is served either by a real Web session controller or by
+  // the official CLI primitives. The bridge's scheduler-only stub is not a
+  // controller: it only exposes `resolveAgent`, so presence is not enough.
+  const controller = ctx.get('sessionController')
   const modelSelection =
-    ctx.get('sessionController') !== undefined ||
+    typeof controller?.selectModel === 'function' ||
     (ctx.get('llm') !== undefined && ctx.get('agentDefaultModel') !== undefined)
   capabilities.modelSelection = modelSelection
     ? { status: 'supported' }

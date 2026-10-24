@@ -107,6 +107,8 @@ pub struct Panel {
     mode: PanelMode,
     query: String,
     selected: usize,
+    /// Inline effort choice for the focused model; `None` keeps the default.
+    effort: Option<String>,
 }
 
 impl Default for Panel {
@@ -116,6 +118,7 @@ impl Default for Panel {
             mode: PanelMode::Commands,
             query: String::new(),
             selected: 0,
+            effort: None,
         }
     }
 }
@@ -132,6 +135,7 @@ impl Panel {
         self.mode = mode;
         self.query.clear();
         self.selected = 0;
+        self.effort = None;
     }
 
     /// Close the panel.
@@ -139,6 +143,7 @@ impl Panel {
         self.open = false;
         self.query.clear();
         self.selected = 0;
+        self.effort = None;
     }
 
     /// Whether the overlay is visible.
@@ -156,6 +161,7 @@ impl Panel {
         self.mode = mode;
         self.query.clear();
         self.selected = 0;
+        self.effort = None;
     }
 
     /// Escape semantics: the effort pane returns to its model list; other
@@ -182,6 +188,7 @@ impl Panel {
         if self.mode.query_enabled() {
             self.query.push(character);
             self.selected = 0;
+            self.effort = None;
         }
     }
 
@@ -190,12 +197,14 @@ impl Panel {
         if self.mode.query_enabled() {
             self.query.pop();
             self.selected = 0;
+            self.effort = None;
         }
     }
 
     /// Move the selection up, clamped.
     pub fn move_up(&mut self) {
         self.selected = self.selected.saturating_sub(1);
+        self.effort = None;
     }
 
     /// Move the selection down within the row count.
@@ -203,6 +212,97 @@ impl Panel {
         if rows > 0 && self.selected + 1 < rows {
             self.selected += 1;
         }
+        self.effort = None;
+    }
+
+    /// Inline effort choice for the focused model.
+    pub fn effort(&self) -> Option<&str> {
+        self.effort.as_deref()
+    }
+
+    /// The focused row's exact model route, when it is selectable.
+    pub fn focused_route(&self, controls: &ControlsModel) -> Option<(String, String)> {
+        let rows = self.rows(controls);
+        match &rows.get(self.selected)?.action {
+            PanelAction::SelectModel {
+                provider, model, ..
+            } => Some((provider.clone(), model.clone())),
+            _ => None,
+        }
+    }
+
+    /// Start the effort choice at the current model's explicit value, or at
+    /// the default for any other model.
+    pub fn reset_effort_for_focus(&mut self, controls: &ControlsModel) {
+        let Some((provider, model)) = self.focused_route(controls) else {
+            self.effort = None;
+            return;
+        };
+        self.effort = controls
+            .model
+            .next
+            .as_ref()
+            .filter(|selection| selection.provider == provider && selection.model == model)
+            .and_then(|selection| selection.reasoning_effort.clone());
+    }
+
+    /// Cycle the focused model's effort. `-1` moves left, `1` moves right;
+    /// `None` (the default) is the first entry in the cycle.
+    pub fn cycle_effort(&mut self, controls: &ControlsModel, direction: isize) {
+        if !matches!(self.mode, PanelMode::Models) {
+            return;
+        }
+        let Some((provider, model)) = self.focused_route(controls) else {
+            self.effort = None;
+            return;
+        };
+        let Some(model) = controls
+            .catalog()
+            .and_then(|catalog| catalog.find(&provider, &model))
+        else {
+            self.effort = None;
+            return;
+        };
+        let Some(reasoning) = &model.reasoning else {
+            self.effort = None;
+            return;
+        };
+        if reasoning.efforts.is_empty() {
+            self.effort = None;
+            return;
+        }
+        let mut levels: Vec<Option<String>> = vec![None];
+        levels.extend(
+            reasoning
+                .efforts
+                .iter()
+                .map(|effort| Some(effort.id.clone())),
+        );
+        let current = levels
+            .iter()
+            .position(|level| level == &self.effort)
+            .unwrap_or(0) as isize;
+        let next = (current + direction).rem_euclid(levels.len() as isize) as usize;
+        self.effort = levels[next].clone();
+    }
+
+    /// The effort to submit for one exact route, or `None` when the choice is
+    /// the default or is not advertised by that model.
+    pub fn effort_for(
+        &self,
+        controls: &ControlsModel,
+        provider: &str,
+        model: &str,
+    ) -> Option<String> {
+        let effort = self.effort.as_deref()?;
+        let model = controls.catalog()?.find(provider, model)?;
+        model
+            .reasoning
+            .as_ref()?
+            .efforts
+            .iter()
+            .any(|entry| entry.id == effort)
+            .then(|| effort.to_string())
     }
 
     /// Keep the selection inside the current row count.
@@ -279,21 +379,10 @@ impl Panel {
                     detail: model_detail(model),
                     current: is_current,
                     disabled: None,
-                    action: if model
-                        .reasoning
-                        .as_ref()
-                        .is_some_and(|reasoning| !reasoning.efforts.is_empty())
-                    {
-                        PanelAction::OpenEfforts {
-                            provider: group.id.clone(),
-                            model: model.id.clone(),
-                        }
-                    } else {
-                        PanelAction::SelectModel {
-                            provider: group.id.clone(),
-                            model: model.id.clone(),
-                            effort: None,
-                        }
+                    action: PanelAction::SelectModel {
+                        provider: group.id.clone(),
+                        model: model.id.clone(),
+                        effort: None,
                     },
                 });
             }
@@ -589,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    fn model_rows_group_by_provider_and_open_efforts_only_when_advertised() {
+    fn model_rows_group_by_provider_and_commit_both_values_on_one_page() {
         let controls = controls();
         let mut panel = Panel::new();
         panel.open(PanelMode::Models);
@@ -599,9 +688,10 @@ mod tests {
         assert!(rows[0].current);
         assert_eq!(
             rows[0].action,
-            PanelAction::OpenEfforts {
+            PanelAction::SelectModel {
                 provider: "p".into(),
-                model: "chat".into()
+                model: "chat".into(),
+                effort: None
             }
         );
         assert_eq!(
@@ -618,6 +708,34 @@ mod tests {
         let filtered = panel.rows(&controls);
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].label, "Plain");
+    }
+
+    #[test]
+    fn inline_effort_cycles_default_and_advertised_values() {
+        let controls = controls();
+        let mut panel = Panel::new();
+        panel.open(PanelMode::Models);
+        panel.reset_effort_for_focus(&controls);
+        assert_eq!(panel.effort(), None);
+        panel.cycle_effort(&controls, 1);
+        assert_eq!(panel.effort(), Some("low"));
+        panel.cycle_effort(&controls, 1);
+        assert_eq!(panel.effort(), Some("max"));
+        panel.cycle_effort(&controls, 1);
+        assert_eq!(panel.effort(), None);
+        panel.cycle_effort(&controls, -1);
+        assert_eq!(panel.effort(), Some("max"));
+        assert_eq!(panel.effort_for(&controls, "p", "plain"), None);
+        assert_eq!(
+            panel.effort_for(&controls, "p", "chat").as_deref(),
+            Some("max")
+        );
+
+        panel.move_down(2);
+        panel.reset_effort_for_focus(&controls);
+        assert_eq!(panel.effort(), None);
+        panel.cycle_effort(&controls, 1);
+        assert_eq!(panel.effort(), None);
     }
 
     #[test]

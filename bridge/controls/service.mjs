@@ -97,7 +97,12 @@ export class ControlsService {
    * ref, so installing both would duplicate routing and notices.
    */
   installSelectionHooks() {
-    if (this.ctx.get('sessionController') !== undefined) return
+    const controller = this.ctx.get('sessionController')
+    // The bridge itself provides a scheduler-only stub with `resolveAgent`;
+    // only a controller that actually owns model selection installs its own
+    // hooks. Checking for the method instead of mere existence keeps the stub
+    // from suppressing the official hooks.
+    if (typeof controller?.selectModel === 'function') return
     if (this.agent.ctx === undefined || typeof this.agent.ctx.on !== 'function') return
     const installModelSelection = this.official.installModelSelection
     if (typeof installModelSelection !== 'function') return
@@ -161,7 +166,10 @@ export class ControlsService {
    */
   async modelCatalog() {
     const controller = this.ctx.get('sessionController')
-    if (controller !== undefined) {
+    // A `sessionController` may be the bridge's scheduler-only stub. Only a
+    // controller that really exposes the catalog is used; otherwise the
+    // official CLI primitives below build it.
+    if (typeof controller?.modelCatalog === 'function') {
       try {
         return await controller.modelCatalog()
       } catch (error) {
@@ -196,7 +204,9 @@ export class ControlsService {
     const model = requireNonEmpty(params?.model, 'model')
     const reasoningEffort = optionalNonEmpty(params?.reasoningEffort, 'reasoningEffort')
     const controller = this.ctx.get('sessionController')
-    if (controller !== undefined) {
+    // Same distinction as the catalog: the stub must not shadow the official
+    // `llm` + `agentDefaultModel` path.
+    if (typeof controller?.selectModel === 'function') {
       try {
         const result = await controller.selectModel({
           sessionId: this.rootSessionId,

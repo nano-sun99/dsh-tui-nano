@@ -1,0 +1,36 @@
+  nano  ~/code/dsh-tui-nano/.claude/worktrees/issue-59
+
+  输入消息后按 Enter 发送。
+
+
+
+
+
+
+
+
+
+
+            ┌ 模型 · 查询： ──────────────────────────────────────────────────────────┐
+            │当前：DeepSeek-V4.1-Flash · deepseek-official · 强度 Low                 │
+            │DeepSeek                                                                 │
+            │▶ DeepSeek-V4.1-Flash（当前）                                            │
+            │强度：Off / Low / High / Max；默认 High                                  │
+            │  DeepSeek-V4-Pro  Stronger agentic coding, knowledge, and difficult r…  │
+            │强度：○○●○○ Low · ← → 调整                                               │
+            │↑↓ 选择 · ← → 调强度 · Enter 确认 · Esc 返回 · 输入筛选                  │
+            └─────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  > 继续提问…                                                                                    ↑
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  权限：workspace-write                             ~/code/dsh-tui-nano/.claude/worktrees/issue-59

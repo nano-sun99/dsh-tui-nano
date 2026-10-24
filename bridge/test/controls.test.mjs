@@ -241,6 +241,56 @@ test('a composed session controller installs only its own selection hooks', () =
   assert.deepEqual(service.selection.current, undefined)
 })
 
+test('a scheduler-only controller does not shadow the official model paths', async () => {
+  let hooks = 0
+  const { service } = serviceFor(
+    {
+      sessionController: {
+        async resolveAgent() {
+          return { agent: {} }
+        },
+      },
+      llm: {
+        async listModels(provider) {
+          assert.equal(provider, 'p')
+          return [{ id: 'm' }]
+        },
+        async resolveCallConfig(config) {
+          return config
+        },
+      },
+      agentDefaultModel: {
+        currentSelection: () => ({ provider: 'p', model: 'm' }),
+        async saveSelection() {},
+      },
+    },
+    {
+      official: {
+        async buildModelCatalog() {
+          return {
+            default: { provider: 'p', model: 'm' },
+            routableProviders: ['p'],
+            groups: [],
+            failures: [],
+          }
+        },
+        installModelSelection() {
+          hooks += 1
+          return () => {}
+        },
+      },
+    },
+  )
+  const catalog = await service.modelCatalog()
+  assert.deepEqual(catalog.default, { provider: 'p', model: 'm' })
+  const result = await service.selectModel({ provider: 'p', model: 'm' })
+  assert.deepEqual(result.selected, { provider: 'p', model: 'm' })
+  assert.equal(hooks, 1)
+  assert.deepEqual(service.session.appended, [
+    { type: 'model/selection', data: { provider: 'p', model: 'm' } },
+  ])
+})
+
 test('command failures keep their own contract code', async () => {
   const { service } = serviceFor({
     commands: {
