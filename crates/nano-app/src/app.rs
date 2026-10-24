@@ -46,6 +46,7 @@ use ratatui::layout::Rect;
 use serde_json::{json, Value};
 
 use crate::cli::Cli;
+use crate::command_completion::{CandidateKind, CommandCompletion};
 use crate::link::{HostLink, LinkEvent, RequestError, RequestErrorKind, SHELL_REQUEST_TIMEOUT};
 
 /// Official `/compact` busy sentence from `dsh-command-compact 0.2.1-rc.2`.
@@ -532,6 +533,16 @@ pub struct App {
     pub activity_at: Option<Instant>,
     /// Composer send button region from the last draw.
     pub send_area: Rect,
+    /// Composer text region from the last draw (inside the borders).
+    pub input_area: Rect,
+    /// Composer draft scroll offset from the last draw.
+    pub input_scroll: usize,
+    /// First visible draft row inside the composer from the last draw.
+    pub input_draft_top: usize,
+    /// Number of visible draft rows from the last draw.
+    pub input_draft_rows: usize,
+    /// Whether the current left-button drag started inside the composer.
+    pub input_drag: bool,
     /// Pointer press position, used to distinguish a click from a drag.
     pub mouse_down: Option<(u16, u16)>,
     /// A drag happened between press and release.
@@ -573,6 +584,8 @@ pub struct App {
     pub attachment_limits: Option<ImageLimits>,
     /// Active `@file` completion state.
     pub completion: CompletionState,
+    /// Active `/` command completion state.
+    pub command_completion: CommandCompletion,
     /// Protocol id of the in-flight file-reference request, for cancellation.
     completion_cancel: Option<String>,
     /// Open attachment path picker.
@@ -763,6 +776,11 @@ impl App {
             activity_phase: false,
             activity_at: None,
             send_area: Rect::default(),
+            input_area: Rect::default(),
+            input_scroll: 0,
+            input_draft_top: 0,
+            input_draft_rows: 0,
+            input_drag: false,
             mouse_down: None,
             mouse_dragged: false,
             should_quit: false,
@@ -782,6 +800,7 @@ impl App {
             schedule_unsupported: None,
             attachment_limits: None,
             completion: CompletionState::default(),
+            command_completion: CommandCompletion::default(),
             completion_cancel: None,
             picker: None,
             uploads: HashMap::new(),
@@ -1520,6 +1539,7 @@ impl App {
         } else {
             self.panel.open(PanelMode::Models);
         }
+        self.panel.reset_effort_for_focus(&self.controls);
         self.refresh_controls_catalog();
     }
 
@@ -1548,15 +1568,26 @@ impl App {
             }
             KeyCode::Up => {
                 self.panel.move_up();
+                self.panel.reset_effort_for_focus(&self.controls);
                 true
             }
             KeyCode::Down => {
                 let rows = self.panel.rows(&self.controls).len();
                 self.panel.move_down(rows);
+                self.panel.reset_effort_for_focus(&self.controls);
                 true
+            }
+            KeyCode::Left => {
+                self.panel.cycle_effort(&self.controls, -1);
+                matches!(self.panel.mode(), PanelMode::Models)
+            }
+            KeyCode::Right => {
+                self.panel.cycle_effort(&self.controls, 1);
+                matches!(self.panel.mode(), PanelMode::Models)
             }
             KeyCode::Backspace => {
                 self.panel.backspace();
+                self.panel.reset_effort_for_focus(&self.controls);
                 true
             }
             KeyCode::Enter => {
@@ -1565,6 +1596,7 @@ impl App {
             }
             KeyCode::Char(character) if !character.is_control() => {
                 self.panel.push_char(character);
+                self.panel.reset_effort_for_focus(&self.controls);
                 true
             }
             _ => false,
@@ -1594,8 +1626,9 @@ impl App {
             PanelAction::SelectModel {
                 provider,
                 model,
-                effort,
+                effort: _,
             } => {
+                let effort = self.panel.effort_for(&self.controls, &provider, &model);
                 self.panel.close();
                 self.select_model_route(&provider, &model, effort.as_deref());
             }
@@ -1615,6 +1648,7 @@ impl App {
                 }
                 self.drafts.current_mut().set_text(line);
                 self.scene.focus_mut().reset(FocusId::input());
+                self.refresh_completion();
                 self.notice = Some("已填入命令；补参数后按 Enter".to_string());
             }
             PanelAction::Close => self.panel.close(),
@@ -1916,6 +1950,44 @@ impl App {
         if self.picker.is_some() {
             return self.handle_picker_key(key);
         }
+        // The `/` popup owns unmodified navigation and acceptance keys while
+        // visible; modified shortcuts still reach the input.
+        if self.scene.focus().input_focused()
+            && self.edit_target.is_none()
+            && self.command_completion.visible()
+            && key.modifiers.is_empty()
+        {
+            match key.code {
+                KeyCode::Up => {
+                    self.command_completion.move_selection(-1);
+                    return true;
+                }
+                KeyCode::Down => {
+                    self.command_completion.move_selection(1);
+                    return true;
+                }
+                KeyCode::Tab => {
+                    self.accept_command_completion(false);
+                    return true;
+                }
+                KeyCode::Enter => {
+                    self.accept_command_completion(true);
+                    return true;
+                }
+                KeyCode::Esc => {
+                    self.command_completion.dismiss();
+                    return true;
+                }
+                KeyCode::Right if self.command_completion.ghost().is_some() => {
+                    self.accept_command_completion(false);
+                    return true;
+                }
+                KeyCode::Left | KeyCode::Home | KeyCode::End => {
+                    self.command_completion.clear();
+                }
+                _ => {}
+            }
+        }
         // The completion popup owns unmodified navigation and insertion keys
         // while visible; modified shortcuts still reach the input.
         if self.scene.focus().input_focused()
@@ -1946,6 +2018,25 @@ impl App {
                     self.cancel_completion();
                 }
                 _ => {}
+            }
+        }
+        if key.modifiers.contains(KeyModifiers::SHIFT)
+            && self.scene.focus().input_focused()
+            && self.edit_target.is_none()
+            && !self.panel.is_open()
+        {
+            let changed = match key.code {
+                KeyCode::Left => self.drafts.current_mut().select_left(),
+                KeyCode::Right => self.drafts.current_mut().select_right(),
+                KeyCode::Up => self.drafts.current_mut().select_up(),
+                KeyCode::Down => self.drafts.current_mut().select_down(),
+                KeyCode::Home => self.drafts.current_mut().select_home(),
+                KeyCode::End => self.drafts.current_mut().select_end(),
+                _ => false,
+            };
+            if changed {
+                self.refresh_completion();
+                return true;
             }
         }
         if matches!(key.code, KeyCode::Tab) {
@@ -3368,7 +3459,7 @@ impl App {
                         self.refresh_controls_state();
                     }
                     _ => {
-                        let writer = if error.code == Some(1019) {
+                        let writer = if error.code == Some(1022) {
                             "；另一个窗口正在写这个会话，本窗口不接管"
                         } else {
                             ""
@@ -3420,7 +3511,7 @@ impl App {
                         self.refresh_controls_state();
                     }
                     _ => {
-                        let writer = if error.code == Some(1019) {
+                        let writer = if error.code == Some(1022) {
                             "；另一个窗口正在写这个会话，本窗口不接管"
                         } else {
                             ""
@@ -4073,7 +4164,79 @@ impl App {
     }
 
     /// Ask the host for `@file` candidates for the current token.
+    /// Recompute the local `/` command candidates. This reads only local
+    /// projections; no request is sent.
+    fn refresh_command_completion(&mut self) {
+        if self.subagent_active()
+            || self.picker.is_some()
+            || self.panel.is_open()
+            || self.decision_owns_seat()
+        {
+            self.command_completion.clear();
+            return;
+        }
+        let text = self.drafts.current().text().to_string();
+        let cursor = self.drafts.current().cursor();
+        let commands = self.controls.commands().to_vec();
+        let skills = self.skills.entries().to_vec();
+        self.command_completion
+            .update(&text, cursor, &commands, &skills);
+        if self.command_completion.visible() {
+            self.cancel_completion();
+        }
+    }
+
+    /// Apply the selected `/` candidate. `execute` is false for Tab and true
+    /// for Enter; the row's advertised hint still decides whether Enter runs.
+    fn accept_command_completion(&mut self, execute: bool) {
+        let Some(candidate) = self.command_completion.selected_candidate().cloned() else {
+            return;
+        };
+        let text = self.drafts.current().text().to_string();
+        let token_end = self.command_completion.token_end().min(text.len());
+        let rest = text
+            .get(token_end..)
+            .unwrap_or_default()
+            .trim_start_matches(' ');
+        let line = format!("/{} ", candidate.name);
+        let cursor = line.len();
+        let mut next = line;
+        next.push_str(rest);
+        self.drafts.current_mut().set_text(next);
+        self.drafts.current_mut().set_cursor(cursor);
+        self.command_completion.clear();
+        self.cancel_completion();
+        self.history_browse = None;
+        if !execute {
+            self.refresh_completion();
+            return;
+        }
+        if !candidate.available {
+            self.error = Some(
+                candidate
+                    .reason
+                    .clone()
+                    .unwrap_or_else(|| format!("/{} 当前不可用", candidate.name)),
+            );
+            return;
+        }
+        let should_execute = match candidate.kind {
+            CandidateKind::Skill => true,
+            CandidateKind::Command => {
+                candidate.name == "model"
+                    || candidate.name == "permission"
+                    || candidate.input_hint.is_none()
+            }
+        };
+        if should_execute {
+            self.submit_draft(Delivery::Queue);
+        } else {
+            self.refresh_completion();
+        }
+    }
+
     fn refresh_completion(&mut self) {
+        self.refresh_command_completion();
         if self.subagent_active() {
             // Child prompts do not expose the root-only file-reference path.
             self.cancel_completion();
@@ -5471,15 +5634,27 @@ impl App {
             MouseEventKind::Down(MouseButton::Left) => {
                 self.mouse_down = Some((mouse.column, mouse.row));
                 self.mouse_dragged = false;
+                self.input_drag = self.input_click_at(mouse.column, mouse.row);
+                if self.input_drag {
+                    return true;
+                }
+                self.drafts.current_mut().clear_selection();
                 false
             }
             MouseEventKind::Drag(MouseButton::Left) => {
                 self.mouse_dragged = true;
+                if self.input_drag {
+                    self.input_drag_extend(mouse.column, mouse.row);
+                    return true;
+                }
                 false
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 let down = self.mouse_down.take();
                 let dragged = std::mem::take(&mut self.mouse_dragged);
+                if std::mem::take(&mut self.input_drag) {
+                    return true;
+                }
                 if dragged {
                     return false;
                 }
@@ -5528,6 +5703,74 @@ impl App {
             self.submit_draft(Delivery::Queue);
         }
         true
+    }
+
+    /// Whether a pointer press may place the composer caret.
+    fn input_clickable(&self) -> bool {
+        if self.decision_owns_seat()
+            || self.panel.is_open()
+            || self.picker.is_some()
+            || self.jobs_open
+            || self.sessions_panel.open
+            || self.skills_panel_open()
+            || self.instructions_panel_open()
+            || self.schedule.open
+        {
+            return false;
+        }
+        if self.subagent_active() {
+            return self
+                .subagents
+                .mounted_gate()
+                .map(|gate| gate.can_send())
+                .unwrap_or(false);
+        }
+        true
+    }
+
+    /// Place the caret at one composer cell. Returns whether the press belonged
+    /// to the composer (and therefore owns this drag).
+    fn input_click_at(&mut self, column: u16, row: u16) -> bool {
+        if !self.input_clickable() || self.send_area.contains((column, row).into()) {
+            return false;
+        }
+        let text = self.drafts.current().text().to_string();
+        let area = self.input_area;
+        let width = crate::ui::input_text_width(area.width);
+        let Some(offset) = crate::ui::input_offset_at(
+            &text,
+            width,
+            area,
+            self.input_scroll,
+            self.input_draft_top,
+            self.input_draft_rows,
+            column,
+            row,
+        ) else {
+            return false;
+        };
+        self.scene.focus_mut().reset(FocusId::input());
+        self.drafts.current_mut().set_cursor(offset);
+        true
+    }
+
+    /// Extend the composer selection during a drag.
+    fn input_drag_extend(&mut self, column: u16, row: u16) {
+        let text = self.drafts.current().text().to_string();
+        let area = self.input_area;
+        let width = crate::ui::input_text_width(area.width);
+        if let Some(offset) = crate::ui::input_offset_at(
+            &text,
+            width,
+            area,
+            self.input_scroll,
+            self.input_draft_top,
+            self.input_draft_rows,
+            column,
+            row,
+        ) {
+            self.drafts.current_mut().select_to(offset);
+        }
     }
 
     fn click_at(&mut self, column: u16, row: u16) -> bool {
@@ -5757,7 +6000,10 @@ impl App {
     }
 
     pub fn copy_draft(&mut self) {
-        let text = self.drafts.current().text();
+        let (text, from_selection) = match self.drafts.current().selected_text() {
+            Some(selection) => (selection.to_string(), true),
+            None => (self.drafts.current().text().to_string(), false),
+        };
         if text.is_empty() {
             self.notice = Some("草稿为空，没有可复制的内容".to_string());
             return;
@@ -5767,7 +6013,14 @@ impl App {
         let mut stdout = std::io::stdout();
         let _ = write!(stdout, "\x1b]52;c;{encoded}\x07");
         let _ = stdout.flush();
-        self.notice = Some("已发送复制草稿（原文）请求".to_string());
+        self.notice = Some(
+            if from_selection {
+                "已复制选区"
+            } else {
+                "已发送复制草稿（原文）请求"
+            }
+            .to_string(),
+        );
     }
 
     /// Stop the current turn, keeping the queue.
@@ -6222,6 +6475,7 @@ impl App {
 
     fn toggle_focus(&mut self) {
         if self.scene.focus().input_focused() {
+            self.drafts.current_mut().clear_selection();
             if !self.model.inbox().is_empty() {
                 self.scene.focus_mut().push(FocusId::queue());
             }
@@ -8698,6 +8952,38 @@ mod tests {
     }
 
     #[test]
+    fn shift_arrows_extend_the_draft_selection_and_typing_replaces_it() {
+        let mut app = app();
+        app.drafts.current_mut().set_text("hello");
+        assert!(app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT)));
+        assert!(app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT)));
+        assert_eq!(app.drafts.current().selected_text(), Some("lo"));
+        app.handle_key(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE));
+        assert_eq!(app.drafts.current().text(), "helX");
+        assert!(!app.drafts.current().has_selection());
+    }
+
+    #[test]
+    fn backspace_deletes_the_draft_selection() {
+        let mut app = app();
+        app.drafts.current_mut().set_text("hello");
+        app.drafts.current_mut().set_cursor(1);
+        app.drafts.current_mut().select_to(4);
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.drafts.current().text(), "ho");
+    }
+
+    #[test]
+    fn ctrl_y_copies_the_selection_when_one_exists() {
+        let mut app = app();
+        app.drafts.current_mut().set_text("hello");
+        app.drafts.current_mut().set_cursor(0);
+        app.drafts.current_mut().select_to(5);
+        app.handle_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL));
+        assert_eq!(app.notice.as_deref(), Some("已复制选区"));
+    }
+
+    #[test]
     fn a_submission_without_a_host_is_marked_unknown() {
         let mut app = app();
         app.ready = true;
@@ -8970,6 +9256,98 @@ mod tests {
         assert!(!app.panel.is_open());
     }
 
+    fn type_text(app: &mut App, text: &str) {
+        for character in text.chars() {
+            app.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
+        }
+    }
+
+    #[test]
+    fn typing_slash_opens_command_completion_and_tab_fills() {
+        let mut app = controls_state(controls_state_value());
+        type_text(&mut app, "/");
+        assert!(app.command_completion.visible());
+        type_text(&mut app, "comp");
+        assert_eq!(
+            app.command_completion
+                .selected_candidate()
+                .map(|candidate| candidate.name.as_str()),
+            Some("compact")
+        );
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.drafts.current().text(), "/compact ");
+        assert!(app.model.submissions().echoes().is_empty());
+    }
+
+    #[test]
+    fn enter_on_a_view_command_opens_its_panel() {
+        let mut app = controls_state(controls_state_value());
+        type_text(&mut app, "/model");
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.panel.is_open());
+        assert_eq!(app.panel.mode(), &PanelMode::Models);
+        assert!(app.drafts.current().is_empty());
+    }
+
+    #[test]
+    fn enter_on_a_command_with_an_argument_hint_only_fills() {
+        let mut state = controls_state_value();
+        state["commands"]
+            .as_array_mut()
+            .expect("commands")
+            .push(json!({"name": "resume", "description": "Resume", "inputHint": "<session>"}));
+        let mut app = controls_state(state);
+        type_text(&mut app, "/resume");
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.drafts.current().text(), "/resume ");
+        assert!(!app.panel.is_open());
+    }
+
+    #[test]
+    fn right_arrow_accepts_inline_command_ghost_text() {
+        let mut app = controls_state(controls_state_value());
+        type_text(&mut app, "/perm");
+        assert_eq!(app.command_completion.ghost(), Some("ission"));
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(app.drafts.current().text(), "/permission ");
+    }
+
+    #[test]
+    fn the_model_pane_cycles_inline_effort_with_arrows() {
+        let mut app = controls_state(controls_state_value());
+        app.controls
+            .apply_catalog(&json!({
+                "default": {"provider": "p", "model": "chat"},
+                "routableProviders": ["p"],
+                "groups": [{
+                    "id": "p",
+                    "name": "Provider",
+                    "models": [{
+                        "id": "chat",
+                        "name": "Chat",
+                        "reasoning": {
+                            "efforts": [
+                                {"id": "low", "name": "Low"},
+                                {"id": "max", "name": "Max"}
+                            ],
+                            "defaultEffort": "low"
+                        }
+                    }]
+                }],
+                "failures": []
+            }))
+            .expect("catalog");
+        app.open_models_panel();
+        assert_eq!(app.panel.mode(), &PanelMode::Models);
+        assert_eq!(app.panel.effort(), None);
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(app.panel.effort(), Some("low"));
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(app.panel.effort(), Some("max"));
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        assert_eq!(app.panel.effort(), Some("low"));
+    }
+
     #[test]
     fn typing_slash_model_opens_the_model_pane_instead_of_sending() {
         let mut app = app();
@@ -9084,7 +9462,7 @@ mod tests {
             2,
             Err(RequestError {
                 kind: RequestErrorKind::Rpc,
-                code: Some(1019),
+                code: Some(1022),
                 message: "session \"root\" is already owned by an active write handle".into(),
             }),
         );
@@ -9274,7 +9652,7 @@ mod tests {
             13,
             Err(RequestError {
                 kind: RequestErrorKind::Rpc,
-                code: Some(1019),
+                code: Some(1022),
                 message: "session \"root\" is already owned by an active write handle".into(),
             }),
         );

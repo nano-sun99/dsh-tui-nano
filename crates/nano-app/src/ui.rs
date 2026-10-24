@@ -7,7 +7,7 @@
 use std::time::Instant;
 
 use nano_attachments::{AttachmentState, CandidateKind};
-use nano_controls::{PanelMode, PanelRow};
+use nano_controls::{PanelAction, PanelMode, PanelRow};
 use nano_decisions::{
     ApprovalCardState, ApprovalFocus, DecisionClick, DecisionTop, PlanFocus, QuestionCard,
     QuestionCardState,
@@ -70,12 +70,17 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
     // Root decision cards belong to the parent conversation and never take the
     // child composer seat.
     let decision = !child_active && app.decision_owns_seat();
-    let completion_height =
-        if !decision && !child_active && app.completion.visible() && app.picker.is_none() {
+    let completion_height = if !decision && !child_active && app.picker.is_none() {
+        if app.command_completion.visible() {
+            (app.command_completion.candidates().len().min(6) as u16) + 1
+        } else if app.completion.visible() {
             (app.completion.candidates().len().min(6) as u16) + 1
         } else {
             0
-        };
+        }
+    } else {
+        0
+    };
     let (dock_rows, dock_overflow) = if child_active {
         (Vec::new(), 0)
     } else {
@@ -2495,7 +2500,7 @@ fn input_notice(app: &App) -> Option<(String, Color)> {
     }
 }
 
-fn input_text_width(width: u16) -> usize {
+pub(crate) fn input_text_width(width: u16) -> usize {
     width.saturating_sub(3).max(1) as usize
 }
 
@@ -2584,6 +2589,7 @@ fn draw_input(frame: &mut Frame, app: &mut App, area: Rect) {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut cursor: Option<(usize, usize)> = None;
     let mut send_start: Option<usize> = None;
+    let mut draft_rows = 0usize;
     if let Some((notice, color)) = input_notice(app) {
         lines.push(Line::from(Span::styled(
             truncate(&notice, width),
@@ -2622,14 +2628,19 @@ fn draw_input(frame: &mut Frame, app: &mut App, area: Rect) {
                     Span::styled(placeholder, muted_style(app.theme)),
                 ]));
                 cursor = Some((start, 2));
+                draft_rows = 1;
             } else {
                 let (row, column) = input_cursor(app, text_width);
-                for (index, text) in input_lines(app, text_width).into_iter().enumerate() {
+                let styled = input_styled_lines(app, text_width);
+                draft_rows = styled.len();
+                for (index, line) in styled.into_iter().enumerate() {
                     let prefix = if index == 0 { "> " } else { "  " };
-                    lines.push(Line::from(vec![
-                        Span::styled(prefix, Style::default().fg(app.theme.colors().accent)),
-                        Span::raw(text),
-                    ]));
+                    let mut spans = vec![Span::styled(
+                        prefix,
+                        Style::default().fg(app.theme.colors().accent),
+                    )];
+                    spans.extend(line.spans);
+                    lines.push(Line::from(spans));
                 }
                 cursor = Some((start + row, 2 + column));
             }
@@ -2649,6 +2660,10 @@ fn draw_input(frame: &mut Frame, app: &mut App, area: Rect) {
         Some((row, _)) if viewport > 0 => row.saturating_sub(viewport.saturating_sub(1)),
         _ => 0,
     };
+    app.input_area = inner;
+    app.input_scroll = offset;
+    app.input_draft_top = send_start.unwrap_or(0);
+    app.input_draft_rows = if send_start.is_some() { draft_rows } else { 0 };
     // The send button rides the first visible draft row, so a long draft that
     // scrolls its first line out of view still shows a reachable button.
     if let (true, Some(start)) = (sendable, send_start) {
@@ -2723,8 +2738,66 @@ fn attachment_lines(app: &App) -> Vec<(String, Color)> {
     lines
 }
 
-/// `@file` completion candidates above the input.
+/// `/` command candidates above the input.
+fn draw_command_completion(frame: &mut Frame, app: &App, area: Rect) {
+    let title = format!(
+        " 命令补全（{} 项）· ↑↓ 选择 · Tab 补全 · Enter 确认 · Esc 关闭 ",
+        app.command_completion.candidates().len()
+    );
+    let block = Block::default()
+        .borders(Borders::TOP)
+        .border_style(app.theme.border_style())
+        .title(title);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let width = inner.width.max(1) as usize;
+    let mut lines = Vec::new();
+    for (index, candidate) in app
+        .command_completion
+        .candidates()
+        .iter()
+        .take(6)
+        .enumerate()
+    {
+        let selected = index == app.command_completion.selected();
+        let marker = if selected { "▶" } else { " " };
+        let mut text = format!("{marker} /{}", candidate.name);
+        if candidate.kind == crate::command_completion::CandidateKind::Skill {
+            text.push_str(" [技能]");
+        }
+        if let Some(reason) = &candidate.reason {
+            if !candidate.available {
+                text.push_str(" · ");
+                text.push_str(reason);
+            }
+        } else {
+            text.push_str("  ");
+            text.push_str(&candidate.description);
+            if let Some(hint) = &candidate.input_hint {
+                text.push_str(" · 参数 ");
+                text.push_str(hint);
+            }
+        }
+        let style = if !candidate.available {
+            Style::default().fg(app.theme.colors().muted)
+        } else if selected {
+            Style::default()
+                .fg(app.theme.colors().fg)
+                .bg(app.theme.colors().selected_bg)
+        } else {
+            Style::default()
+        };
+        lines.push(Line::from(Span::styled(truncate(&text, width), style)));
+    }
+    frame.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
+/// Completion candidates above the input: `/` commands or `@file` paths.
 fn draw_completion(frame: &mut Frame, app: &App, area: Rect) {
+    if app.command_completion.visible() {
+        draw_command_completion(frame, app, area);
+        return;
+    }
     let title = format!(
         " 文件补全（{} 项）· ↑↓ 选择 · Enter/Tab 插入 · Esc 关闭 ",
         app.completion.candidates().len()
@@ -2919,11 +2992,9 @@ fn draw_panel(frame: &mut Frame, app: &mut App, area: Rect) {
             }
         }
     }
-    lines.push(Line::from(Span::styled(
-        "↑↓ 选择 · Enter 确认 · Esc 返回 · 输入筛选",
-        Style::default().fg(app.theme.colors().muted),
-    )));
-    let height = (lines.len() as u16 + 2)
+    let effort = matches!(app.panel.mode(), PanelMode::Models).then(|| effort_line(app));
+    let fixed_count = 1 + usize::from(effort.is_some());
+    let height = (lines.len() as u16 + fixed_count as u16 + 2)
         .min(area.height.saturating_sub(2))
         .max(3);
     let rect = centered(area, width, height);
@@ -2941,9 +3012,101 @@ fn draw_panel(frame: &mut Frame, app: &mut App, area: Rect) {
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
     let viewport = inner.height as usize;
-    let offset = selected_line.saturating_sub(viewport.saturating_sub(2));
-    let visible: Vec<Line<'static>> = lines.into_iter().skip(offset).take(viewport).collect();
-    frame.render_widget(Paragraph::new(Text::from(visible)), inner);
+    let list_height = viewport.saturating_sub(fixed_count).max(1);
+    let offset = selected_line.saturating_sub(list_height.saturating_sub(1));
+    let visible: Vec<Line<'static>> = lines.into_iter().skip(offset).take(list_height).collect();
+    frame.render_widget(
+        Paragraph::new(Text::from(visible)),
+        Rect {
+            height: list_height as u16,
+            ..inner
+        },
+    );
+    let mut fixed = Vec::new();
+    if let Some(effort) = effort {
+        fixed.push(Line::from(Span::styled(
+            effort,
+            Style::default().fg(app.theme.colors().muted),
+        )));
+    }
+    fixed.push(Line::from(Span::styled(
+        panel_footer(app),
+        Style::default().fg(app.theme.colors().muted),
+    )));
+    frame.render_widget(
+        Paragraph::new(Text::from(fixed)),
+        Rect {
+            y: inner.y.saturating_add(list_height as u16),
+            height: fixed_count as u16,
+            ..inner
+        },
+    );
+}
+
+/// Copy one line of effort text for the focused model.
+fn effort_line(app: &App) -> String {
+    let rows = app.panel.rows(&app.controls);
+    let Some(row) = rows.get(app.panel.selected()) else {
+        return "强度：—".to_string();
+    };
+    let (provider, model) = match &row.action {
+        PanelAction::SelectModel {
+            provider, model, ..
+        } => (provider.as_str(), model.as_str()),
+        _ => return "强度：—".to_string(),
+    };
+    if row.disabled.is_some() {
+        return "强度：—".to_string();
+    }
+    let Some(model) = app
+        .controls
+        .catalog()
+        .and_then(|catalog| catalog.find(provider, model))
+    else {
+        return "强度：—".to_string();
+    };
+    let Some(reasoning) = &model.reasoning else {
+        return "强度：该模型未声明（不可调）".to_string();
+    };
+    if reasoning.efforts.is_empty() {
+        return "强度：该模型未声明（不可调）".to_string();
+    }
+    let mut levels: Vec<Option<&str>> = vec![None];
+    levels.extend(
+        reasoning
+            .efforts
+            .iter()
+            .map(|effort| Some(effort.id.as_str())),
+    );
+    let current = app.panel.effort();
+    let index = levels
+        .iter()
+        .position(|level| *level == current)
+        .unwrap_or(0);
+    let dots = if levels.len() <= 5 {
+        let marks: String = (0..levels.len())
+            .map(|position| if position == index { '●' } else { '○' })
+            .collect();
+        format!("{marks} ")
+    } else {
+        String::new()
+    };
+    let name = match current {
+        None => match reasoning.default_effort_name() {
+            Some(default) => format!("默认（模型默认：{default}）"),
+            None => "默认".to_string(),
+        },
+        Some(id) => reasoning.effort_name(id).unwrap_or(id).to_string(),
+    };
+    format!("强度：{dots}{name} · ← → 调整")
+}
+
+fn panel_footer(app: &App) -> &'static str {
+    if matches!(app.panel.mode(), PanelMode::Models) {
+        "↑↓ 选择 · ← → 调强度 · Enter 确认 · Esc 返回 · 输入筛选"
+    } else {
+        "↑↓ 选择 · Enter 确认 · Esc 返回 · 输入筛选"
+    }
 }
 
 /// One-line header describing the current official value for this pane.
@@ -3086,6 +3249,184 @@ fn input_lines(app: &App, width: usize) -> Vec<String> {
 
 fn wrapped_input_rows(app: &App, width: u16) -> usize {
     input_lines(app, width.max(1) as usize).len().max(1)
+}
+
+/// Styled draft rows: carriage returns are hidden, and selected bytes carry
+/// the selected background. The caller prepends the two-cell line prefix.
+fn input_styled_lines(app: &App, width: usize) -> Vec<Line<'static>> {
+    let text = app.drafts.current().text();
+    let cursor = app.drafts.current().cursor();
+    let selection = app.drafts.current().selection();
+    let ghost = if app.scene.focus().input_focused()
+        && !app.panel.is_open()
+        && !app.drafts.current().has_selection()
+    {
+        app.command_completion.ghost()
+    } else {
+        None
+    };
+    let selected_style = Style::default()
+        .fg(app.theme.colors().fg)
+        .bg(app.theme.colors().selected_bg);
+    let mut rows = Vec::new();
+    let mut line_start = 0;
+    for line in text.split('\n') {
+        for segment in wrap_segments(line, width) {
+            let mut spans = Vec::new();
+            let mut run = String::new();
+            let mut run_selected = false;
+            let mut ghost_inserted = false;
+            for (offset, character) in line[segment.start..segment.end].char_indices() {
+                if character == '\r' {
+                    continue;
+                }
+                let byte = line_start + segment.start + offset;
+                if !ghost_inserted && byte == cursor {
+                    if !run.is_empty() {
+                        spans.push(styled_run(
+                            std::mem::take(&mut run),
+                            run_selected,
+                            selected_style,
+                        ));
+                    }
+                    if let Some(ghost) = ghost {
+                        let room = width.saturating_sub(segment.width).saturating_sub(1);
+                        let suffix = truncate_width(ghost, room);
+                        if !suffix.is_empty() {
+                            spans.push(Span::styled(suffix, muted_style(app.theme)));
+                        }
+                    }
+                    ghost_inserted = true;
+                }
+                let selected = selection.is_some_and(|(start, end)| byte >= start && byte < end);
+                if !run.is_empty() && selected != run_selected {
+                    spans.push(styled_run(
+                        std::mem::take(&mut run),
+                        run_selected,
+                        selected_style,
+                    ));
+                }
+                run_selected = selected;
+                run.push(character);
+            }
+            if !ghost_inserted && cursor == line_start + segment.end {
+                if !run.is_empty() {
+                    spans.push(styled_run(
+                        std::mem::take(&mut run),
+                        run_selected,
+                        selected_style,
+                    ));
+                }
+                if let Some(ghost) = ghost {
+                    let room = width.saturating_sub(segment.width).saturating_sub(1);
+                    let suffix = truncate_width(ghost, room);
+                    if !suffix.is_empty() {
+                        spans.push(Span::styled(suffix, muted_style(app.theme)));
+                    }
+                }
+            } else if !run.is_empty() {
+                spans.push(styled_run(run, run_selected, selected_style));
+            }
+            rows.push(Line::from(spans));
+        }
+        line_start += line.len() + 1;
+    }
+    if rows.is_empty() {
+        rows.push(Line::from(""));
+    }
+    rows
+}
+
+fn truncate_width(text: &str, max: usize) -> String {
+    let mut output = String::new();
+    let mut used = 0;
+    for character in text.chars() {
+        let width = display_width(character);
+        if used + width > max {
+            break;
+        }
+        output.push(character);
+        used += width;
+    }
+    output
+}
+
+fn styled_run(text: String, selected: bool, selected_style: Style) -> Span<'static> {
+    if selected {
+        Span::styled(text, selected_style)
+    } else {
+        Span::raw(text)
+    }
+}
+
+/// Map a terminal cell inside the composer to a byte offset in the draft.
+/// Returns `None` for rows that are not part of the draft (notice, attachments,
+/// picker). Clicking below the last draft row lands at the buffer end.
+pub(crate) fn input_offset_at(
+    text: &str,
+    width: usize,
+    area: Rect,
+    scroll: usize,
+    draft_top: usize,
+    draft_rows: usize,
+    column: u16,
+    row: u16,
+) -> Option<usize> {
+    if area.width == 0 || area.height == 0 || draft_rows == 0 {
+        return None;
+    }
+    if column < area.x
+        || column >= area.x.saturating_add(area.width)
+        || row < area.y
+        || row >= area.y.saturating_add(area.height)
+    {
+        return None;
+    }
+    let local = (row - area.y) as usize;
+    let absolute = scroll.saturating_add(local);
+    if absolute < draft_top {
+        return None;
+    }
+    let target_row = absolute - draft_top;
+    if target_row >= draft_rows {
+        return Some(text.len());
+    }
+    let width = width.max(1);
+    let mut rows = Vec::new();
+    let mut line_start = 0;
+    for line in text.split('\n') {
+        for segment in wrap_segments(line, width) {
+            rows.push((line_start + segment.start, line_start + segment.end));
+        }
+        line_start += line.len() + 1;
+    }
+    if rows.is_empty() {
+        rows.push((0, 0));
+    }
+    let Some((start, end)) = rows.get(target_row).copied() else {
+        return Some(text.len());
+    };
+    let text_x = area.x.saturating_add(2);
+    if column < text_x {
+        return Some(start);
+    }
+    let target = (column - text_x) as usize;
+    let mut used = 0usize;
+    for (offset, character) in text[start..end].char_indices() {
+        if character == '\r' {
+            continue;
+        }
+        let character_width = display_width(character);
+        if used + character_width > target {
+            return Some(if target > used {
+                start + offset + character.len_utf8()
+            } else {
+                start + offset
+            });
+        }
+        used += character_width;
+    }
+    Some(end)
 }
 
 /// Cursor row and display column after wrapping.
@@ -3276,7 +3617,9 @@ fn truncate(text: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crossterm::event::{
+        KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
     use nano_decisions::contract::parse_questions;
     use nano_decisions::{ApprovalCard, QuestionCard, TimedState};
     use serde_json::json;
@@ -4204,6 +4547,101 @@ mod tests {
             .draw(|frame| draw(frame, app))
             .expect("draw the frame");
         terminal.backend().buffer()[(x, y)].bg
+    }
+
+    #[test]
+    fn input_offset_at_maps_ascii_and_cjk_cells() {
+        let area = Rect::new(10, 5, 40, 3);
+        let width = input_text_width(area.width);
+        let text = "你好abc";
+        assert_eq!(input_offset_at(text, width, area, 0, 0, 1, 10, 5), Some(0));
+        assert_eq!(input_offset_at(text, width, area, 0, 0, 1, 12, 5), Some(0));
+        assert_eq!(input_offset_at(text, width, area, 0, 0, 1, 13, 5), Some(3));
+        assert_eq!(input_offset_at(text, width, area, 0, 0, 1, 16, 5), Some(6));
+        assert_eq!(input_offset_at(text, width, area, 0, 0, 1, 19, 5), Some(9));
+        assert_eq!(input_offset_at(text, width, area, 0, 0, 1, 12, 4), None);
+        assert_eq!(input_offset_at(text, width, area, 0, 2, 1, 12, 5), None);
+    }
+
+    #[test]
+    fn input_offset_at_maps_wrapped_rows() {
+        let area = Rect::new(0, 0, 7, 2);
+        let width = input_text_width(area.width);
+        let text = "abcdefghij";
+        assert_eq!(input_offset_at(text, width, area, 0, 0, 3, 2, 0), Some(0));
+        assert_eq!(input_offset_at(text, width, area, 0, 0, 3, 2, 1), Some(4));
+        assert_eq!(input_offset_at(text, width, area, 0, 0, 3, 6, 1), Some(8));
+    }
+
+    #[test]
+    fn the_command_ghost_renders_after_the_caret_without_changing_the_draft() {
+        let mut app = app();
+        app.controls.set_capabilities(true, true, true);
+        for character in "/perm".chars() {
+            app.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
+        }
+        let rows = screen(&mut app, 100, 30);
+        let row = rows
+            .iter()
+            .find(|row| row.contains("> /perm"))
+            .expect("draft row");
+        assert!(row.contains("> /permission"), "{row:?}");
+        assert_eq!(app.drafts.current().text(), "/perm");
+    }
+
+    #[test]
+    fn a_click_places_the_caret_and_a_drag_selects() {
+        let mut app = app();
+        app.drafts.current_mut().set_text("hello world");
+        let _ = screen(&mut app, 100, 30);
+        let area = app.input_area;
+        let x = area.x + 2 + 2;
+        let y = area.y;
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(app.drafts.current().cursor(), 2);
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: x + 3,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(app.drafts.current().selected_text(), Some("llo"));
+        app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: x + 3,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(app.drafts.current().selected_text(), Some("llo"));
+    }
+
+    #[test]
+    fn selected_input_text_uses_the_selected_background() {
+        let mut app = app();
+        app.drafts.current_mut().set_text("hello world");
+        app.drafts.current_mut().set_cursor(0);
+        app.drafts.current_mut().select_to(5);
+        let rows = screen(&mut app, 100, 30);
+        let (y, x) = rows
+            .iter()
+            .enumerate()
+            .find_map(|(y, row)| row.find("hello world").map(|x| (y as u16, x as u16)))
+            .expect("draft row");
+        let selected = app.theme.colors().selected_bg;
+        for offset in 0..5 {
+            let bg = screen_bg(&mut app, 100, 30, x + offset, y);
+            assert_eq!(bg, selected, "selected cell {offset} uses selected_bg");
+        }
+        let unselected = screen_bg(&mut app, 100, 30, x + 5, y);
+        assert_ne!(
+            unselected, selected,
+            "the space after the selection is plain"
+        );
     }
 
     #[test]

@@ -2,6 +2,7 @@
 
 mod app;
 mod cli;
+mod command_completion;
 mod link;
 mod restart;
 mod ui;

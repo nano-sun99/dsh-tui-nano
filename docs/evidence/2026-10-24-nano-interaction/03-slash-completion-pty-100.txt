@@ -1,0 +1,36 @@
+  nano  ~/code/dsh-tui-nano/.claude/worktrees/issue-59
+
+  输入消息后按 Enter 发送。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   命令补全（85 项）· ↑↓ 选择 · Tab 补全 · Enter 确认 · Esc 关闭 ─────────────────────────────────
+  ▶ /arkcli-agent [技能]  arkcli agent：管理 ARK Managed Agents，包括 Agent / Skill / Env / Sessi…
+    /arkcli-api-explorer [技能]  Inspect or invoke locally registered ArkCLI actions when product…
+    /arkcli-auth [技能]  arkcli 认证管理：交互式登录、Volc SSO 登录、查看状态、退出登录、生成 ARK…
+    /arkcli-billing [技能]  查询火山引擎 ARK 拆分账单明细（结算金额、Token 用量计费），支持按账期…
+    /arkcli-chat [技能]  arkcli +chat：通过数据面 Responses API 快速对话/推理，支持多模态、流式、…
+    /arkcli-code-example [技能]  arkcli +code-example：为指定基础模型生成多语言（Python / Go / Ja…
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  > /                                                                                            ↑
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  权限：workspace-write                             ~/code/dsh-tui-nano/.claude/worktrees/issue-59
