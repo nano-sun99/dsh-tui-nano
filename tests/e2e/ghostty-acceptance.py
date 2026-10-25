@@ -222,6 +222,10 @@ def launch(title, run_script, cols, rows, fullscreen=False, font_size=None):
     time.sleep(6)
     applescript(RAISE_SCRIPT, title)
     time.sleep(0.5)
+    # B5: the one-time first-launch sources panel owns the keyboard until it
+    # is closed. Dismiss it so the acceptance flow sees the normal main view.
+    send_key(title, KEY_CODES["return"])
+    time.sleep(0.8)
 
 
 def scroll_at(window_id, dy):

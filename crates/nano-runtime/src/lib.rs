@@ -25,7 +25,7 @@ pub use protocol_error::{HostError, ProtocolError};
 pub const PROTOCOL_MAJOR: u32 = 1;
 
 /// Wire protocol minor version implemented by this crate.
-pub const PROTOCOL_MINOR: u32 = 1;
+pub const PROTOCOL_MINOR: u32 = 2;
 
 /// Hard frame limit shared with the bridge.
 pub const MAX_FRAME_BYTES: usize = 33_554_432;

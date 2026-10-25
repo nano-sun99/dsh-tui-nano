@@ -119,6 +119,35 @@ test('hello ignores an unknown optional field but rejects a malformed one', () =
   assert.throws(() => validateHello(missingRoot), /rootSessionId/)
 })
 
+test('hello validates provenance labels without requiring any value', () => {
+  const withSources = structuredClone(hello)
+  withSources.provenance = {
+    config: { path: '/tmp/profile/cordis.patch.yml' },
+    credentials: { reference: 'DEEPSEEK_API_KEY', configured: true, source: 'env' },
+  }
+  assert.doesNotThrow(() => validateHello(withSources))
+
+  const withoutOptionalSource = structuredClone(withSources)
+  delete withoutOptionalSource.provenance.credentials.source
+  assert.doesNotThrow(() => validateHello(withoutOptionalSource))
+
+  const badPath = structuredClone(withSources)
+  badPath.provenance.config = {}
+  assert.throws(() => validateHello(badPath), /hello\.provenance\.config\.path/)
+
+  const badReference = structuredClone(withSources)
+  badReference.provenance.credentials.reference = 42
+  assert.throws(() => validateHello(badReference), /hello\.provenance\.credentials\.reference/)
+
+  const badConfigured = structuredClone(withSources)
+  badConfigured.provenance.credentials.configured = 'yes'
+  assert.throws(() => validateHello(badConfigured), /hello\.provenance\.credentials\.configured/)
+
+  const badSource = structuredClone(withSources)
+  badSource.provenance.credentials.source = 7
+  assert.throws(() => validateHello(badSource), /hello\.provenance\.credentials\.source/)
+})
+
 test('event and streamEnded enforce identity and generation', () => {
   const event = structuredClone(CONTRACT.fixtures.event.params)
   assert.doesNotThrow(() => validateEvent(event, { runtimeId: 'rt-fixture', generation: 1 }))

@@ -1072,7 +1072,7 @@ fn draw_sources_panel(frame: &mut Frame, app: &App, area: Rect) {
     let width = inner.width as usize;
     let mut lines: Vec<Line<'static>> = Vec::new();
     lines.push(Line::from(Span::styled(
-        "本次启动实际使用的来源；凭据只显示引用与来源，不显示值。",
+        "本次启动报告的来源；凭据只显示引用，不显示值。",
         Style::default().fg(colors.muted),
     )));
     match app
@@ -1103,11 +1103,25 @@ fn draw_sources_panel(frame: &mut Frame, app: &App, area: Rect) {
             } else {
                 "未配置".to_string()
             };
-            lines.push(Line::from(vec![
-                Span::styled("凭据  ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(credentials.reference.clone()),
-                Span::styled(format!(" · {state}"), Style::default().fg(colors.muted)),
-            ]));
+            let prefix = "凭据（默认 DeepSeek）  ";
+            let suffix = format!(" · {state}");
+            let label_width: usize = prefix.chars().map(display_width).sum();
+            let suffix_width: usize = suffix.chars().map(display_width).sum();
+            let remaining = width
+                .saturating_sub(label_width)
+                .saturating_sub(suffix_width);
+            if remaining < 4 {
+                lines.push(Line::from(Span::styled(
+                    truncate(&format!("{prefix}{}{suffix}", credentials.reference), width),
+                    Style::default().fg(colors.fg),
+                )));
+            } else {
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(truncate(&credentials.reference, remaining)),
+                    Span::styled(suffix, Style::default().fg(colors.muted)),
+                ]));
+            }
         }
         None => lines.push(Line::from(vec![
             Span::styled("凭据  ", Style::default().add_modifier(Modifier::BOLD)),
@@ -1139,15 +1153,22 @@ fn draw_sources_panel(frame: &mut Frame, app: &App, area: Rect) {
         lines.push(Line::from(vec![
             Span::styled("规矩  ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(format!(
-                "{} 份 · 首次对话时加载",
+                "{} 份默认候选 · 以首轮实际加载为准",
                 app.instruction_candidates.len()
             )),
         ]));
-        for path in app.instruction_candidates.iter().take(4) {
-            lines.push(Line::from(Span::styled(
-                truncate(&format!("  {path}"), width),
-                Style::default().fg(colors.muted),
-            )));
+        for candidate in app.instruction_candidates.iter().take(4) {
+            let suffix = candidate
+                .skip
+                .map(|note| format!(" · {note}"))
+                .unwrap_or_default();
+            wrap_block(
+                &mut lines,
+                &format!("  {}{suffix}", candidate.path),
+                width,
+                4_096,
+                colors.muted,
+            );
         }
         if app.instruction_candidates.len() > 4 {
             lines.push(Line::from(Span::styled(
@@ -3885,6 +3906,28 @@ mod tests {
         assert!(rows.iter().any(|row| row.contains("DEEPSEEK_API_KEY")));
         assert!(rows.iter().any(|row| row.contains("启动环境")));
         assert!(rows.iter().any(|row| row.contains("Enter/Esc")));
+    }
+
+    #[test]
+    fn the_sources_panel_reports_missing_sources_and_skipped_candidates() {
+        let mut app = app();
+        app.sources_visible = true;
+        app.provenance = None;
+        app.instruction_candidates = vec![
+            crate::app::InstructionCandidate {
+                path: "/tmp/AGENTS.md".into(),
+                skip: None,
+            },
+            crate::app::InstructionCandidate {
+                path: "/tmp/CLAUDE.md".into(),
+                skip: Some("不可读，首轮跳过"),
+            },
+        ];
+        let rows = compact(&screen(&mut app, 100, 30));
+        assert!(rows.iter().filter(|row| row.contains("宿主未报告")).count() >= 2);
+        assert!(rows.iter().any(|row| row.contains("不可读")));
+        assert!(rows.iter().any(|row| row.contains("以首轮实际加载为准")));
+        assert!(rows.iter().any(|row| row.contains("/tmp/AGENTS.md")));
     }
 
     /// TestBackend repeats a wide character's cell as a symbol plus a blank

@@ -158,6 +158,16 @@ pub struct Provenance {
     pub credentials: Option<CredentialSource>,
 }
 
+/// Parse the optional provenance block without failing the whole handshake.
+/// A malformed optional block degrades to "host did not report".
+fn provenance_or_none<'de, D>(deserializer: D) -> Result<Option<Provenance>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
+}
+
 /// Parsed `nano.hello` payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -184,7 +194,11 @@ pub struct Hello {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment_limits: Option<AttachmentLimits>,
     /// Optional source labels for first-launch provenance (B5 addition).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "provenance_or_none"
+    )]
     pub provenance: Option<Provenance>,
 }
 
@@ -724,6 +738,21 @@ mod tests {
         value.as_object_mut().unwrap().remove("provenance");
         let parsed: Hello = serde_json::from_value(value).unwrap();
         assert!(parsed.provenance.is_none());
+    }
+
+    #[test]
+    fn a_malformed_optional_provenance_does_not_break_the_handshake() {
+        for provenance in [
+            json!({"config": {}}),
+            json!({"credentials": {"configured": true}}),
+            json!({"credentials": {"reference": 123, "configured": true}}),
+            json!("not an object"),
+        ] {
+            let mut value = serde_json::to_value(hello()).unwrap();
+            value["provenance"] = provenance;
+            let parsed: Hello = serde_json::from_value(value).unwrap();
+            assert!(parsed.provenance.is_none());
+        }
     }
 
     #[test]

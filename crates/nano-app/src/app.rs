@@ -471,6 +471,15 @@ pub struct HistoryBrowse {
     saved_cursor: usize,
 }
 
+/// One existing instruction file the first request may load.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstructionCandidate {
+    /// Existing file path.
+    pub path: String,
+    /// Why the official loader may skip it, when known.
+    pub skip: Option<&'static str>,
+}
+
 /// Main application state.
 pub struct App {
     /// Launch options.
@@ -554,7 +563,7 @@ pub struct App {
     /// Source labels reported by the host at handshake (B5).
     pub provenance: Option<Provenance>,
     /// Existing instruction files the first request will load (B5).
-    pub instruction_candidates: Vec<String>,
+    pub instruction_candidates: Vec<InstructionCandidate>,
     /// Whether the first-launch sources panel owns the main view.
     pub sources_visible: bool,
     /// The sources panel is offered once per process.
@@ -1826,6 +1835,16 @@ impl App {
         }
     }
 
+    /// Whether the first-launch sources panel currently owns the main view.
+    /// Schedule, the interactive terminal, and the command palette draw over
+    /// it, so they keep their own input handling.
+    fn sources_owns_view(&self) -> bool {
+        self.sources_visible
+            && !self.schedule.open
+            && !self.panel.is_open()
+            && !self.terminal_active()
+    }
+
     /// Apply one key. Returns whether the screen needs a redraw.
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
@@ -1861,7 +1880,7 @@ impl App {
             self.should_quit = true;
             return true;
         }
-        if self.sources_visible {
+        if self.sources_owns_view() {
             if matches!(key.code, KeyCode::Enter | KeyCode::Esc) {
                 self.sources_visible = false;
                 return true;
@@ -2303,6 +2322,11 @@ impl App {
             self.dispatch_terminal(commands);
             return true;
         }
+        if self.sources_owns_view() {
+            // The panel covers the composer and decisions; a paste must not
+            // edit anything behind it.
+            return false;
+        }
         if self.subagent_active()
             && !self
                 .subagents
@@ -2381,7 +2405,7 @@ impl App {
                 self.provenance = hello.provenance.clone();
                 self.instruction_candidates =
                     instruction_candidates(&hello.cwd, self.cli.dsh_home.as_deref());
-                if !self.sources_shown && self.provenance.is_some() {
+                if !self.sources_shown {
                     self.sources_visible = true;
                     self.sources_shown = true;
                 }
@@ -5707,6 +5731,11 @@ impl App {
             self.dispatch_terminal(commands);
             return true;
         }
+        if self.sources_owns_view() {
+            // The sources panel covers the send button, composer and decision
+            // cards: a click must not submit, focus, or answer behind it.
+            return false;
+        }
         use crossterm::event::{MouseButton, MouseEventKind};
         match mouse.kind {
             MouseEventKind::ScrollUp => self.scroll_at(mouse.column, mouse.row, -1),
@@ -8061,24 +8090,43 @@ fn text_input_event(key: &KeyEvent) -> Option<InputEvent> {
 /// first request. This mirrors the default `agent-instructions` candidate set
 /// (user-global `AGENTS.md`, then the project chain) without reading content;
 /// it answers "where will the rules come from" at first launch, and the
-/// authoritative snapshot replaces it once the first turn loads.
-fn instruction_candidates(cwd: &str, dsh_home: Option<&Path>) -> Vec<String> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+/// authoritative snapshot replaces it once the first turn loads. A profile
+/// override of the candidate set is not reflected here; the panel says so.
+fn instruction_candidates(cwd: &str, dsh_home: Option<&Path>) -> Vec<InstructionCandidate> {
+    let home = env_path("HOME", None);
     let dsh_home = dsh_home
         .map(Path::to_path_buf)
-        .or_else(|| std::env::var_os("DSH_HOME").map(PathBuf::from))
+        .or_else(|| env_path("DSH_HOME", home.as_deref()))
         .or_else(|| home.as_ref().map(|home| home.join(".dsh")));
-    let agents_home = std::env::var_os("DSH_AGENTS_HOME")
-        .map(PathBuf::from)
+    let agents_home = env_path("DSH_AGENTS_HOME", home.as_deref())
         .or_else(|| home.as_ref().map(|home| home.join(".agents")));
     collect_instruction_candidates(Path::new(cwd), dsh_home.as_deref(), agents_home.as_deref())
 }
+
+/// Read a path override from the environment. Empty and whitespace-only
+/// values mean "unset"; a leading `~` expands through `home`.
+fn env_path(name: &str, home: Option<&Path>) -> Option<PathBuf> {
+    let value = std::env::var_os(name)?;
+    let value = value.to_string_lossy();
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(value);
+    if let Ok(rest) = path.strip_prefix("~") {
+        return home.map(|home| home.join(rest));
+    }
+    Some(path)
+}
+
+/// Official loader skips sources above this size.
+const MAX_INSTRUCTION_BYTES: u64 = 1_048_576;
 
 fn collect_instruction_candidates(
     cwd: &Path,
     dsh_home: Option<&Path>,
     agents_home: Option<&Path>,
-) -> Vec<String> {
+) -> Vec<InstructionCandidate> {
     let mut candidates = Vec::new();
     if let Some(path) = dsh_home.map(|home| home.join("AGENTS.md")) {
         push_existing_file(&mut candidates, path);
@@ -8107,9 +8155,6 @@ fn collect_instruction_candidates(
         }
     }
     candidates
-        .into_iter()
-        .map(|path| path.to_string_lossy().into_owned())
-        .collect()
 }
 
 fn project_root(cwd: &Path) -> PathBuf {
@@ -8125,10 +8170,41 @@ fn project_root(cwd: &Path) -> PathBuf {
     }
 }
 
-fn push_existing_file(candidates: &mut Vec<PathBuf>, path: PathBuf) {
-    if path.is_file() {
-        candidates.push(path);
+fn push_existing_file(candidates: &mut Vec<InstructionCandidate>, path: PathBuf) {
+    let display = path.to_string_lossy().into_owned();
+    if candidates.iter().any(|candidate| candidate.path == display) {
+        return;
     }
+    let metadata = match std::fs::metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(_) => {
+            candidates.push(InstructionCandidate {
+                path: display,
+                skip: Some("无法读取属性"),
+            });
+            return;
+        }
+    };
+    if !metadata.is_file() {
+        return;
+    }
+    if metadata.len() > MAX_INSTRUCTION_BYTES {
+        candidates.push(InstructionCandidate {
+            path: display,
+            skip: Some("超过 1 MiB，首轮跳过"),
+        });
+        return;
+    }
+    let skip = if std::fs::File::open(&path).is_err() {
+        Some("不可读，首轮跳过")
+    } else {
+        None
+    };
+    candidates.push(InstructionCandidate {
+        path: display,
+        skip,
+    });
 }
 
 /// Whether the handshake reports one official capability as usable now.
@@ -8204,7 +8280,7 @@ fn decision_key(key: KeyEvent) -> Option<DecisionKey> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::KeyEvent;
+    use crossterm::event::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
     use serde_json::json;
 
     fn app() -> App {
@@ -8267,7 +8343,7 @@ mod tests {
             );
         }
         Hello {
-            protocol: ProtocolVersion { major: 1, minor: 1 },
+            protocol: ProtocolVersion { major: 1, minor: 2 },
             runtime_id: "rt-test".into(),
             generation: 1,
             versions: Versions {
@@ -8354,8 +8430,88 @@ mod tests {
         .iter()
         .map(|path| path.to_string_lossy().into_owned())
         .collect();
-        assert_eq!(found, expected);
+        let paths: Vec<String> = found.into_iter().map(|candidate| candidate.path).collect();
+        assert_eq!(paths, expected);
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn an_unreadable_instruction_candidate_is_marked_as_skipped() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("nano-b5-unreadable-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("create test directory");
+        let path = root.join("AGENTS.md");
+        std::fs::write(&path, "test").expect("write instruction file");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000))
+            .expect("make instruction file unreadable");
+        let mut candidates = Vec::new();
+        push_existing_file(&mut candidates, path.clone());
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].skip, Some("不可读，首轮跳过"));
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).ok();
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_hello_without_provenance_still_opens_the_sources_panel() {
+        let mut app = app();
+        let hello = hello_with_attachments(0);
+        assert!(hello.provenance.is_none());
+        assert!(app.handle_link(LinkEvent::Ready {
+            hello,
+            truncated: false,
+        }));
+        assert!(app.sources_visible);
+        assert!(app.provenance.is_none());
+        assert!(!app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)));
+        assert!(app.drafts.current().is_empty());
+    }
+
+    #[test]
+    fn the_sources_panel_blocks_paste_and_mouse_until_closed() {
+        let mut app = app();
+        app.sources_visible = true;
+        app.drafts.current_mut().set_text("kept");
+        assert!(!app.handle_paste("hidden".to_string()));
+        assert_eq!(app.drafts.current().text(), "kept");
+
+        app.send_area = Rect::new(10, 5, 2, 1);
+        assert!(!app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 10,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        }));
+        assert!(!app.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: 10,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        }));
+        assert_eq!(app.drafts.current().text(), "kept");
+        assert!(app.error.is_none());
+
+        app.sources_visible = false;
+        assert!(app.handle_paste("visible".to_string()));
+        assert_eq!(app.drafts.current().text(), "keptvisible");
+    }
+
+    #[test]
+    fn a_schedule_opened_before_hello_keeps_its_keys() {
+        let mut app = app();
+        app.schedule.open = true;
+        let hello = hello_with_attachments(0);
+        assert!(app.handle_link(LinkEvent::Ready {
+            hello,
+            truncated: false,
+        }));
+        assert!(app.sources_visible);
+        assert!(app.handle_key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL,)));
+        assert!(
+            !app.schedule.open,
+            "Ctrl+G closes the schedule, not the hidden sources panel"
+        );
+        assert!(app.sources_visible);
     }
 
     #[test]
