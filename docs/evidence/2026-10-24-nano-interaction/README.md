@@ -1,6 +1,6 @@
 # 2026-10-24-nano-interaction 证据
 
-- 实现分支：`issue-59`；实现提交 `de1f6e0`，本次审核修复见 PR #60 后续 commit。
+- 实现分支：`issue-59`；实现提交 `de1f6e0`；审核修复 `57ee776`。
 - 终端：tmux PTY（真实终端，`TERM=xterm-256color`），100×36 与 80×30。
 - 主题：Dark（默认，未设置 `NANO_THEME`）。
 - 真实模型：DeepSeek-V4.1-Flash；模型面板中的强度来自官方目录。
