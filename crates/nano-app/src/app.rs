@@ -8057,7 +8057,6 @@ fn text_input_event(key: &KeyEvent) -> Option<InputEvent> {
     }
 }
 
-/// Whether the handshake reports one official capability as usable now.
 /// Existing instruction files that the official baseline will consider on the
 /// first request. This mirrors the default `agent-instructions` candidate set
 /// (user-global `AGENTS.md`, then the project chain) without reading content;
@@ -8132,6 +8131,7 @@ fn push_existing_file(candidates: &mut Vec<PathBuf>, path: PathBuf) {
     }
 }
 
+/// Whether the handshake reports one official capability as usable now.
 fn capability_supported(hello: &Hello, name: &str) -> bool {
     hello
         .capabilities

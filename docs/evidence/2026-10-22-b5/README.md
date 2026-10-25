@@ -1,10 +1,12 @@
 # B5 首启来源面板 · 真实终端证据
 
-- 日期：2026-10-22
-- 分支：`issue-46`
+- 日期：2026-10-25（按共享主题重拍）
+- 分支：`issue-46`（已 rebase 到当前 `main`）
 - 终端：Ghostty 1.3.1，macOS，默认字号；深色 100 列 × 35 行、浅色 60 列 × 30 行
+- 主题：面板使用 `NANO_THEME` 调色板（`accent` / `muted` / `warning` / `fg`）；深浅两套隔离 Ghostty 配置，不读取用户配置
 - 产物：本分支 `cargo build --release -p nano-app` 的 `target/release/nano`
-- 环境：合成 `HOME` / `DSH_HOME` / `NANO_DATA_ROOT` / workdir；启动环境设置假 `DEEPSEEK_API_KEY`，不读写用户真实凭据、会话或桌面
+- 测试：`cargo test --workspace` 全绿（647 通过）；桥接 273 通过 / 5 skip
+- 环境：合成 `HOME` / `DSH_HOME` / `NANO_DATA_ROOT` / workdir；启动环境设置假 `DEEPSEEK_API_KEY`，不读写用户真实凭据、会话或配置
 - 宿主：真实官方 `dsh 0.2.1-rc.2`；本面板出现在 `nano.hello` 之后，不产生模型请求
 
 ## 场景与步骤
@@ -14,6 +16,7 @@
 | `dark-100-sources.png` | 用合成环境安装 profile，`nano --no-install` 启动；workdir 预置 `AGENTS.md`，启动环境设置 `DEEPSEEK_API_KEY`；握手完成后截图 | 面板显示配置 patch 的实际路径、凭据引用 `DEEPSEEK_API_KEY` 与来源「启动环境」、已有规矩文件路径；不显示任何凭据值 |
 | `dark-100-sources-dismissed.png` | 在上图按 Enter | 面板关闭，回到正常主界面；输入区可继续使用 |
 | `light-60-sources.png` | 浅色主题、60 列窗口重复同一启动步骤 | 窄宽度下路径折行不溢出；来源内容一致 |
+| `light-60-sources-dismissed.png` | 在上图按 Enter | 浅色主题下关闭后回到正常主界面；输入区可继续使用 |
 
 ## 检查项
 

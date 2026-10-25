@@ -1059,9 +1059,11 @@ fn draw_skill_preview(lines: &mut Vec<Line<'static>>, app: &App, width: usize) {
 /// and source label, and the official workspace-instruction paths. It never
 /// shows a credential value.
 fn draw_sources_panel(frame: &mut Frame, app: &App, area: Rect) {
+    let colors = app.theme.colors();
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(Span::styled(" 来源 ", Style::default().fg(Color::Cyan)));
+        .border_style(app.theme.border_style())
+        .title(Span::styled(" 来源 ", Style::default().fg(colors.accent)));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if inner.height == 0 || inner.width == 0 {
@@ -1071,7 +1073,7 @@ fn draw_sources_panel(frame: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line<'static>> = Vec::new();
     lines.push(Line::from(Span::styled(
         "本次启动实际使用的来源；凭据只显示引用与来源，不显示值。",
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(colors.muted),
     )));
     match app
         .provenance
@@ -1083,11 +1085,11 @@ fn draw_sources_panel(frame: &mut Frame, app: &App, area: Rect) {
                 "配置",
                 Style::default().add_modifier(Modifier::BOLD),
             )));
-            wrap_block(&mut lines, &config.path, width, 4_096, Color::Reset);
+            wrap_block(&mut lines, &config.path, width, 4_096, colors.fg);
         }
         None => lines.push(Line::from(vec![
             Span::styled("配置  ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::styled("宿主未报告", Style::default().fg(Color::Yellow)),
+            Span::styled("宿主未报告", Style::default().fg(colors.warning)),
         ])),
     }
     match app
@@ -1104,22 +1106,19 @@ fn draw_sources_panel(frame: &mut Frame, app: &App, area: Rect) {
             lines.push(Line::from(vec![
                 Span::styled("凭据  ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(credentials.reference.clone()),
-                Span::styled(format!(" · {state}"), Style::default().fg(Color::DarkGray)),
+                Span::styled(format!(" · {state}"), Style::default().fg(colors.muted)),
             ]));
         }
         None => lines.push(Line::from(vec![
             Span::styled("凭据  ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::styled("宿主未报告", Style::default().fg(Color::Yellow)),
+            Span::styled("宿主未报告", Style::default().fg(colors.warning)),
         ])),
     }
     if app.instructions.available {
         lines.push(Line::from(vec![
             Span::styled("规矩  ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(format!("{} 份", app.instructions.sources.len())),
-            Span::styled(
-                " · Alt+R 查看完整来源",
-                Style::default().fg(Color::DarkGray),
-            ),
+            Span::styled(" · Alt+R 查看完整来源", Style::default().fg(colors.muted)),
         ]));
         for source in app.instructions.sources.iter().take(4) {
             lines.push(Line::from(Span::styled(
@@ -1127,13 +1126,13 @@ fn draw_sources_panel(frame: &mut Frame, app: &App, area: Rect) {
                     &format!("  {} {}", source.action.label(), source.path),
                     width,
                 ),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(colors.muted),
             )));
         }
         if app.instructions.sources.len() > 4 {
             lines.push(Line::from(Span::styled(
                 format!("  … 还有 {} 份", app.instructions.sources.len() - 4),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(colors.muted),
             )));
         }
     } else if !app.instruction_candidates.is_empty() {
@@ -1147,13 +1146,13 @@ fn draw_sources_panel(frame: &mut Frame, app: &App, area: Rect) {
         for path in app.instruction_candidates.iter().take(4) {
             lines.push(Line::from(Span::styled(
                 truncate(&format!("  {path}"), width),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(colors.muted),
             )));
         }
         if app.instruction_candidates.len() > 4 {
             lines.push(Line::from(Span::styled(
                 format!("  … 还有 {} 份", app.instruction_candidates.len() - 4),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(colors.muted),
             )));
         }
     } else {
@@ -1161,13 +1160,13 @@ fn draw_sources_panel(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("规矩  ", Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(
                 "尚未加载（未发现 AGENTS.md / CLAUDE.md）",
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(colors.warning),
             ),
         ]));
     }
     lines.push(Line::from(Span::styled(
         "Enter / Esc 关闭",
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(colors.muted),
     )));
     frame.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
