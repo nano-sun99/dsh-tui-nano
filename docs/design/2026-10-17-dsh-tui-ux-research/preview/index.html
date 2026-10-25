@@ -530,9 +530,9 @@
   }
   function syncChoices() {
     const key=`${state.scene}:${state.questionMode}:${state.choiceEpoch}`
-    if(state.scene==='model') modelPreview.show(key)
-    else if(state.scene==='questions') choicePreview.showQuestions(state.questionMode,key)
-    else if(state.scene==='approval') choicePreview.showApproval(command,key)
+    if(state.scene==='model') { if(choicePreview.pending) choicePreview.hide(); modelPreview.show(key) }
+    else if(state.scene==='questions') { if(modelPreview.pending) modelPreview.hide(); choicePreview.showQuestions(state.questionMode,key) }
+    else if(state.scene==='approval') { if(modelPreview.pending) modelPreview.hide(); choicePreview.showApproval(command,key) }
     else {choicePreview.hide();modelPreview.hide();$('.composer').hidden=false;$('.status').hidden=false}
     $('#question-mode-control').hidden=state.scene!=='questions'
     $('#question-reset').hidden=state.scene!=='questions'
