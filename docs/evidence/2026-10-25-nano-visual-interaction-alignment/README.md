@@ -39,4 +39,5 @@ tmux new-session -d -s nano62 -x 100 -y 36 \
 tmux new-session -d -s nano62light -x 60 -y 30 \
   "cd /tmp/nano62-light-work && NANO_THEME=light <repo>/target/debug/nano --no-install --data-root /tmp/nano62-light-data --cwd /tmp/nano62-light-work"
 # 按键后 tmux capture-pane -p [-e] -t <session>
+# 首次启动若先出现「来源」面板，先按 Esc 关闭，再输入 /model
 ```
