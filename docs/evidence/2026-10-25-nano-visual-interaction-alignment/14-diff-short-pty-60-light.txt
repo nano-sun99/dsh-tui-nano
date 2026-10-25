@@ -1,0 +1,30 @@
+  nano  …/nano62-light-work
+
+
+  ▸ Edit /tmp/nano62-light-work/sample.txt           +1 -1
+  ────────────────────────────────────────────────────────
+    未应用
+       - beta
+       + beta-light
+
+  ▸ 思考 已完成                                      798ms
+
+  ▸ Read /tmp/nano62-light-work/sample.txt +6 行      完成
+    <path>/private/tmp/nano62-light-work/sample.txt</path>
+    <type>file</type>
+    <content>
+
+  ▸ Edit /tmp/nano62-light-work/sample.txt           +1 -1
+  ────────────────────────────────────────────────────────
+    已应用
+         alpha
+       - beta
+       + beta-light
+         gamma
+
+  done
+
+  ────────────────────────────────────────────────────────
+  > 继续提问…                                            ↑
+  ────────────────────────────────────────────────────────
+  权限：workspace-write  已接收        …/nano62-light-work

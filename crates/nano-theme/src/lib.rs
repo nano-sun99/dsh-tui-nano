@@ -84,6 +84,18 @@ pub struct Palette {
     pub diff_add_word_bg: Color,
     /// Diff deleted word background.
     pub diff_del_word_bg: Color,
+    /// `High` effort fill in the model panel.
+    pub effort_high: Color,
+    /// `XHigh` effort fill before its moving highlight.
+    pub effort_xhigh: Color,
+    /// Moving highlight inside the `XHigh` fill.
+    pub effort_xhigh_highlight: Color,
+    /// `Max` effort fill at rest.
+    pub effort_max: Color,
+    /// Bright phase of the `Max` fill pulse.
+    pub effort_max_bright: Color,
+    /// `Max` label during its neon pulse.
+    pub effort_max_label: Color,
 }
 
 /// Frozen dark palette.
@@ -103,6 +115,12 @@ pub const DARK: Palette = Palette {
     diff_del_bg: Color::Rgb(0x38, 0x25, 0x2a),
     diff_add_word_bg: Color::Rgb(0x38, 0x5b, 0x42),
     diff_del_word_bg: Color::Rgb(0x65, 0x36, 0x41),
+    effort_high: Color::Rgb(0x81, 0x90, 0xa8),
+    effort_xhigh: Color::Rgb(0x5d, 0x7f, 0xad),
+    effort_xhigh_highlight: Color::Rgb(0x9b, 0xb8, 0xdf),
+    effort_max: Color::Rgb(0x36, 0x5f, 0x9d),
+    effort_max_bright: Color::Rgb(0x4a, 0x83, 0xd8),
+    effort_max_label: Color::Rgb(0x6f, 0x9c, 0xdd),
 };
 
 /// Frozen light palette.
@@ -122,6 +140,12 @@ pub const LIGHT: Palette = Palette {
     diff_del_bg: Color::Rgb(0xf1, 0xdc, 0xdf),
     diff_add_word_bg: Color::Rgb(0xb6, 0xd6, 0xbc),
     diff_del_word_bg: Color::Rgb(0xe9, 0xba, 0xc3),
+    effort_high: Color::Rgb(0x81, 0x90, 0xa8),
+    effort_xhigh: Color::Rgb(0x5d, 0x7f, 0xad),
+    effort_xhigh_highlight: Color::Rgb(0x9b, 0xb8, 0xdf),
+    effort_max: Color::Rgb(0x36, 0x5f, 0x9d),
+    effort_max_bright: Color::Rgb(0x4a, 0x83, 0xd8),
+    effort_max_label: Color::Rgb(0x6f, 0x9c, 0xdd),
 };
 
 #[cfg(test)]

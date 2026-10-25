@@ -531,6 +531,10 @@ pub struct App {
     pub activity_phase: bool,
     /// Next 500ms indicator transition, when a turn is running.
     pub activity_at: Option<Instant>,
+    /// Start of the `/model` effort animation clock.
+    pub effort_anim_start: Instant,
+    /// Next scheduled `/model` effort animation frame.
+    pub effort_anim_at: Option<Instant>,
     /// Composer send button region from the last draw.
     pub send_area: Rect,
     /// Composer text region from the last draw (inside the borders).
@@ -775,6 +779,8 @@ impl App {
             decision_hits: Vec::new(),
             activity_phase: false,
             activity_at: None,
+            effort_anim_start: Instant::now(),
+            effort_anim_at: None,
             send_area: Rect::default(),
             input_area: Rect::default(),
             input_scroll: 0,
@@ -1636,9 +1642,6 @@ impl App {
         };
         match action {
             PanelAction::OpenModels => self.open_models_panel(),
-            PanelAction::OpenEfforts { provider, model } => {
-                self.panel.set_mode(PanelMode::Efforts { provider, model });
-            }
             PanelAction::OpenPermissions => self.open_permissions_panel(),
             PanelAction::SelectModel {
                 provider,
@@ -7822,6 +7825,17 @@ impl App {
             }
         } else {
             self.subagent_blink_at = None;
+        }
+        if crate::ui::effort_animation_active(self) {
+            match self.effort_anim_at {
+                Some(next) if now < next => {}
+                _ => {
+                    self.effort_anim_at = Some(now + Duration::from_millis(50));
+                    changed = true;
+                }
+            }
+        } else {
+            self.effort_anim_at = None;
         }
         changed |= self.tick_resubscribe();
         changed

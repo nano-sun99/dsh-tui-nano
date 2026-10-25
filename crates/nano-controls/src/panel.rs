@@ -15,13 +15,6 @@ pub enum PanelMode {
     Commands,
     /// Provider-grouped model catalog.
     Models,
-    /// Efforts advertised by one exact model route.
-    Efforts {
-        /// Provider identity.
-        provider: String,
-        /// Model id.
-        model: String,
-    },
     /// Official permission presets.
     Permissions,
 }
@@ -32,14 +25,8 @@ impl PanelMode {
         match self {
             Self::Commands => "命令",
             Self::Models => "模型",
-            Self::Efforts { .. } => "推理强度",
             Self::Permissions => "权限预设",
         }
-    }
-
-    /// Whether typing edits the filter text.
-    pub fn query_enabled(&self) -> bool {
-        !matches!(self, Self::Efforts { .. })
     }
 }
 
@@ -48,13 +35,6 @@ impl PanelMode {
 pub enum PanelAction {
     /// Show the model catalog pane.
     OpenModels,
-    /// Show the effort pane of one exact model route.
-    OpenEfforts {
-        /// Provider identity.
-        provider: String,
-        /// Model id.
-        model: String,
-    },
     /// Show the permission preset pane.
     OpenPermissions,
     /// Execute one official slash line immediately.
@@ -164,13 +144,9 @@ impl Panel {
         self.effort = None;
     }
 
-    /// Escape semantics: the effort pane returns to its model list; other
-    /// panes close.
+    /// Escape semantics: the panel closes without a write.
     pub fn back(&mut self) {
-        match self.mode.clone() {
-            PanelMode::Efforts { .. } => self.set_mode(PanelMode::Models),
-            _ => self.close(),
-        }
+        self.close();
     }
 
     /// Current filter text.
@@ -185,20 +161,16 @@ impl Panel {
 
     /// Append one filter character.
     pub fn push_char(&mut self, character: char) {
-        if self.mode.query_enabled() {
-            self.query.push(character);
-            self.selected = 0;
-            self.effort = None;
-        }
+        self.query.push(character);
+        self.selected = 0;
+        self.effort = None;
     }
 
     /// Remove the last filter character.
     pub fn backspace(&mut self) {
-        if self.mode.query_enabled() {
-            self.query.pop();
-            self.selected = 0;
-            self.effort = None;
-        }
+        self.query.pop();
+        self.selected = 0;
+        self.effort = None;
     }
 
     /// Move the selection up, clamped.
@@ -319,7 +291,6 @@ impl Panel {
         match &self.mode {
             PanelMode::Commands => self.command_rows(controls),
             PanelMode::Models => self.model_rows(controls),
-            PanelMode::Efforts { provider, model } => self.effort_rows(controls, provider, model),
             PanelMode::Permissions => self.permission_rows(controls),
         }
     }
@@ -407,54 +378,6 @@ impl Panel {
                 )),
                 action: PanelAction::Close,
             });
-        }
-        rows
-    }
-
-    fn effort_rows(&self, controls: &ControlsModel, provider: &str, model: &str) -> Vec<PanelRow> {
-        let Some(catalog_model) = controls
-            .catalog()
-            .and_then(|catalog| catalog.find(provider, model))
-        else {
-            return Vec::new();
-        };
-        let current_effort = controls
-            .model
-            .next
-            .as_ref()
-            .filter(|selection| selection.provider == provider && selection.model == model)
-            .and_then(|selection| selection.reasoning_effort.as_deref());
-        let mut rows = vec![PanelRow {
-            group: None,
-            label: "默认".to_string(),
-            detail: catalog_model
-                .reasoning
-                .as_ref()
-                .and_then(|reasoning| reasoning.default_effort_name())
-                .map(|name| format!("使用模型默认强度（{name}）")),
-            current: current_effort.is_none(),
-            disabled: None,
-            action: PanelAction::SelectModel {
-                provider: provider.to_string(),
-                model: model.to_string(),
-                effort: None,
-            },
-        }];
-        if let Some(reasoning) = &catalog_model.reasoning {
-            for effort in &reasoning.efforts {
-                rows.push(PanelRow {
-                    group: None,
-                    label: effort.name.clone(),
-                    detail: effort.description.clone(),
-                    current: current_effort == Some(effort.id.as_str()),
-                    disabled: None,
-                    action: PanelAction::SelectModel {
-                        provider: provider.to_string(),
-                        model: model.to_string(),
-                        effort: Some(effort.id.clone()),
-                    },
-                });
-            }
         }
         rows
     }
@@ -763,31 +686,6 @@ mod tests {
     }
 
     #[test]
-    fn effort_rows_offer_default_plus_only_advertised_ids() {
-        let controls = controls();
-        let mut panel = Panel::new();
-        panel.open(PanelMode::Efforts {
-            provider: "p".into(),
-            model: "chat".into(),
-        });
-        let rows = panel.rows(&controls);
-        let labels: Vec<_> = rows.iter().map(|row| row.label.as_str()).collect();
-        assert_eq!(labels, vec!["默认", "Low", "Max"]);
-        assert!(rows[0].current);
-        assert_eq!(
-            rows[2].action,
-            PanelAction::SelectModel {
-                provider: "p".into(),
-                model: "chat".into(),
-                effort: Some("max".into())
-            }
-        );
-        // The effort pane has no text filter.
-        panel.push_char('x');
-        assert_eq!(panel.query(), "");
-    }
-
-    #[test]
     fn unavailable_commands_show_a_reason_and_do_not_execute() {
         let mut controls = ControlsModel::new();
         controls.set_capabilities(false, false, false);
@@ -872,7 +770,7 @@ mod tests {
     }
 
     #[test]
-    fn navigation_is_clamped_and_escape_returns_from_efforts() {
+    fn navigation_is_clamped_and_escape_closes_the_panel() {
         let controls = controls();
         let mut panel = Panel::new();
         panel.open(PanelMode::Models);
@@ -883,12 +781,6 @@ mod tests {
         panel.move_up();
         panel.move_up();
         assert_eq!(panel.selected(), 0);
-        panel.set_mode(PanelMode::Efforts {
-            provider: "p".into(),
-            model: "chat".into(),
-        });
-        panel.back();
-        assert_eq!(panel.mode(), &PanelMode::Models);
         panel.back();
         assert!(!panel.is_open());
         let _ = controls;
