@@ -449,6 +449,62 @@
       "passed": true
     },
     {
+      "check": "model panel is a bottom layer with one top rule and no full border",
+      "passed": true
+    },
+    {
+      "check": "model panel keeps the transcript and hides input, status and dock",
+      "passed": true
+    },
+    {
+      "check": "model panel stays inside the terminal content width",
+      "passed": true
+    },
+    {
+      "check": "model opens in the default state with an unlit track",
+      "passed": true
+    },
+    {
+      "check": "default header names the model default instead of selecting it",
+      "passed": true
+    },
+    {
+      "check": "right arrow selects the first official level",
+      "passed": true
+    },
+    {
+      "check": "xhigh keeps the designed label and becomes static under reduced motion",
+      "passed": true
+    },
+    {
+      "check": "enter commits the focused level and restores the bottom slots",
+      "passed": true
+    },
+    {
+      "check": "reopening the panel returns to the default state",
+      "passed": true
+    },
+    {
+      "check": "a model with two official levels renders exactly two labels",
+      "passed": true
+    },
+    {
+      "check": "two-level labels sit at the two track ends",
+      "passed": true
+    },
+    {
+      "check": "a model without reasoning metadata shows the unavailable message instead of a track",
+      "passed": true
+    },
+    {
+      "check": "escape cancels without committing and restores the bottom slots",
+      "passed": true
+    },
+    {
+      "check": "model panel and labels stay inside 60 columns",
+      "passed": true
+    },
+    {
       "check": "no remote requests while using the offline specimen",
       "passed": true
     },
