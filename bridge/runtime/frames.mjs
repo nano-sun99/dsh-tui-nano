@@ -188,6 +188,29 @@ export function validateHello(params) {
       throw new ProtocolViolation('hello.attachmentLimits.fileAdmission must be verbatim or unsupported')
     }
   }
+  if (params.provenance !== undefined) {
+    const provenance = params.provenance
+    if (!isPlainObject(provenance)) throw new ProtocolViolation('hello.provenance must be an object')
+    if (provenance.config !== undefined) {
+      if (!isPlainObject(provenance.config)) {
+        throw new ProtocolViolation('hello.provenance.config must be an object')
+      }
+      requireNonEmptyString(provenance.config.path, 'hello.provenance.config.path')
+    }
+    if (provenance.credentials !== undefined) {
+      const credentials = provenance.credentials
+      if (!isPlainObject(credentials)) {
+        throw new ProtocolViolation('hello.provenance.credentials must be an object')
+      }
+      requireNonEmptyString(credentials.reference, 'hello.provenance.credentials.reference')
+      if (typeof credentials.configured !== 'boolean') {
+        throw new ProtocolViolation('hello.provenance.credentials.configured must be a boolean')
+      }
+      if (credentials.source !== undefined && typeof credentials.source !== 'string') {
+        throw new ProtocolViolation('hello.provenance.credentials.source must be a string')
+      }
+    }
+  }
   if (!isPlainObject(capabilities)) throw new ProtocolViolation('hello.capabilities must be an object')
   for (const [name, entry] of Object.entries(capabilities)) {
     if (!isPlainObject(entry)) throw new ProtocolViolation(`capability ${name} must be an object`)

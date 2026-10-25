@@ -275,6 +275,9 @@ def run_scenario(base_env, theme, mode, actions, edit_path):
         tail = session.snapshot()[-600:]
         session.close()
         return None, f"TUI did not become ready; tail={tail!r}"
+    # B5: the one-time first-launch sources panel swallows keys until closed.
+    session.send("\r")
+    time.sleep(0.6)
     try:
         for action in actions:
             if action == "prompt":

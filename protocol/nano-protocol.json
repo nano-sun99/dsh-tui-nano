@@ -1,9 +1,9 @@
 {
   "contract": "dsh-tui-nano/nano-protocol",
-  "contractVersion": "1.1.0",
+  "contractVersion": "1.2.0",
   "protocol": {
     "major": 1,
-    "minor": 1
+    "minor": 2
   },
   "namespace": "nano.*",
   "sourceOfTruth": "This file is the single machine-checkable definition of the Nano host protocol. Both the TypeScript bridge and the Rust runtime load it in tests; method tables, limits, error codes, lifecycle edges, event kinds and fixtures are compared against each implementation so neither side can drift silently.",
@@ -461,7 +461,20 @@
       "session": "sessionFacts",
       "capabilities": "capabilityMap",
       "limits": "limits",
-      "attachmentLimits": "attachmentLimits?"
+      "attachmentLimits": "attachmentLimits?",
+      "provenance": "provenance?"
+    },
+    "provenance": {
+      "config": "configSource?",
+      "credentials": "credentialSource?"
+    },
+    "configSource": {
+      "path": "string"
+    },
+    "credentialSource": {
+      "reference": "string",
+      "configured": "boolean",
+      "source": "string?"
     },
     "attachmentLimits": {
       "maxImageBytes": "integer",
@@ -966,7 +979,9 @@
           "capabilities",
           "limits"
         ],
-        "optional": []
+        "optional": [
+          "provenance"
+        ]
       }
     },
     {
@@ -2764,7 +2779,7 @@
       "params": {
         "protocol": {
           "major": 1,
-          "minor": 1
+          "minor": 2
         },
         "runtimeId": "rt-fixture",
         "generation": 1,
