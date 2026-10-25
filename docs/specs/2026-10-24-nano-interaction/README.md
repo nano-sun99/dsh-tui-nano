@@ -2,7 +2,7 @@
 
 - 组标识：`2026-10-24-nano-interaction`；角色：单份 spec（不拆，用户 2026-10-24 拍板），同时承担总纲与执行规格。
 - 结构选择：保留四组验收（桥接修复、模型单页、命令补全、输入选区）在同一执行 issue 与同一 PR 内串行落地。不拆的原因：三块 UI 共用 `crates/nano-app/src/app.rs`、`ui.rs` 与 `crates/nano-conversation/src/input.rs` 这组热文件，拆开只能在文件边界上互相让路，省不下实施时间；代价是这批改动作为一个整体回滚。
-- 状态：草案（2026-10-24）。
+- 状态：已合入（PR #58）；执行 issue #59；代码 PR #60 已合。
 - 上游：`2026-10-20-nano-v1` 的 S02/S04/S05 已合并；`2026-10-22-nano-visual-followup` 已合并；`ADR-20261022-input-history` 生效中。
 - 下游：无。
 - 合入前提：本 spec 合并后开执行 issue；实施需 Rust 与桥接测试全绿，按 §5 留存证据。
@@ -313,7 +313,7 @@
 - ADR：`docs/decisions/2026-10-22-input-history.md`、`docs/decisions/2026-10-22-nano-theme-scope.md`、`docs/decisions/2026-10-22-independent-tui-theme.md`
 - spec：`docs/specs/2026-10-20-nano-v1/S04-controls.md`、`docs/specs/2026-10-22-nano-visual-followup/README.md`
 - 参考实现：Claude Code 2.1.88（本机归档 `~/Downloads/归档/06-软件与安装包/ClaudeCode/src`）的 `components/ModelPicker.tsx`、`utils/suggestions/commandSuggestions.ts`、`hooks/useTypeahead.tsx`。
-- 执行 issue：待开。
+- 执行 issue：#59（代码 PR #60）。
 
 ## 8. 审核修订记录
 
@@ -332,3 +332,19 @@
 | 9 | minor | 并非所有输入行都有 2 格前缀；notice / 路径 / 只读行不应接受点击定位 | 已改 §3.4.2 / §6 / §4：限定可发送草稿行，其余行不移动光标 |
 | 10 | minor | `Shift+Home/End` 用显示行会与现有逻辑行语义不一致 | 已改 §3.4.3 / §6 / §4：统一用现有 `\n` 逻辑行边界 |
 | 11 | minor | 触发条件未排除子代理输入框 | 已改 §3.3.1 / §4：子代理视图不显示命令补全 |
+
+### 实施期重审（2026-10-25）
+
+用户点「重审」，2 个只读 agent（规格符合性 18 条 + 对抗 10 条）；用户点「改」。处置：
+
+| # | 严重度 | 发现 | 处置 |
+| --- | --- | --- | --- |
+| M1 | major | 灰字未限制在 token 末尾，光标左移后渲染成 `/perissionm`（F1 / 对抗 6） | 已改：ghost 仅在 `cursor == token_end` 时计算与接受；补 token 边界测试 |
+| M2 | major | Shift 扩选到边界会清空既有选区（F2 / 对抗 1） | 已改：Shift 分支始终消费按键；Home/End 先取 anchor 再算 changed；补边界测试 |
+| M3 | major | 冷启动打开 `/model` 丢失显式强度，Enter 悄悄改回模型默认（F3 / 对抗 5） | 已改：目录回包后重跑 `reset_effort_for_focus`；补晚到目录测试 |
+| M4 | major | 补全选中项可移出可见 6 行，Enter 执行屏幕外候选（F4 / 对抗 3） | 已改：弹窗按选中行计算 6 行窗口；补渲染测试 |
+| M5 | major | `Ctrl+U` / 提交 / 打开面板后补全残留，空草稿可被写回并执行（对抗 2 / F7） | 已改：清草稿、提交、开面板统一清 `command_completion`；补测试 |
+| M6 | major | 鼠标点击后不刷新补全，`@file` 接受可能删字（对抗 4 / F13） | 已改：点击与拖动后 `refresh_completion()`；既有映射测试保留 |
+| M7 | major | 证据缺鼠标场景与 Ghostty，README 两处说明与实拍不符（F16-F18） | 已改：补确认态 PTY 证据、修正 02 说明、逐项披露缺口；Ghostty/鼠标实拍仍待补 |
+
+其余 minor（默认圆点、失焦/Esc 清选区、附件锚点、候选描述与原因、dismiss 保持、未使用 API、桥接目录优先与后置占位测试）已按发现逐条处理，见 commit `57ee776`。
