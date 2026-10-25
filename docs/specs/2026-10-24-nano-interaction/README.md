@@ -2,7 +2,7 @@
 
 - 组标识：`2026-10-24-nano-interaction`；角色：单份 spec（不拆，用户 2026-10-24 拍板），同时承担总纲与执行规格。
 - 结构选择：保留四组验收（桥接修复、模型单页、命令补全、输入选区）在同一执行 issue 与同一 PR 内串行落地。不拆的原因：三块 UI 共用 `crates/nano-app/src/app.rs`、`ui.rs` 与 `crates/nano-conversation/src/input.rs` 这组热文件，拆开只能在文件边界上互相让路，省不下实施时间；代价是这批改动作为一个整体回滚。
-- 状态：草案（2026-10-24）。
+- 状态：已合入（PR #58）；执行 issue #59；代码 PR #60 已合。
 - 上游：`2026-10-20-nano-v1` 的 S02/S04/S05 已合并；`2026-10-22-nano-visual-followup` 已合并；`ADR-20261022-input-history` 生效中。
 - 下游：无。
 - 合入前提：本 spec 合并后开执行 issue；实施需 Rust 与桥接测试全绿，按 §5 留存证据。
@@ -313,7 +313,7 @@
 - ADR：`docs/decisions/2026-10-22-input-history.md`、`docs/decisions/2026-10-22-nano-theme-scope.md`、`docs/decisions/2026-10-22-independent-tui-theme.md`
 - spec：`docs/specs/2026-10-20-nano-v1/S04-controls.md`、`docs/specs/2026-10-22-nano-visual-followup/README.md`
 - 参考实现：Claude Code 2.1.88（本机归档 `~/Downloads/归档/06-软件与安装包/ClaudeCode/src`）的 `components/ModelPicker.tsx`、`utils/suggestions/commandSuggestions.ts`、`hooks/useTypeahead.tsx`。
-- 执行 issue：待开。
+- 执行 issue：#59（代码 PR #60）。
 
 ## 8. 审核修订记录
 
