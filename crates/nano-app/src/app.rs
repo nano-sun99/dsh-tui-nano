@@ -1269,6 +1269,7 @@ impl App {
         self.drafts.current_mut().take();
         self.attachments.current_mut().clear();
         self.completion.clear();
+        self.command_completion.clear();
         self.subagent_backups
             .insert(request_id.clone(), (mounted.address.clone(), snapshot));
         let Some(link) = &self.link else {
@@ -1462,6 +1463,7 @@ impl App {
             return;
         }
         self.clear_transient_status();
+        self.dismiss_input_overlays();
         self.panel.open(PanelMode::Commands);
         // Refresh so a command registered or removed since the last read is
         // reflected when the palette opens.
@@ -1531,9 +1533,17 @@ impl App {
         }
     }
 
+    /// Drop transient input overlays when another surface takes focus.
+    fn dismiss_input_overlays(&mut self) {
+        self.drafts.current_mut().clear_selection();
+        self.command_completion.clear();
+        self.cancel_completion();
+    }
+
     /// Open the model pane and refresh its catalog.
     pub fn open_models_panel(&mut self) {
         self.clear_transient_status();
+        self.dismiss_input_overlays();
         if self.panel.is_open() {
             self.panel.set_mode(PanelMode::Models);
         } else {
@@ -1546,6 +1556,7 @@ impl App {
     /// Open the permission pane and re-read the official projection.
     pub fn open_permissions_panel(&mut self) {
         self.clear_transient_status();
+        self.dismiss_input_overlays();
         if self.panel.is_open() {
             self.panel.set_mode(PanelMode::Permissions);
         } else {
@@ -1567,14 +1578,20 @@ impl App {
                 true
             }
             KeyCode::Up => {
+                let before = self.panel.selected();
                 self.panel.move_up();
-                self.panel.reset_effort_for_focus(&self.controls);
+                if self.panel.selected() != before {
+                    self.panel.reset_effort_for_focus(&self.controls);
+                }
                 true
             }
             KeyCode::Down => {
+                let before = self.panel.selected();
                 let rows = self.panel.rows(&self.controls).len();
                 self.panel.move_down(rows);
-                self.panel.reset_effort_for_focus(&self.controls);
+                if self.panel.selected() != before {
+                    self.panel.reset_effort_for_focus(&self.controls);
+                }
                 true
             }
             KeyCode::Left => {
@@ -1670,10 +1687,12 @@ impl App {
         match name {
             "model" => {
                 self.drafts.current_mut().take();
+                self.command_completion.clear();
                 self.open_models_panel();
             }
             "permission" => {
                 self.drafts.current_mut().take();
+                self.command_completion.clear();
                 let preset = args.trim();
                 if preset.is_empty() {
                     self.open_permissions_panel();
@@ -1698,6 +1717,7 @@ impl App {
                     return;
                 }
                 self.drafts.current_mut().take();
+                self.command_completion.clear();
                 self.execute_controls_command(raw.trim_end());
             }
         }
@@ -1975,6 +1995,7 @@ impl App {
                     return true;
                 }
                 KeyCode::Esc => {
+                    self.drafts.current_mut().clear_selection();
                     self.command_completion.dismiss();
                     return true;
                 }
@@ -2009,6 +2030,7 @@ impl App {
                     return true;
                 }
                 KeyCode::Esc => {
+                    self.drafts.current_mut().clear_selection();
                     self.cancel_completion();
                     return true;
                 }
@@ -2025,16 +2047,34 @@ impl App {
             && self.edit_target.is_none()
             && !self.panel.is_open()
         {
-            let changed = match key.code {
-                KeyCode::Left => self.drafts.current_mut().select_left(),
-                KeyCode::Right => self.drafts.current_mut().select_right(),
-                KeyCode::Up => self.drafts.current_mut().select_up(),
-                KeyCode::Down => self.drafts.current_mut().select_down(),
-                KeyCode::Home => self.drafts.current_mut().select_home(),
-                KeyCode::End => self.drafts.current_mut().select_end(),
+            let handled = match key.code {
+                KeyCode::Left => {
+                    self.drafts.current_mut().select_left();
+                    true
+                }
+                KeyCode::Right => {
+                    self.drafts.current_mut().select_right();
+                    true
+                }
+                KeyCode::Up => {
+                    self.drafts.current_mut().select_up();
+                    true
+                }
+                KeyCode::Down => {
+                    self.drafts.current_mut().select_down();
+                    true
+                }
+                KeyCode::Home => {
+                    self.drafts.current_mut().select_home();
+                    true
+                }
+                KeyCode::End => {
+                    self.drafts.current_mut().select_end();
+                    true
+                }
                 _ => false,
             };
-            if changed {
+            if handled {
                 self.refresh_completion();
                 return true;
             }
@@ -2063,6 +2103,7 @@ impl App {
                     self.drafts.current_mut().clear();
                     self.attachments.current_mut().clear();
                     self.completion.clear();
+                    self.command_completion.clear();
                     return true;
                 }
                 KeyCode::Char('j') => {
@@ -3412,6 +3453,9 @@ impl App {
             Pending::ControlsCatalog => match result {
                 Ok(value) => match self.controls.apply_catalog(&value) {
                     Ok(()) => {
+                        if matches!(self.panel.mode(), PanelMode::Models) && self.panel.is_open() {
+                            self.panel.reset_effort_for_focus(&self.controls);
+                        }
                         if self
                             .controls
                             .catalog()
@@ -4192,9 +4236,9 @@ impl App {
         let Some(candidate) = self.command_completion.selected_candidate().cloned() else {
             return;
         };
-        let text = self.drafts.current().text().to_string();
-        let token_end = self.command_completion.token_end().min(text.len());
-        let rest = text
+        let old = self.drafts.current().text().to_string();
+        let token_end = self.command_completion.token_end().min(old.len());
+        let rest = old
             .get(token_end..)
             .unwrap_or_default()
             .trim_start_matches(' ');
@@ -4202,8 +4246,9 @@ impl App {
         let cursor = line.len();
         let mut next = line;
         next.push_str(rest);
-        self.drafts.current_mut().set_text(next);
+        self.drafts.current_mut().set_text(next.clone());
         self.drafts.current_mut().set_cursor(cursor);
+        self.shift_attachment_anchors(&old, &next);
         self.command_completion.clear();
         self.cancel_completion();
         self.history_browse = None;
@@ -4237,6 +4282,10 @@ impl App {
 
     fn refresh_completion(&mut self) {
         self.refresh_command_completion();
+        if self.drafts.current().text().starts_with('/') {
+            self.cancel_completion();
+            return;
+        }
         if self.subagent_active() {
             // Child prompts do not expose the root-only file-reference path.
             self.cancel_completion();
@@ -4858,6 +4907,7 @@ impl App {
             return;
         }
         self.drafts.current_mut().take();
+        self.command_completion.clear();
         self.bash_counter = self.bash_counter.wrapping_add(1);
         let record_id = self.bash_counter;
         self.bash_records
@@ -4902,6 +4952,7 @@ impl App {
             self.jobs_scroll_back = 0;
             self.notice = Some("任务面板已关闭".to_string());
         } else {
+            self.dismiss_input_overlays();
             self.jobs_open = true;
             self.monitor_open = false;
             self.monitor_form = None;
@@ -5751,6 +5802,7 @@ impl App {
         };
         self.scene.focus_mut().reset(FocusId::input());
         self.drafts.current_mut().set_cursor(offset);
+        self.refresh_completion();
         true
     }
 
@@ -5770,6 +5822,7 @@ impl App {
             row,
         ) {
             self.drafts.current_mut().select_to(offset);
+            self.refresh_completion();
         }
     }
 
@@ -5856,6 +5909,7 @@ impl App {
     fn sync_decision_focus(&mut self) {
         let decision = FocusId::new("decision");
         if self.decisions.top().is_some() {
+            self.dismiss_input_overlays();
             self.scene.focus_mut().push(decision);
         } else if self.scene.focus().top() == Some(&decision) {
             self.scene.focus_mut().reset(FocusId::input());
@@ -6106,6 +6160,7 @@ impl App {
 
     /// Open the skills panel over the conversation scene.
     pub fn open_skills_panel(&mut self) {
+        self.dismiss_input_overlays();
         self.scene.focus_mut().push(skills_focus());
         self.clear_skill_preview();
         self.clamp_skill_selection();
@@ -6114,6 +6169,7 @@ impl App {
 
     /// Open the workspace-instruction sources panel.
     pub fn open_instructions_panel(&mut self) {
+        self.dismiss_input_overlays();
         self.scene.focus_mut().push(instructions_focus());
         self.instructions_scroll = 0;
         self.instructions_max_scroll = 0;
@@ -7246,6 +7302,7 @@ impl App {
             self.error = Some("宿主未就绪，无法读取会话列表".to_string());
             return;
         }
+        self.dismiss_input_overlays();
         self.sessions_panel.open = true;
         self.sessions_panel.error = None;
         self.sessions_panel.selected = 0;
@@ -9260,6 +9317,133 @@ mod tests {
         for character in text.chars() {
             app.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
         }
+    }
+
+    #[test]
+    fn moving_left_disables_the_ghost_and_right_moves_the_cursor() {
+        let mut app = controls_state(controls_state_value());
+        type_text(&mut app, "/perm");
+        assert_eq!(app.command_completion.ghost(), Some("ission"));
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        assert_eq!(app.command_completion.ghost(), None);
+        let cursor = app.drafts.current().cursor();
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(app.drafts.current().cursor(), cursor + 1);
+        assert_eq!(app.drafts.current().text(), "/perm");
+    }
+
+    #[test]
+    fn shift_left_at_the_buffer_start_keeps_the_selection() {
+        let mut app = app();
+        app.drafts.current_mut().set_text("abc");
+        for _ in 0..4 {
+            app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT));
+        }
+        assert_eq!(app.drafts.current().selected_text(), Some("abc"));
+    }
+
+    #[test]
+    fn ctrl_u_clears_command_completion_before_enter() {
+        let mut app = controls_state(controls_state_value());
+        type_text(&mut app, "/mo");
+        assert!(app.command_completion.visible());
+        app.handle_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert!(!app.command_completion.visible());
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.drafts.current().is_empty());
+        assert!(!app.panel.is_open());
+    }
+
+    #[test]
+    fn escape_closes_completion_and_clears_the_selection() {
+        let mut app = controls_state(controls_state_value());
+        type_text(&mut app, "/mo");
+        app.drafts.current_mut().set_cursor(1);
+        app.drafts.current_mut().select_to(3);
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(!app.command_completion.visible());
+        assert!(!app.drafts.current().has_selection());
+    }
+
+    #[test]
+    fn opening_the_skills_panel_clears_the_input_selection() {
+        let mut app = app();
+        app.drafts.current_mut().set_text("hello");
+        app.drafts.current_mut().set_cursor(1);
+        app.drafts.current_mut().select_to(3);
+        app.open_skills_panel();
+        assert!(!app.drafts.current().has_selection());
+    }
+
+    #[test]
+    fn a_late_catalog_restores_the_current_explicit_effort() {
+        let mut state = controls_state_value();
+        state["model"]["next"]["reasoningEffort"] = json!("low");
+        let mut app = controls_state(state);
+        app.open_models_panel();
+        assert_eq!(app.panel.effort(), None);
+        app.pending.insert(2, Pending::ControlsCatalog);
+        app.handle_request_done(
+            2,
+            Ok(json!({
+                "default": {"provider": "p", "model": "chat"},
+                "routableProviders": ["p"],
+                "groups": [{
+                    "id": "p",
+                    "name": "Provider",
+                    "models": [{
+                        "id": "chat",
+                        "name": "Chat",
+                        "reasoning": {
+                            "efforts": [
+                                {"id": "low", "name": "Low"},
+                                {"id": "high", "name": "High"}
+                            ],
+                            "defaultEffort": "high"
+                        }
+                    }]
+                }],
+                "failures": []
+            })),
+        );
+        assert_eq!(app.panel.effort(), Some("low"));
+    }
+
+    #[test]
+    fn completion_accept_keeps_text_after_the_token() {
+        let mut app = controls_state(controls_state_value());
+        app.drafts.current_mut().set_text("/mo hello");
+        app.drafts.current_mut().set_cursor(3);
+        app.refresh_completion();
+        assert!(app.command_completion.visible());
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.drafts.current().text(), "/model hello");
+    }
+
+    #[test]
+    fn an_unavailable_candidate_reports_its_reason_without_opening_a_panel() {
+        let mut app = app();
+        app.controls.set_capabilities(false, false, false);
+        type_text(&mut app, "/model");
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(!app.panel.is_open());
+        assert!(app.error.as_deref().unwrap().contains("未组合"));
+    }
+
+    #[test]
+    fn shift_home_selects_the_current_logical_line() {
+        let mut app = app();
+        app.drafts.current_mut().set_text("abc\ndef");
+        app.handle_key(KeyEvent::new(KeyCode::Home, KeyModifiers::SHIFT));
+        assert_eq!(app.drafts.current().selected_text(), Some("def"));
+    }
+
+    #[test]
+    fn ctrl_y_without_a_selection_copies_the_whole_draft() {
+        let mut app = app();
+        app.drafts.current_mut().set_text("hello");
+        app.handle_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL));
+        assert_eq!(app.notice.as_deref(), Some("已发送复制草稿（原文）请求"));
     }
 
     #[test]

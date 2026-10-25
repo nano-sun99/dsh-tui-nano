@@ -2750,44 +2750,56 @@ fn draw_command_completion(frame: &mut Frame, app: &App, area: Rect) {
         .title(title);
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    let width = inner.width.max(1) as usize;
     let mut lines = Vec::new();
+    let total = app.command_completion.candidates().len();
+    let visible = total.min(6);
+    let start = app
+        .command_completion
+        .selected()
+        .saturating_sub(visible / 2)
+        .min(total.saturating_sub(visible));
+    let selected_style = Style::default()
+        .fg(app.theme.colors().fg)
+        .bg(app.theme.colors().selected_bg);
     for (index, candidate) in app
         .command_completion
         .candidates()
         .iter()
-        .take(6)
         .enumerate()
+        .skip(start)
+        .take(visible)
     {
         let selected = index == app.command_completion.selected();
-        let marker = if selected { "▶" } else { " " };
-        let mut text = format!("{marker} /{}", candidate.name);
-        if candidate.kind == crate::command_completion::CandidateKind::Skill {
-            text.push_str(" [技能]");
-        }
-        if let Some(reason) = &candidate.reason {
-            if !candidate.available {
-                text.push_str(" · ");
-                text.push_str(reason);
-            }
-        } else {
-            text.push_str("  ");
-            text.push_str(&candidate.description);
-            if let Some(hint) = &candidate.input_hint {
-                text.push_str(" · 参数 ");
-                text.push_str(hint);
-            }
-        }
-        let style = if !candidate.available {
+        let base = if selected {
+            selected_style
+        } else if !candidate.available {
             Style::default().fg(app.theme.colors().muted)
-        } else if selected {
-            Style::default()
-                .fg(app.theme.colors().fg)
-                .bg(app.theme.colors().selected_bg)
         } else {
             Style::default()
         };
-        lines.push(Line::from(Span::styled(truncate(&text, width), style)));
+        let detail = if selected {
+            selected_style
+        } else {
+            Style::default().fg(app.theme.colors().muted)
+        };
+        let mut spans = vec![Span::styled(if selected { "▶ " } else { "  " }, base)];
+        spans.push(Span::styled(format!("/{}", candidate.name), base));
+        if candidate.kind == crate::command_completion::CandidateKind::Skill {
+            spans.push(Span::styled(" [技能]", detail));
+        }
+        spans.push(Span::styled("  ", detail));
+        let mut description = candidate.description.clone();
+        if let Some(hint) = &candidate.input_hint {
+            description.push_str(" · 参数 ");
+            description.push_str(hint);
+        }
+        spans.push(Span::styled(description, detail));
+        if !candidate.available {
+            if let Some(reason) = &candidate.reason {
+                spans.push(Span::styled(format!(" · {reason}"), detail));
+            }
+        }
+        lines.push(Line::from(spans));
     }
     frame.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
@@ -3079,13 +3091,16 @@ fn effort_line(app: &App) -> String {
             .map(|effort| Some(effort.id.as_str())),
     );
     let current = app.panel.effort();
-    let index = levels
-        .iter()
-        .position(|level| *level == current)
-        .unwrap_or(0);
+    let index = current.and_then(|id| levels.iter().position(|level| *level == Some(id)));
     let dots = if levels.len() <= 5 {
         let marks: String = (0..levels.len())
-            .map(|position| if position == index { '●' } else { '○' })
+            .map(|position| {
+                if Some(position) == index {
+                    '●'
+                } else {
+                    '○'
+                }
+            })
             .collect();
         format!("{marks} ")
     } else {
@@ -3096,7 +3111,10 @@ fn effort_line(app: &App) -> String {
             Some(default) => format!("默认（模型默认：{default}）"),
             None => "默认".to_string(),
         },
-        Some(id) => reasoning.effort_name(id).unwrap_or(id).to_string(),
+        Some(id) => match index {
+            Some(_) => reasoning.effort_name(id).unwrap_or(id).to_string(),
+            None => format!("{id}（目录未声明，提交将用默认）"),
+        },
     };
     format!("强度：{dots}{name} · ← → 调整")
 }
@@ -4571,6 +4589,74 @@ mod tests {
         assert_eq!(input_offset_at(text, width, area, 0, 0, 3, 2, 0), Some(0));
         assert_eq!(input_offset_at(text, width, area, 0, 0, 3, 2, 1), Some(4));
         assert_eq!(input_offset_at(text, width, area, 0, 0, 3, 6, 1), Some(8));
+    }
+
+    #[test]
+    fn the_completion_window_follows_the_selected_row() {
+        let mut app = app();
+        app.controls.set_capabilities(true, true, true);
+        let commands: Vec<_> = (0..10)
+            .map(|index| json!({"name": format!("c{index}"), "description": "test"}))
+            .collect();
+        app.controls
+            .apply_state(&json!({
+                "address": {"rootSessionId": "root"},
+                "model": {"lastUsed": null, "next": null},
+                "permission": {"current": null, "catalog": {"options": [], "defaultOptions": [], "defaultPreset": ""}},
+                "commands": commands
+            }))
+            .expect("state");
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        for _ in 0..7 {
+            app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        }
+        assert_eq!(app.command_completion.selected(), 7);
+        let rows = screen(&mut app, 100, 30);
+        assert!(
+            rows.iter().any(|row| row.trim_start().starts_with("▶ /c7")),
+            "selected row must be visible: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn the_default_effort_draws_no_filled_dot() {
+        let mut app = app();
+        app.controls.set_capabilities(true, true, true);
+        app.controls
+            .apply_state(&json!({
+                "address": {"rootSessionId": "root"},
+                "model": {"lastUsed": null, "next": null},
+                "permission": {"current": null, "catalog": {"options": [], "defaultOptions": [], "defaultPreset": ""}},
+                "commands": []
+            }))
+            .expect("state");
+        app.controls
+            .apply_catalog(&json!({
+                "default": {"provider": "p", "model": "chat"},
+                "routableProviders": ["p"],
+                "groups": [{
+                    "id": "p",
+                    "name": "Provider",
+                    "models": [{
+                        "id": "chat",
+                        "name": "Chat",
+                        "reasoning": {
+                            "efforts": [
+                                {"id": "low", "name": "Low"},
+                                {"id": "high", "name": "High"}
+                            ],
+                            "defaultEffort": "high"
+                        }
+                    }]
+                }],
+                "failures": []
+            }))
+            .expect("catalog");
+        app.panel.open(PanelMode::Models);
+        app.panel.reset_effort_for_focus(&app.controls);
+        let line = effort_line(&app);
+        assert!(line.contains("○○○"), "{line}");
+        assert!(!line.contains('●'), "{line}");
     }
 
     #[test]

@@ -52,6 +52,7 @@ const ADDRESS = { rootSessionId: ROOT }
 function fakeContext(services = {}) {
   const handlers = new Map()
   return {
+    services,
     ...services,
     handlers,
     get(key) {
@@ -239,6 +240,69 @@ test('a composed session controller installs only its own selection hooks', () =
   })
   assert.equal(agentContext.handlers.size, 0)
   assert.deepEqual(service.selection.current, undefined)
+})
+
+test('modelCatalog prefers a controller that really provides it', async () => {
+  const { service } = serviceFor({
+    sessionController: {
+      async modelCatalog() {
+        return {
+          default: { provider: 'controller', model: 'catalog' },
+          routableProviders: [],
+          groups: [],
+          failures: [],
+        }
+      },
+    },
+  })
+  const catalog = await service.modelCatalog()
+  assert.deepEqual(catalog.default, { provider: 'controller', model: 'catalog' })
+})
+
+test('a controller provided after construction does not shadow the fallback', async () => {
+  let hooks = 0
+  const { ctx, service } = serviceFor(
+    {
+      llm: {
+        async listModels() {
+          return [{ id: 'm' }]
+        },
+        async resolveCallConfig(config) {
+          return config
+        },
+      },
+      agentDefaultModel: {
+        currentSelection: () => ({ provider: 'p', model: 'm' }),
+        async saveSelection() {},
+      },
+    },
+    {
+      official: {
+        async buildModelCatalog() {
+          return {
+            default: { provider: 'p', model: 'm' },
+            routableProviders: ['p'],
+            groups: [],
+            failures: [],
+          }
+        },
+        installModelSelection() {
+          hooks += 1
+          return () => {}
+        },
+      },
+    },
+  )
+  ctx.services.sessionController = {
+    async resolveAgent() {
+      return { agent: {} }
+    },
+  }
+  const catalog = await service.modelCatalog()
+  assert.deepEqual(catalog.default, { provider: 'p', model: 'm' })
+  const result = await service.selectModel({ provider: 'p', model: 'm' })
+  assert.deepEqual(result.selected, { provider: 'p', model: 'm' })
+  assert.equal(hooks, 1)
 })
 
 test('a scheduler-only controller does not shadow the official model paths', async () => {

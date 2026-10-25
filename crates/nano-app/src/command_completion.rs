@@ -43,6 +43,7 @@ pub struct CommandCompletion {
     token_end: usize,
     ghost: Option<String>,
     dismissed_query: Option<String>,
+    last_text: String,
 }
 
 impl CommandCompletion {
@@ -54,10 +55,17 @@ impl CommandCompletion {
         commands: &[CommandEntry],
         skills: &[SkillEntry],
     ) {
+        let text_changed = text != self.last_text;
+        if text_changed {
+            self.last_text = text.to_string();
+        }
         let Some((token_end, query)) = first_token(text, cursor) else {
-            self.clear();
+            self.hide();
             return;
         };
+        if text_changed {
+            self.dismissed_query = None;
+        }
         if self.dismissed_query.as_deref() == Some(query.as_str()) {
             self.visible = false;
             self.candidates.clear();
@@ -66,7 +74,6 @@ impl CommandCompletion {
             self.token_end = token_end;
             return;
         }
-        self.dismissed_query = None;
         let mut candidates = command_candidates(commands);
         for skill in skills
             .iter()
@@ -90,7 +97,11 @@ impl CommandCompletion {
         let filtered = filter_candidates(candidates, &query);
         self.query = query.clone();
         self.token_end = token_end;
-        self.ghost = ghost_for(&filtered, &query);
+        self.ghost = if cursor == token_end {
+            ghost_for(&filtered, &query)
+        } else {
+            None
+        };
         self.selected = self.selected.min(filtered.len().saturating_sub(1));
         self.visible = !filtered.is_empty();
         self.candidates = filtered;
@@ -143,15 +154,21 @@ impl CommandCompletion {
         self.ghost = None;
     }
 
-    /// Clear all completion state.
-    pub fn clear(&mut self) {
+    /// Hide the popup while preserving the dismissed query.
+    fn hide(&mut self) {
         self.candidates.clear();
         self.selected = 0;
         self.visible = false;
+        self.ghost = None;
+    }
+
+    /// Clear all completion state.
+    pub fn clear(&mut self) {
+        self.hide();
         self.query.clear();
         self.token_end = 0;
-        self.ghost = None;
         self.dismissed_query = None;
+        self.last_text.clear();
     }
 }
 
@@ -303,10 +320,12 @@ mod tests {
     }
 
     #[test]
-    fn a_unique_prefix_produces_inline_ghost_text() {
+    fn a_unique_prefix_produces_inline_ghost_text_only_at_the_token_end() {
         let mut completion = CommandCompletion::default();
         update(&mut completion, "/perm", 5);
         assert_eq!(completion.ghost(), Some("ission"));
+        update(&mut completion, "/perm", 3);
+        assert_eq!(completion.ghost(), None);
         update(&mut completion, "/com", 4);
         assert_eq!(completion.ghost(), None);
     }
@@ -329,5 +348,16 @@ mod tests {
         assert!(!completion.visible());
         update(&mut completion, "/mod", 4);
         assert!(completion.visible());
+    }
+
+    #[test]
+    fn cursor_movement_without_text_changes_keeps_the_popup_dismissed() {
+        let mut completion = CommandCompletion::default();
+        update(&mut completion, "/mod", 4);
+        completion.dismiss();
+        update(&mut completion, "/mod", 0);
+        assert!(!completion.visible());
+        update(&mut completion, "/mod", 4);
+        assert!(!completion.visible());
     }
 }

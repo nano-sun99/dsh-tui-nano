@@ -175,9 +175,21 @@ impl InputBuffer {
         self.selection().map(|(start, end)| &self.text[start..end])
     }
 
+    /// Normalized selection range, named after the spec's contract.
+    pub fn selection_range(&self) -> Option<(usize, usize)> {
+        self.selection()
+    }
+
     /// Whether a non-empty selection exists.
     pub fn has_selection(&self) -> bool {
         self.selection().is_some()
+    }
+
+    /// Start a selection at the current cursor without moving it.
+    pub fn begin_selection(&mut self) {
+        if self.selection_anchor.is_none() {
+            self.selection_anchor = Some(self.cursor);
+        }
     }
 
     /// Drop the selection without moving the cursor.
@@ -190,9 +202,7 @@ impl InputBuffer {
         let Some(cursor) = self.valid_cursor(cursor) else {
             return false;
         };
-        if self.selection_anchor.is_none() {
-            self.selection_anchor = Some(self.cursor);
-        }
+        self.begin_selection();
         let changed = self.cursor != cursor;
         self.cursor = cursor;
         changed
@@ -238,16 +248,6 @@ impl InputBuffer {
     /// Extend the selection to the end of the logical line.
     pub fn select_end(&mut self) -> bool {
         self.select_to(self.line_end(self.cursor))
-    }
-
-    /// Extend the selection to the buffer start.
-    pub fn select_buffer_start(&mut self) -> bool {
-        self.select_to(0)
-    }
-
-    /// Extend the selection to the buffer end.
-    pub fn select_buffer_end(&mut self) -> bool {
-        self.select_to(self.text.len())
     }
 
     /// Delete the selected range, leaving the cursor at its start.
@@ -400,7 +400,8 @@ impl InputBuffer {
     /// Move to the start of the current display line.
     pub fn move_home(&mut self) -> bool {
         let start = self.line_start(self.cursor);
-        let changed = start != self.cursor || self.selection_anchor.take().is_some();
+        let had_selection = self.selection_anchor.take().is_some();
+        let changed = start != self.cursor || had_selection;
         self.cursor = start;
         changed
     }
@@ -408,21 +409,24 @@ impl InputBuffer {
     /// Move to the end of the current display line.
     pub fn move_end(&mut self) -> bool {
         let end = self.line_end(self.cursor);
-        let changed = end != self.cursor || self.selection_anchor.take().is_some();
+        let had_selection = self.selection_anchor.take().is_some();
+        let changed = end != self.cursor || had_selection;
         self.cursor = end;
         changed
     }
 
     /// Move to the start of the buffer.
     pub fn move_buffer_start(&mut self) -> bool {
-        let changed = self.cursor != 0 || self.selection_anchor.take().is_some();
+        let had_selection = self.selection_anchor.take().is_some();
+        let changed = self.cursor != 0 || had_selection;
         self.cursor = 0;
         changed
     }
 
     /// Move to the end of the buffer.
     pub fn move_buffer_end(&mut self) -> bool {
-        let changed = self.cursor != self.text.len() || self.selection_anchor.take().is_some();
+        let had_selection = self.selection_anchor.take().is_some();
+        let changed = self.cursor != self.text.len() || had_selection;
         self.cursor = self.text.len();
         changed
     }
@@ -819,6 +823,20 @@ mod tests {
         assert_eq!(input.selected_text(), Some("你"));
         assert!(input.select_right());
         assert_eq!(input.selected_text(), Some("你好"));
+    }
+
+    #[test]
+    fn unshifted_home_and_end_clear_the_selection() {
+        let mut input = InputBuffer::from_text("hello world");
+        input.set_cursor(5);
+        assert!(input.select_to(8));
+        assert!(input.move_home());
+        assert!(!input.has_selection());
+
+        input.set_cursor(2);
+        assert!(input.select_to(5));
+        assert!(input.move_end());
+        assert!(!input.has_selection());
     }
 
     #[test]
