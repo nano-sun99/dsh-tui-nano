@@ -189,6 +189,12 @@ mod tests {
         assert_eq!(colors.diff_del_bg, rgb(0x38252a));
         assert_eq!(colors.diff_add_word_bg, rgb(0x385b42));
         assert_eq!(colors.diff_del_word_bg, rgb(0x653641));
+        assert_eq!(colors.effort_high, rgb(0x8190a8));
+        assert_eq!(colors.effort_xhigh, rgb(0x5d7fad));
+        assert_eq!(colors.effort_xhigh_highlight, rgb(0x9bb8df));
+        assert_eq!(colors.effort_max, rgb(0x365f9d));
+        assert_eq!(colors.effort_max_bright, rgb(0x4a83d8));
+        assert_eq!(colors.effort_max_label, rgb(0x6f9cdd));
     }
 
     #[test]
@@ -209,6 +215,12 @@ mod tests {
         assert_eq!(colors.diff_del_bg, rgb(0xf1dcdf));
         assert_eq!(colors.diff_add_word_bg, rgb(0xb6d6bc));
         assert_eq!(colors.diff_del_word_bg, rgb(0xe9bac3));
+        assert_eq!(colors.effort_high, rgb(0x8190a8));
+        assert_eq!(colors.effort_xhigh, rgb(0x5d7fad));
+        assert_eq!(colors.effort_xhigh_highlight, rgb(0x9bb8df));
+        assert_eq!(colors.effort_max, rgb(0x365f9d));
+        assert_eq!(colors.effort_max_bright, rgb(0x4a83d8));
+        assert_eq!(colors.effort_max_label, rgb(0x6f9cdd));
     }
 
     #[test]

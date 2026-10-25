@@ -25,7 +25,7 @@
 ## 覆盖与差距
 
 - 覆盖：`/model` 底部控制层、默认空轨道、官方档位与标签、Enter 回执与底部槽位恢复；100 / 60 列与深 / 浅主题；diff 的标题 → rule → 状态行、整行底色（深 / 浅）、8 视觉行预算与隐藏数。
-- 真实目录没有 `xhigh` 档：XHigh 扫光与 Max 脉冲由 `crates/nano-app/src/ui.rs` 的单测覆盖（`effort_cycles_drive_the_fill_labels_and_animation_gate`）；无 reasoning 模型同样不在真实目录，由同一组单测与 `nano-transcript` 的渲染测试覆盖。
+- 真实目录没有 `xhigh` 档：XHigh 扫光与 Max 脉冲由 `crates/nano-app/src/ui.rs` 的 `effort_cycles_drive_the_fill_labels_and_animation_gate` 覆盖；无 reasoning 模型与不可用行由 `unavailable_and_disabled_models_explain_the_missing_track` 覆盖；diff 的视觉行预算、整行底色与 ZWJ emoji 由 `crates/nano-transcript/src/render.rs` 的渲染测试覆盖。
 - 未拍独立 Ghostty 窗口截图：自动化环境只稳定拿到 PTY 快照，与上一轮证据口径一致。
 
 ## 复跑

@@ -62,14 +62,21 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
         return;
     }
     let child_active = app.subagent_active();
-    let queue_height = if child_active || app.model.inbox().is_empty() {
+    // `/model` owns the bottom band while it is open: the input, status, dock,
+    // queue and activity rows make room for the anchored control layer.
+    let models_panel = app.panel.is_open() && matches!(app.panel.mode(), PanelMode::Models);
+    if models_panel {
+        let rows = app.panel.rows(&app.controls).len();
+        app.panel.clamp(rows);
+    }
+    let queue_height = if models_panel || child_active || app.model.inbox().is_empty() {
         0
     } else {
         (app.model.inbox().len().min(4) as u16) + 1
     };
     // Root decision cards belong to the parent conversation and never take the
     // child composer seat.
-    let decision = !child_active && app.decision_owns_seat();
+    let decision = !models_panel && !child_active && app.decision_owns_seat();
     let completion_height = if !decision && !child_active && app.picker.is_none() {
         if app.command_completion.visible() {
             (app.command_completion.candidates().len().min(6) as u16) + 1
@@ -94,10 +101,11 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
     // The header reserves one blank row beneath the title, matching the
     // design's one-line gap before the transcript.
     let header_height = if child_active { 3 } else { 2 };
-    let activity_height = u16::from(app.activity_kind().is_some());
-    // `/model` owns the bottom band while it is open: the input, status and
-    // dock make room for the anchored control layer.
-    let models_panel = app.panel.is_open() && matches!(app.panel.mode(), PanelMode::Models);
+    let activity_height = if models_panel {
+        0
+    } else {
+        u16::from(app.activity_kind().is_some())
+    };
     let reserved = header_height + 3 + queue_height + completion_height + activity_height;
     let models_height = if models_panel {
         models_panel_height(app, area.height.saturating_sub(reserved))
@@ -3074,9 +3082,14 @@ fn models_panel_height(app: &App, available: u16) -> u16 {
         EffortArea::Levels { .. } => 2,
         _ => 1,
     };
-    let minimum = 4 + effort_rows;
-    let desired = 1 + 1 + rows + 1 + effort_rows;
-    desired.clamp(minimum, available.max(minimum))
+    let warning_rows = u16::from(app.error.is_some());
+    let minimum = 4 + effort_rows + warning_rows;
+    let desired = 1 + 1 + rows + 1 + effort_rows + warning_rows;
+    if available < minimum {
+        available
+    } else {
+        desired.min(available)
+    }
 }
 
 /// Draw `/model` as the bottom control layer that temporarily owns the
@@ -3090,15 +3103,63 @@ fn draw_models_panel(frame: &mut Frame, app: &mut App, area: Rect) {
     let rows = app.panel.rows(&app.controls);
     let selected = app.panel.selected();
     let effort = models_effort_lines(app, width);
-    let fixed = 3 + effort.len();
+    let warning = app.error.as_deref().map(|error| {
+        Line::from(Span::styled(
+            truncate(error, width),
+            Style::default().fg(colors.warning),
+        ))
+    });
+    let warning_rows = usize::from(warning.is_some());
+    let mut lines = Vec::new();
+    if (area.height as usize) < 4 + effort.len() + warning_rows {
+        // A short terminal cannot hold the rules and the list; keep the header,
+        // any panel-level error, the visible row, and the labels that make the
+        // bar readable.
+        lines.push(models_header_line(app, width));
+        if let Some(warning) = warning {
+            lines.push(warning);
+        }
+        let extra = (area.height as usize).saturating_sub(lines.len());
+        let list_budget = extra.saturating_sub(effort.len());
+        if list_budget > 0 {
+            if rows.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    truncate(&empty_panel_reason(app), width),
+                    Style::default().fg(colors.warning),
+                )));
+            } else {
+                let duplicates = duplicate_label_flags(&rows);
+                let offset = selected.saturating_sub(list_budget.saturating_sub(1));
+                for (index, row) in rows.iter().enumerate().skip(offset).take(list_budget) {
+                    lines.push(models_row_line(
+                        row,
+                        index == selected,
+                        width,
+                        colors,
+                        duplicates.get(index).copied().unwrap_or(false),
+                    ));
+                }
+            }
+        }
+        let total_effort = effort.len();
+        let keep = extra.min(total_effort);
+        if keep > 0 {
+            lines.extend(effort.into_iter().skip(total_effort - keep));
+        }
+        frame.render_widget(Paragraph::new(Text::from(lines)), area);
+        return;
+    }
+    let fixed = 3 + warning_rows + effort.len();
     let list_height = (area.height as usize).saturating_sub(fixed).max(1);
     let offset = selected.saturating_sub(list_height.saturating_sub(1));
-    let mut lines = Vec::with_capacity(fixed + list_height);
     lines.push(Line::from(Span::styled(
         "─".repeat(width),
         Style::default().fg(colors.accent),
     )));
     lines.push(models_header_line(app, width));
+    if let Some(warning) = warning {
+        lines.push(warning);
+    }
     if rows.is_empty() {
         lines.push(Line::from(Span::styled(
             truncate(&empty_panel_reason(app), width),
@@ -3116,7 +3177,7 @@ fn draw_models_panel(frame: &mut Frame, app: &mut App, area: Rect) {
             ));
         }
     }
-    while lines.len() < 2 + list_height {
+    while lines.len() < 2 + warning_rows + list_height {
         lines.push(Line::from(""));
     }
     lines.push(Line::from(Span::styled(
@@ -3392,6 +3453,17 @@ fn write_label(
     start: usize,
     style: Style,
 ) {
+    let span = text_width(name).min(cells.len().saturating_sub(start));
+    let mut clear_start = start;
+    while clear_start > 0 && covered[clear_start] {
+        clear_start -= 1;
+    }
+    let clear_end = (start + span).min(cells.len());
+    for index in clear_start..clear_end {
+        covered[index] = false;
+        cells[index] = ' ';
+        styles[index] = style;
+    }
     let mut x = start;
     for character in name.chars() {
         let character_width = character.width().unwrap_or(0);
@@ -3446,17 +3518,6 @@ fn models_row_line(
     show_provider: bool,
 ) -> Line<'static> {
     let marker = if selected { "▶ " } else { "  " };
-    let mut text = format!("{marker}{}", row.label);
-    if show_provider {
-        if let Some(group) = &row.group {
-            text.push_str(" · ");
-            text.push_str(group);
-        }
-    }
-    if let Some(reason) = &row.disabled {
-        text.push_str(" · ");
-        text.push_str(reason);
-    }
     let style = if row.disabled.is_some() {
         Style::default().fg(colors.muted)
     } else if selected {
@@ -3466,7 +3527,25 @@ fn models_row_line(
     } else {
         Style::default().fg(colors.fg)
     };
-    Line::from(Span::styled(truncate(&text, width), style))
+    let base = truncate(&format!("{marker}{}", row.label), width);
+    let mut used = text_width(&base);
+    let mut spans = vec![Span::styled(base, style)];
+    if used < width {
+        if show_provider {
+            if let Some(group) = &row.group {
+                let suffix = truncate(&format!(" · {group}"), width - used);
+                used += text_width(&suffix);
+                spans.push(Span::styled(suffix, Style::default().fg(colors.muted)));
+            }
+        }
+    }
+    if used < width {
+        if let Some(reason) = &row.disabled {
+            let suffix = truncate(&format!(" · {reason}"), width - used);
+            spans.push(Span::styled(suffix, Style::default().fg(colors.muted)));
+        }
+    }
+    Line::from(spans)
 }
 
 fn models_header_line(app: &App, width: usize) -> Line<'static> {
@@ -3530,8 +3609,23 @@ fn current_effort_label(app: &App) -> String {
     let Some(selection) = app.controls.model.next.as_ref() else {
         return "默认".to_string();
     };
-    if selection.reasoning_effort.is_some() {
-        return app.controls.effort_label();
+    if let Some(effort) = selection.reasoning_effort.as_deref() {
+        let advertised = app
+            .controls
+            .catalog()
+            .and_then(|catalog| catalog.reasoning_for(selection))
+            .is_some_and(|reasoning| {
+                reasoning
+                    .efforts
+                    .iter()
+                    .any(|candidate| candidate.id == effort)
+            });
+        let label = app.controls.effort_label();
+        return if advertised {
+            label
+        } else {
+            format!("{label}（目录未声明，提交将用默认）")
+        };
     }
     app.controls
         .catalog()
@@ -3553,7 +3647,11 @@ fn stale_suffix(app: &App) -> Option<&'static str> {
 
 /// Whether the focused effort currently needs animation frames.
 pub(crate) fn effort_animation_active(app: &App) -> bool {
-    if app.reduced_motion || !app.panel.is_open() || !matches!(app.panel.mode(), PanelMode::Models)
+    if app.reduced_motion
+        || app.schedule.open
+        || app.terminal_active()
+        || !app.panel.is_open()
+        || !matches!(app.panel.mode(), PanelMode::Models)
     {
         return false;
     }
@@ -5267,6 +5365,162 @@ mod tests {
             },
         ];
         assert_eq!(duplicate_label_flags(&rows), vec![true, true, false]);
+        let colors = Theme::Dark.colors();
+        let line = models_row_line(&rows[0], true, 80, colors, true);
+        assert!(
+            line.spans
+                .iter()
+                .any(|span| span.content.contains("Alpha") && span.style.fg == Some(colors.muted)),
+            "provider suffix stays muted: {line:?}"
+        );
+    }
+
+    #[test]
+    fn shrinking_the_catalog_clamps_the_models_selection() {
+        let mut app = app();
+        open_models(&mut app);
+        app.panel.move_down(3);
+        app.panel.move_down(3);
+        assert_eq!(app.panel.selected(), 2);
+        app.controls
+            .apply_catalog(&json!({
+                "default": {"provider": "p", "model": "chat"},
+                "routableProviders": ["p"],
+                "groups": [{
+                    "id": "p",
+                    "name": "Provider",
+                    "models": [{"id": "chat", "name": "Chat"}]
+                }],
+                "failures": []
+            }))
+            .expect("smaller catalog");
+        let rows = screen(&mut app, 100, 30);
+        let joined = compact(&rows);
+        assert_eq!(app.panel.selected(), 0);
+        assert!(
+            joined.iter().any(|row| row.contains("▶Chat")),
+            "the surviving row stays visible: {joined:?}"
+        );
+        assert!(
+            joined
+                .iter()
+                .any(|row| row.contains("强度：该模型未声明（不可调）")),
+            "the effort area follows the clamped row: {joined:?}"
+        );
+    }
+
+    #[test]
+    fn an_unadvertised_explicit_effort_is_labelled_as_default_on_submit() {
+        let mut app = app();
+        app.controls.set_capabilities(true, true, true);
+        app.controls
+            .apply_state(&json!({
+                "address": {"rootSessionId": "root"},
+                "model": {"lastUsed": null, "next": {"provider": "p", "model": "chat", "reasoningEffort": "max"}},
+                "permission": {"current": null, "catalog": {"options": [], "defaultOptions": [], "defaultPreset": ""}},
+                "commands": []
+            }))
+            .expect("state");
+        app.controls
+            .apply_catalog(&json!({
+                "default": {"provider": "p", "model": "chat"},
+                "routableProviders": ["p"],
+                "groups": [{
+                    "id": "p",
+                    "name": "Provider",
+                    "models": [{"id": "chat", "name": "Chat", "reasoning": {
+                        "efforts": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}],
+                        "defaultEffort": "low"
+                    }}]
+                }],
+                "failures": []
+            }))
+            .expect("catalog");
+        app.panel.open(PanelMode::Models);
+        let header = models_header_text(&app);
+        assert!(
+            header.contains("max（目录未声明，提交将用默认）"),
+            "the panel warns before the silent default: {header}"
+        );
+    }
+
+    #[test]
+    fn unavailable_and_disabled_models_explain_the_missing_track() {
+        let mut app = app();
+        open_models(&mut app);
+        app.panel.move_down(3);
+        assert!(matches!(effort_area(&app), EffortArea::Unavailable));
+        let lines = models_effort_lines(&app, 40);
+        assert!(
+            lines[0].to_string().contains("该模型未声明（不可调）"),
+            "{lines:?}"
+        );
+        app.panel.move_down(3);
+        assert!(matches!(effort_area(&app), EffortArea::Disabled));
+        let lines = models_effort_lines(&app, 40);
+        assert!(lines[0].to_string().contains("强度：—"), "{lines:?}");
+    }
+
+    #[test]
+    fn enter_on_a_failed_provider_shows_its_reason_inside_the_panel() {
+        let mut app = app();
+        open_models(&mut app);
+        app.panel.move_down(3);
+        app.panel.move_down(3);
+        assert!(app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        assert!(app.error.is_some());
+        let rows = screen(&mut app, 100, 30);
+        let joined = compact(&rows);
+        assert!(
+            joined.iter().any(|row| row.contains("nocredentials")),
+            "the failure reason is visible while the status bar is hidden: {joined:?}"
+        );
+    }
+
+    #[test]
+    fn overlapping_wide_effort_labels_keep_the_active_label() {
+        let colors = Theme::Dark.colors();
+        let levels = vec![
+            ("low".to_string(), "低".to_string()),
+            ("mid".to_string(), "中".to_string()),
+            ("high".to_string(), "高".to_string()),
+            ("max".to_string(), "极高".to_string()),
+        ];
+        let line = effort_labels_line(&levels, Some(3), 5, colors, 0, true);
+        assert!(
+            line.to_string().contains("极高"),
+            "the active label stays whole: {line:?}"
+        );
+    }
+
+    #[test]
+    fn effort_animation_stops_when_full_screen_views_cover_the_panel() {
+        let mut app = app();
+        open_models(&mut app);
+        for _ in 0..3 {
+            app.panel.cycle_effort(&app.controls, 1);
+        }
+        assert!(effort_animation_active(&app));
+        app.schedule.open = true;
+        assert!(!effort_animation_active(&app));
+        app.schedule.open = false;
+        assert!(effort_animation_active(&app));
+    }
+
+    #[test]
+    fn a_short_terminal_keeps_the_effort_labels() {
+        let mut app = app();
+        open_models(&mut app);
+        let rows = screen(&mut app, 100, 10);
+        let joined = compact(&rows);
+        assert!(
+            joined.iter().any(|row| row.contains("模型")),
+            "header survives: {joined:?}"
+        );
+        assert!(
+            joined.iter().any(|row| row.contains("LowHighXHighMax")),
+            "labels survive a short terminal: {joined:?}"
+        );
     }
 
     #[test]

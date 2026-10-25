@@ -12,7 +12,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::diff::{DiffLine, DiffLineKind, DiffView};
-use crate::display::{char_width, display_text, elide, wrap_line};
+use crate::display::{char_width, display_text, elide, line_width, wrap_line, wrap_row_count};
 use crate::model::{Entry, EntryKind, PreviewEntry, TranscriptModel};
 use crate::scroll::{EntryOffset, ScrollState};
 use crate::tool::{
@@ -868,7 +868,7 @@ fn render_diff_body(
     let total: usize = rows
         .iter()
         .map(|row| match row {
-            DiffRow::Line(line) => wrap_line(&line.text, text_width).len(),
+            DiffRow::Line(line) => wrap_row_count(&line.text, text_width),
             DiffRow::Separator(_) => 1,
         })
         .sum();
@@ -893,8 +893,13 @@ fn render_diff_body(
     }
     let hidden = total.saturating_sub(shown);
     if hidden > 0 {
+        let suffix = if expanded {
+            "（超出显示上限）"
+        } else {
+            " · 点击展开"
+        };
         output.lines.push(Line::from(Span::styled(
-            format!("  … 还有 {hidden} 行 · 点击展开"),
+            format!("  … 还有 {hidden} 行{suffix}"),
             muted(theme),
         )));
         output.hits.push(toggle_hit(record));
@@ -1001,7 +1006,7 @@ fn render_diff_line(
             }
             spans.push(Span::styled(run, style));
         }
-        let used = 7 + row.chars().map(char_width).sum::<usize>();
+        let used = 7 + line_width(&row);
         if used < width {
             spans.push(Span::styled(" ".repeat(width - used), blank_style));
         }
@@ -1731,7 +1736,7 @@ mod tests {
         for line in &rendered.lines {
             let line_bg = line.spans.iter().find_map(|span| span.style.bg);
             if line_bg == Some(colors.diff_add_bg) || line_bg == Some(colors.diff_del_bg) {
-                let width = line.to_string().chars().map(char_width).sum::<usize>();
+                let width = crate::display::line_width(&line.to_string());
                 assert_eq!(width, 40, "diff row fills the content width: {line:?}");
                 assert_eq!(
                     line.spans.last().and_then(|span| span.style.bg),
@@ -1764,6 +1769,56 @@ mod tests {
             "state follows the rule: {:?}",
             lines[title + 2]
         );
+    }
+
+    #[test]
+    fn an_oversized_diff_line_reports_the_true_hidden_row_count() {
+        let long = "x".repeat(4200);
+        let collapsed = render_one(diff_entry("a\n", &format!("a\n{long}")), false, 8);
+        let hidden = collapsed
+            .lines
+            .iter()
+            .map(Line::to_string)
+            .find(|line| line.contains("还有"))
+            .expect("hidden count");
+        assert!(hidden.contains("还有 4193 行"), "{hidden}");
+        let expanded = render_one(diff_entry("a\n", &format!("a\n{long}")), true, 8);
+        let hidden = expanded
+            .lines
+            .iter()
+            .map(Line::to_string)
+            .find(|line| line.contains("还有"))
+            .expect("expanded cap notice");
+        assert!(hidden.contains("超出显示上限"), "{hidden}");
+        assert!(hidden.contains("还有 200 行"), "{hidden}");
+    }
+
+    #[test]
+    fn diff_rows_with_emoji_still_fill_the_content_width() {
+        let entry = diff_entry("a\n", "a\n👨‍👩‍👧 x\n");
+        let rendered = render_one(entry, true, 40);
+        let colors = Theme::Dark.colors();
+        let mut checked = false;
+        for line in &rendered.lines {
+            if line
+                .spans
+                .iter()
+                .any(|span| span.style.bg == Some(colors.diff_add_bg))
+            {
+                checked = true;
+                assert_eq!(
+                    crate::display::line_width(&line.to_string()),
+                    40,
+                    "emoji row fills the content width: {line:?}"
+                );
+                assert_eq!(
+                    line.spans.last().and_then(|span| span.style.bg),
+                    Some(colors.diff_add_bg),
+                    "trailing cells keep the row background: {line:?}"
+                );
+            }
+        }
+        assert!(checked, "the added row was rendered");
     }
 
     #[test]
