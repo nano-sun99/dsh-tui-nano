@@ -558,6 +558,9 @@ def main():
     def drive(title, theme):
         if args.capture_only:
             return
+        # B5: dismiss the one-time first-launch sources panel before driving.
+        send_key(title, KEY_CODES["return"])
+        time.sleep(0.8)
         accent = hex_rgb(THEMES[theme]["accent"])
         for _ in range(10):
             probe = root / "drive-probe.png"
