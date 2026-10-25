@@ -2,7 +2,7 @@
 
 - 组标识：`2026-10-25-nano-visual-interaction-alignment`；角色：单份 spec，总纲与执行规格合一。
 - 结构选择：不拆（用户 2026-10-25 选择）。保留两个实施波次：先完成 `/model` 底部控制层，再完成 transcript / diff 视觉对齐；仍是一份 spec、一个执行 issue、一个实现 PR。原因：两波都改 `crates/nano-app/src/ui.rs`，diff 波改 `crates/nano-transcript/src/render.rs`，拆分会增加共享热文件的合入协调。
-- 状态：草案；执行 issue：待开。
+- 状态：已合入（PR #61）；执行 issue：#62；代码 PR #63 已合。
 - 视觉权威：[现有系统交互稿](../../design/2026-10-17-dsh-tui-ux-research/preview/index.html)及其说明；其中 `/model` 场景是本次新增的设计入口。
 - 上游：`2026-10-24-nano-interaction`、`2026-10-22-nano-visual-followup`、`ADR-20261022-independent-tui-theme`（现行，生效中）、`ADR-20261022-nano-theme-scope`（已被前一条取代，仅作历史）。
 - ADR 关系：沿用 `ADR-20261022-independent-tui-theme`；本次无新增、无取代。High / XHigh / Max 三个前景色落在该 ADR 已授权的共享 Palette 范围内。

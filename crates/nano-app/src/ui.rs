@@ -62,14 +62,21 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
         return;
     }
     let child_active = app.subagent_active();
-    let queue_height = if child_active || app.model.inbox().is_empty() {
+    // `/model` owns the bottom band while it is open: the input, status, dock,
+    // queue and activity rows make room for the anchored control layer.
+    let models_panel = app.panel.is_open() && matches!(app.panel.mode(), PanelMode::Models);
+    if models_panel {
+        let rows = app.panel.rows(&app.controls).len();
+        app.panel.clamp(rows);
+    }
+    let queue_height = if models_panel || child_active || app.model.inbox().is_empty() {
         0
     } else {
         (app.model.inbox().len().min(4) as u16) + 1
     };
     // Root decision cards belong to the parent conversation and never take the
     // child composer seat.
-    let decision = !child_active && app.decision_owns_seat();
+    let decision = !models_panel && !child_active && app.decision_owns_seat();
     let completion_height = if !decision && !child_active && app.picker.is_none() {
         if app.command_completion.visible() {
             (app.command_completion.candidates().len().min(6) as u16) + 1
@@ -94,15 +101,29 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
     // The header reserves one blank row beneath the title, matching the
     // design's one-line gap before the transcript.
     let header_height = if child_active { 3 } else { 2 };
-    let activity_height = u16::from(app.activity_kind().is_some());
-    let bottom_height = if decision {
+    let activity_height = if models_panel {
+        0
+    } else {
+        u16::from(app.activity_kind().is_some())
+    };
+    let reserved = header_height + 3 + queue_height + completion_height + activity_height;
+    let models_height = if models_panel {
+        models_panel_height(app, area.height.saturating_sub(reserved))
+    } else {
+        0
+    };
+    let status_height = u16::from(!models_panel);
+    let dock_height = if models_panel { 0 } else { dock_height };
+    let bottom_height = if models_panel {
+        models_height
+    } else if decision {
         decision_height(app, area.width, area.height)
     } else {
         input_height(app, area.width)
     };
     // Ordinary state: activity sits above the composer. Decision state: the
     // card takes the seat first, then the activity row, then the status bar.
-    let (activity_slot, bottom_slot) = if decision {
+    let (activity_slot, bottom_slot) = if decision && !models_panel {
         (bottom_height, activity_height)
     } else {
         (activity_height, bottom_height)
@@ -116,7 +137,7 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
             Constraint::Length(completion_height),
             Constraint::Length(activity_slot),
             Constraint::Length(bottom_slot),
-            Constraint::Length(1),
+            Constraint::Length(status_height),
             Constraint::Length(dock_height),
         ])
         .split(area);
@@ -145,20 +166,26 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
     if completion_height > 0 {
         draw_completion(frame, app, layout[3]);
     }
-    if decision {
+    if decision && !models_panel {
         draw_decision(frame, app, layout[4]);
         draw_activity(frame, app, layout[5]);
     } else {
         app.decision_area = Rect::default();
         app.decision_hits.clear();
         draw_activity(frame, app, layout[4]);
-        draw_input(frame, app, layout[5]);
+        if models_panel {
+            draw_models_panel(frame, app, layout[5]);
+        } else {
+            draw_input(frame, app, layout[5]);
+        }
     }
-    draw_status(frame, app, layout[6], area.width);
+    if status_height > 0 {
+        draw_status(frame, app, layout[6], area.width);
+    }
     if dock_height > 0 {
         draw_subagent_dock(frame, app, layout[7]);
     }
-    if app.panel.is_open() {
+    if app.panel.is_open() && !models_panel {
         draw_panel(frame, app, full);
     }
 }
@@ -3154,8 +3181,7 @@ fn draw_panel(frame: &mut Frame, app: &mut App, area: Rect) {
             }
         }
     }
-    let effort = matches!(app.panel.mode(), PanelMode::Models).then(|| effort_line(app));
-    let fixed_count = 1 + usize::from(effort.is_some());
+    let fixed_count = 1;
     let height = (lines.len() as u16 + fixed_count as u16 + 2)
         .min(area.height.saturating_sub(2))
         .max(3);
@@ -3185,12 +3211,6 @@ fn draw_panel(frame: &mut Frame, app: &mut App, area: Rect) {
         },
     );
     let mut fixed = Vec::new();
-    if let Some(effort) = effort {
-        fixed.push(Line::from(Span::styled(
-            effort,
-            Style::default().fg(app.theme.colors().muted),
-        )));
-    }
     fixed.push(Line::from(Span::styled(
         panel_footer(app),
         Style::default().fg(app.theme.colors().muted),
@@ -3205,95 +3225,606 @@ fn draw_panel(frame: &mut Frame, app: &mut App, area: Rect) {
     );
 }
 
-/// Copy one line of effort text for the focused model.
-fn effort_line(app: &App) -> String {
+/// Height of the anchored `/model` control layer.
+fn models_panel_height(app: &App, available: u16) -> u16 {
+    let rows = app.panel.rows(&app.controls).len().max(1) as u16;
+    let effort_rows = match effort_area(app) {
+        EffortArea::Levels { .. } => 2,
+        _ => 1,
+    };
+    let warning_rows = u16::from(app.error.is_some());
+    let minimum = 4 + effort_rows + warning_rows;
+    let desired = 1 + 1 + rows + 1 + effort_rows + warning_rows;
+    if available < minimum {
+        available
+    } else {
+        desired.min(available)
+    }
+}
+
+/// Draw `/model` as the bottom control layer that temporarily owns the
+/// input, status, and dock band.
+fn draw_models_panel(frame: &mut Frame, app: &mut App, area: Rect) {
+    if area.height == 0 || area.width == 0 {
+        return;
+    }
+    let colors = app.theme.colors();
+    let width = area.width as usize;
+    let rows = app.panel.rows(&app.controls);
+    let selected = app.panel.selected();
+    let effort = models_effort_lines(app, width);
+    let warning = app.error.as_deref().map(|error| {
+        Line::from(Span::styled(
+            truncate(error, width),
+            Style::default().fg(colors.warning),
+        ))
+    });
+    let warning_rows = usize::from(warning.is_some());
+    let mut lines = Vec::new();
+    if (area.height as usize) < 4 + effort.len() + warning_rows {
+        // A short terminal cannot hold the rules and the list; keep the header,
+        // any panel-level error, the visible row, and the labels that make the
+        // bar readable.
+        lines.push(models_header_line(app, width));
+        if let Some(warning) = warning {
+            lines.push(warning);
+        }
+        let extra = (area.height as usize).saturating_sub(lines.len());
+        let list_budget = extra.saturating_sub(effort.len());
+        if list_budget > 0 {
+            if rows.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    truncate(&empty_panel_reason(app), width),
+                    Style::default().fg(colors.warning),
+                )));
+            } else {
+                let duplicates = duplicate_label_flags(&rows);
+                let offset = selected.saturating_sub(list_budget.saturating_sub(1));
+                for (index, row) in rows.iter().enumerate().skip(offset).take(list_budget) {
+                    lines.push(models_row_line(
+                        row,
+                        index == selected,
+                        width,
+                        colors,
+                        duplicates.get(index).copied().unwrap_or(false),
+                    ));
+                }
+            }
+        }
+        let total_effort = effort.len();
+        let keep = extra.min(total_effort);
+        if keep > 0 {
+            lines.extend(effort.into_iter().skip(total_effort - keep));
+        }
+        frame.render_widget(Paragraph::new(Text::from(lines)), area);
+        return;
+    }
+    let fixed = 3 + warning_rows + effort.len();
+    let list_height = (area.height as usize).saturating_sub(fixed).max(1);
+    let offset = selected.saturating_sub(list_height.saturating_sub(1));
+    lines.push(Line::from(Span::styled(
+        "─".repeat(width),
+        Style::default().fg(colors.accent),
+    )));
+    lines.push(models_header_line(app, width));
+    if let Some(warning) = warning {
+        lines.push(warning);
+    }
+    if rows.is_empty() {
+        lines.push(Line::from(Span::styled(
+            truncate(&empty_panel_reason(app), width),
+            Style::default().fg(colors.warning),
+        )));
+    } else {
+        let duplicates = duplicate_label_flags(&rows);
+        for (index, row) in rows.iter().enumerate().skip(offset).take(list_height) {
+            lines.push(models_row_line(
+                row,
+                index == selected,
+                width,
+                colors,
+                duplicates.get(index).copied().unwrap_or(false),
+            ));
+        }
+    }
+    while lines.len() < 2 + warning_rows + list_height {
+        lines.push(Line::from(""));
+    }
+    lines.push(Line::from(Span::styled(
+        "─".repeat(width),
+        Style::default().fg(colors.rule),
+    )));
+    lines.extend(effort);
+    frame.render_widget(Paragraph::new(Text::from(lines)), area);
+}
+
+/// Which official effort choices the focused model advertises.
+enum EffortArea {
+    /// The focused row is unavailable or is not a model.
+    Disabled,
+    /// The route advertises no reasoning metadata.
+    Unavailable,
+    /// Official efforts in adapter order; `None` means the default state.
+    Levels {
+        levels: Vec<(String, String)>,
+        selected: Option<usize>,
+    },
+}
+
+fn effort_area(app: &App) -> EffortArea {
     let rows = app.panel.rows(&app.controls);
     let Some(row) = rows.get(app.panel.selected()) else {
-        return "强度：—".to_string();
+        return EffortArea::Disabled;
     };
+    if row.disabled.is_some() {
+        return EffortArea::Disabled;
+    }
     let (provider, model) = match &row.action {
         PanelAction::SelectModel {
             provider, model, ..
         } => (provider.as_str(), model.as_str()),
-        _ => return "强度：—".to_string(),
+        _ => return EffortArea::Disabled,
     };
-    if row.disabled.is_some() {
-        return "强度：—".to_string();
-    }
     let Some(model) = app
         .controls
         .catalog()
         .and_then(|catalog| catalog.find(provider, model))
     else {
-        return "强度：—".to_string();
+        return EffortArea::Disabled;
     };
     let Some(reasoning) = &model.reasoning else {
-        return "强度：该模型未声明（不可调）".to_string();
+        return EffortArea::Unavailable;
     };
     if reasoning.efforts.is_empty() {
-        return "强度：该模型未声明（不可调）".to_string();
+        return EffortArea::Unavailable;
     }
-    let mut levels: Vec<Option<&str>> = vec![None];
-    levels.extend(
+    let selected = app.panel.effort().and_then(|current| {
         reasoning
             .efforts
             .iter()
-            .map(|effort| Some(effort.id.as_str())),
-    );
-    let current = app.panel.effort();
-    let index = current.and_then(|id| levels.iter().position(|level| *level == Some(id)));
-    let dots = if levels.len() <= 5 {
-        let marks: String = (0..levels.len())
-            .map(|position| {
-                if Some(position) == index {
-                    '●'
-                } else {
-                    '○'
-                }
-            })
-            .collect();
-        format!("{marks} ")
-    } else {
-        String::new()
-    };
-    let name = match current {
-        None => match reasoning.default_effort_name() {
-            Some(default) => format!("默认（模型默认：{default}）"),
-            None => "默认".to_string(),
-        },
-        Some(id) => match index {
-            Some(_) => reasoning.effort_name(id).unwrap_or(id).to_string(),
-            None => format!("{id}（目录未声明，提交将用默认）"),
-        },
-    };
-    format!("强度：{dots}{name} · ← → 调整")
+            .position(|effort| effort.id == current)
+    });
+    EffortArea::Levels {
+        levels: reasoning
+            .efforts
+            .iter()
+            .map(|effort| (effort.id.clone(), effort.name.clone()))
+            .collect(),
+        selected,
+    }
 }
 
-fn panel_footer(app: &App) -> &'static str {
-    if matches!(app.panel.mode(), PanelMode::Models) {
-        "↑↓ 选择 · ← → 调强度 · Enter 确认 · Esc 返回 · 输入筛选"
-    } else {
-        "↑↓ 选择 · Enter 确认 · Esc 返回 · 输入筛选"
+fn models_effort_lines(app: &App, width: usize) -> Vec<Line<'static>> {
+    let colors = app.theme.colors();
+    match effort_area(app) {
+        EffortArea::Disabled => vec![Line::from(Span::styled(
+            "强度：—",
+            Style::default().fg(colors.muted),
+        ))],
+        EffortArea::Unavailable => vec![Line::from(Span::styled(
+            "强度：该模型未声明（不可调）",
+            Style::default().fg(colors.muted),
+        ))],
+        EffortArea::Levels { levels, selected } => {
+            let phase = effort_phase(app);
+            vec![
+                effort_bar_line(app, &levels, selected, width, phase),
+                effort_labels_line(&levels, selected, width, colors, phase, app.reduced_motion),
+            ]
+        }
     }
+}
+
+fn effort_phase(app: &App) -> u64 {
+    if app.reduced_motion {
+        0
+    } else {
+        app.effort_anim_start.elapsed().as_millis() as u64
+    }
+}
+
+/// One cell-high bar. The unfilled track uses the rule role; the filled part
+/// uses the official level role. `XHigh` sweeps a highlight and `Max` pulses
+/// between two palette shades; reduced motion freezes both.
+fn effort_bar_line(
+    app: &App,
+    levels: &[(String, String)],
+    selected: Option<usize>,
+    width: usize,
+    phase: u64,
+) -> Line<'static> {
+    let colors = app.theme.colors();
+    let level_id = selected.map(|index| levels[index].0.as_str()).unwrap_or("");
+    let filled = match selected {
+        Some(index) if levels.len() > 1 => {
+            ((index as f64 / (levels.len() - 1) as f64) * width as f64).round() as usize
+        }
+        Some(_) => width,
+        None => 0,
+    };
+    let highlight = if !app.reduced_motion && level_id.eq_ignore_ascii_case("xhigh") && filled > 0 {
+        let travel = width as i64 + 16;
+        Some((phase / 70) as i64 % travel - 8)
+    } else {
+        None
+    };
+    let pulse = if !app.reduced_motion && level_id.eq_ignore_ascii_case("max") {
+        effort_pulse(phase)
+    } else {
+        0.0
+    };
+    let fill_style = |column: usize| -> Style {
+        let base = match level_id.to_ascii_lowercase().as_str() {
+            "low" => colors.muted,
+            "high" => colors.effort_high,
+            "xhigh" => colors.effort_xhigh,
+            "max" => mix_color(colors.effort_max, colors.effort_max_bright, pulse),
+            _ => colors.muted,
+        };
+        let color = match highlight {
+            Some(center) if (column as i64 - center).abs() <= 3 => colors.effort_xhigh_highlight,
+            _ => base,
+        };
+        Style::default().bg(color)
+    };
+    let track = Style::default().bg(colors.rule);
+    if width == 0 {
+        return Line::from("");
+    }
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut start = 0usize;
+    let mut current = if filled > 0 { fill_style(0) } else { track };
+    for column in 1..=width {
+        let style = if column == width || column >= filled {
+            track
+        } else {
+            fill_style(column)
+        };
+        if style != current {
+            spans.push(Span::styled(" ".repeat(column - start), current));
+            start = column;
+            current = style;
+        }
+    }
+    if start < width {
+        spans.push(Span::styled(" ".repeat(width - start), current));
+    }
+    Line::from(spans)
+}
+
+/// Official labels positioned over the same anchors as the bar fill.
+fn effort_labels_line(
+    levels: &[(String, String)],
+    selected: Option<usize>,
+    width: usize,
+    colors: &nano_theme::Palette,
+    phase: u64,
+    reduced_motion: bool,
+) -> Line<'static> {
+    if width == 0 {
+        return Line::from("");
+    }
+    let mut cells = vec![' '; width];
+    let mut styles = vec![Style::default().fg(colors.muted); width];
+    let mut covered = vec![false; width];
+    let mut placed_end = 0usize;
+    for index in 0..levels.len() {
+        if selected == Some(index) {
+            continue;
+        }
+        let name = &levels[index].1;
+        let (start, end) = label_span(name, index, levels.len(), width);
+        if placed_end > 0 && start <= placed_end {
+            continue;
+        }
+        write_label(
+            &mut cells,
+            &mut styles,
+            &mut covered,
+            name,
+            start,
+            Style::default().fg(colors.muted),
+        );
+        placed_end = end;
+    }
+    if let Some(index) = selected {
+        let name = &levels[index].1;
+        let (start, _) = label_span(name, index, levels.len(), width);
+        let id = levels[index].0.to_ascii_lowercase();
+        let color = if id == "max" {
+            if reduced_motion {
+                colors.effort_max_label
+            } else {
+                mix_color(
+                    colors.effort_max_label,
+                    colors.fg,
+                    effort_pulse(phase) * 0.45,
+                )
+            }
+        } else {
+            colors.accent
+        };
+        write_label(
+            &mut cells,
+            &mut styles,
+            &mut covered,
+            name,
+            start,
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        );
+    }
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut run = String::new();
+    let mut current = styles[0];
+    for x in 0..width {
+        if covered[x] {
+            continue;
+        }
+        if styles[x] != current && !run.is_empty() {
+            spans.push(Span::styled(std::mem::take(&mut run), current));
+            current = styles[x];
+        }
+        run.push(cells[x]);
+    }
+    if !run.is_empty() {
+        spans.push(Span::styled(run, current));
+    }
+    if spans.is_empty() {
+        spans.push(Span::raw(""));
+    }
+    Line::from(spans)
+}
+
+fn label_span(name: &str, index: usize, count: usize, width: usize) -> (usize, usize) {
+    let len = text_width(name).min(width);
+    if width == 0 {
+        return (0, 0);
+    }
+    let start = if count <= 1 {
+        width.saturating_sub(len) / 2
+    } else if index == 0 {
+        0
+    } else if index + 1 == count {
+        width.saturating_sub(len)
+    } else {
+        let anchor = ((index as f64 / (count - 1) as f64) * (width.saturating_sub(1)) as f64)
+            .round() as usize;
+        anchor.saturating_sub(len / 2)
+    };
+    let start = start.min(width.saturating_sub(len));
+    (start, start + len)
+}
+
+fn write_label(
+    cells: &mut [char],
+    styles: &mut [Style],
+    covered: &mut [bool],
+    name: &str,
+    start: usize,
+    style: Style,
+) {
+    let span = text_width(name).min(cells.len().saturating_sub(start));
+    let mut clear_start = start;
+    while clear_start > 0 && covered[clear_start] {
+        clear_start -= 1;
+    }
+    let clear_end = (start + span).min(cells.len());
+    for index in clear_start..clear_end {
+        covered[index] = false;
+        cells[index] = ' ';
+        styles[index] = style;
+    }
+    let mut x = start;
+    for character in name.chars() {
+        let character_width = character.width().unwrap_or(0);
+        if character_width == 0 {
+            continue;
+        }
+        if x + character_width > cells.len() {
+            break;
+        }
+        cells[x] = character;
+        styles[x] = style;
+        for offset in 1..character_width {
+            covered[x + offset] = true;
+        }
+        x += character_width;
+    }
+}
+
+fn effort_pulse(phase: u64) -> f32 {
+    let period = 1200.0;
+    let angle = (phase as f64 % period) / period * std::f64::consts::TAU;
+    ((1.0 - angle.cos()) / 2.0) as f32
+}
+
+fn mix_color(from: Color, to: Color, factor: f32) -> Color {
+    match (from, to) {
+        (Color::Rgb(fr, fg, fb), Color::Rgb(tr, tg, tb)) => {
+            let factor = factor.clamp(0.0, 1.0);
+            let blend =
+                |a: u8, b: u8| -> u8 { (a as f32 + (b as f32 - a as f32) * factor).round() as u8 };
+            Color::Rgb(blend(fr, tr), blend(fg, tg), blend(fb, tb))
+        }
+        _ => from,
+    }
+}
+
+/// `true` when this row shares its label with another provider's row, so the
+/// provider name must be appended to keep the two choices distinct.
+fn duplicate_label_flags(rows: &[PanelRow]) -> Vec<bool> {
+    rows.iter()
+        .map(|row| {
+            row.group.is_some() && rows.iter().filter(|other| other.label == row.label).count() > 1
+        })
+        .collect()
+}
+
+fn models_row_line(
+    row: &PanelRow,
+    selected: bool,
+    width: usize,
+    colors: &nano_theme::Palette,
+    show_provider: bool,
+) -> Line<'static> {
+    let marker = if selected { "▶ " } else { "  " };
+    let style = if row.disabled.is_some() {
+        Style::default().fg(colors.muted)
+    } else if selected {
+        Style::default()
+            .fg(colors.accent)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(colors.fg)
+    };
+    let base = truncate(&format!("{marker}{}", row.label), width);
+    let mut used = text_width(&base);
+    let mut spans = vec![Span::styled(base, style)];
+    if used < width {
+        if show_provider {
+            if let Some(group) = &row.group {
+                let suffix = truncate(&format!(" · {group}"), width - used);
+                used += text_width(&suffix);
+                spans.push(Span::styled(suffix, Style::default().fg(colors.muted)));
+            }
+        }
+    }
+    if used < width {
+        if let Some(reason) = &row.disabled {
+            let suffix = truncate(&format!(" · {reason}"), width - used);
+            spans.push(Span::styled(suffix, Style::default().fg(colors.muted)));
+        }
+    }
+    Line::from(spans)
+}
+
+fn models_header_line(app: &App, width: usize) -> Line<'static> {
+    let colors = app.theme.colors();
+    let left = "模型";
+    let right = models_header_text(app);
+    let left_width = text_width(left);
+    let right = truncate(&right, width.saturating_sub(left_width + 2).max(1));
+    let gap = width.saturating_sub(left_width + text_width(&right)).max(1);
+    Line::from(vec![
+        Span::styled(
+            left.to_string(),
+            Style::default()
+                .fg(colors.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" ".repeat(gap)),
+        Span::styled(right, Style::default().fg(colors.muted)),
+    ])
+}
+
+fn models_header_text(app: &App) -> String {
+    let mut text = format!(
+        "当前：{} · {}",
+        current_model_label(app),
+        current_effort_label(app)
+    );
+    if let Some(suffix) = stale_suffix(app) {
+        text.push_str(suffix);
+    }
+    text
+}
+
+/// The current model's display name. The provider is appended only when two
+/// catalog models share the same name and the identity would be ambiguous.
+fn current_model_label(app: &App) -> String {
+    let Some(selection) = app.controls.model.next.as_ref() else {
+        return app.controls.model_label();
+    };
+    let Some(catalog) = app.controls.catalog() else {
+        return app.controls.model_label();
+    };
+    let Some(model) = catalog.find(&selection.provider, &selection.model) else {
+        return app.controls.model_label();
+    };
+    let duplicate = catalog
+        .groups
+        .iter()
+        .flat_map(|group| group.models.iter())
+        .filter(|candidate| candidate.name == model.name)
+        .count()
+        > 1;
+    if duplicate {
+        format!("{} · {}", model.name, selection.provider)
+    } else {
+        model.name.clone()
+    }
+}
+
+fn current_effort_label(app: &App) -> String {
+    let Some(selection) = app.controls.model.next.as_ref() else {
+        return "默认".to_string();
+    };
+    if let Some(effort) = selection.reasoning_effort.as_deref() {
+        let advertised = app
+            .controls
+            .catalog()
+            .and_then(|catalog| catalog.reasoning_for(selection))
+            .is_some_and(|reasoning| {
+                reasoning
+                    .efforts
+                    .iter()
+                    .any(|candidate| candidate.id == effort)
+            });
+        let label = app.controls.effort_label();
+        return if advertised {
+            label
+        } else {
+            format!("{label}（目录未声明，提交将用默认）")
+        };
+    }
+    app.controls
+        .catalog()
+        .and_then(|catalog| catalog.reasoning_for(selection))
+        .and_then(|reasoning| reasoning.default_effort_name())
+        .map(|name| format!("默认（模型默认：{name}）"))
+        .unwrap_or_else(|| "默认".to_string())
+}
+
+fn stale_suffix(app: &App) -> Option<&'static str> {
+    if app.controls.catalog_stale() {
+        Some(" · 目录可能过期")
+    } else if app.controls.state_error().is_some() {
+        Some(" · 状态可能过期")
+    } else {
+        None
+    }
+}
+
+/// Whether the focused effort currently needs animation frames.
+pub(crate) fn effort_animation_active(app: &App) -> bool {
+    if app.reduced_motion
+        || app.schedule.open
+        || app.terminal_active()
+        || !app.panel.is_open()
+        || !matches!(app.panel.mode(), PanelMode::Models)
+    {
+        return false;
+    }
+    match effort_area(app) {
+        EffortArea::Levels {
+            levels,
+            selected: Some(index),
+        } => {
+            let id = levels[index].0.to_ascii_lowercase();
+            id == "xhigh" || id == "max"
+        }
+        _ => false,
+    }
+}
+
+fn panel_footer(_app: &App) -> &'static str {
+    "↑↓ 选择 · Enter 确认 · Esc 返回 · 输入筛选"
 }
 
 /// One-line header describing the current official value for this pane.
 fn panel_header(app: &App) -> String {
     match app.panel.mode() {
-        PanelMode::Models | PanelMode::Efforts { .. } => {
-            let stale = if app.controls.catalog_stale() {
-                " · 目录可能过期"
-            } else if app.controls.state_error().is_some() {
-                " · 状态可能过期"
-            } else {
-                ""
-            };
-            format!(
-                "当前：{} · 强度 {}{stale}",
-                app.controls.model_label(),
-                app.controls.effort_label()
-            )
-        }
+        PanelMode::Models => models_header_text(app),
         PanelMode::Permissions => {
             let permission = app.controls.permission();
             let default = if permission.catalog.default_preset.is_empty() {
@@ -3335,7 +3866,6 @@ fn empty_panel_reason(app: &App) -> String {
                 format!("官方模型目录为空（或没有匹配「{}」）", app.panel.query())
             }
         }
-        PanelMode::Efforts { .. } => "该模型没有可用的强度目录（目录可能未加载）".to_string(),
         PanelMode::Permissions => {
             if let Some(error) = app.controls.state_error() {
                 format!("控制状态读取失败：{error}（保留上次值，可能过期）")
@@ -4814,14 +5344,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn the_default_effort_draws_no_filled_dot() {
-        let mut app = app();
+    fn open_models(app: &mut App) {
         app.controls.set_capabilities(true, true, true);
         app.controls
             .apply_state(&json!({
                 "address": {"rootSessionId": "root"},
-                "model": {"lastUsed": null, "next": null},
+                "model": {"lastUsed": null, "next": {"provider": "p", "model": "chat"}},
                 "permission": {"current": null, "catalog": {"options": [], "defaultOptions": [], "defaultPreset": ""}},
                 "commands": []
             }))
@@ -4833,26 +5361,362 @@ mod tests {
                 "groups": [{
                     "id": "p",
                     "name": "Provider",
-                    "models": [{
-                        "id": "chat",
-                        "name": "Chat",
-                        "reasoning": {
-                            "efforts": [
-                                {"id": "low", "name": "Low"},
-                                {"id": "high", "name": "High"}
-                            ],
-                            "defaultEffort": "high"
-                        }
-                    }]
+                    "models": [
+                        {
+                            "id": "chat",
+                            "name": "Chat",
+                            "description": "long description",
+                            "reasoning": {
+                                "efforts": [
+                                    {"id": "low", "name": "Low"},
+                                    {"id": "high", "name": "High"},
+                                    {"id": "xhigh", "name": "XHigh"},
+                                    {"id": "max", "name": "Max"}
+                                ],
+                                "defaultEffort": "high"
+                            }
+                        },
+                        {"id": "plain", "name": "Plain"}
+                    ]
+                }],
+                "failures": [{"id": "third-party", "name": "Third Party", "message": "no credentials"}]
+            }))
+            .expect("catalog");
+        app.panel.open(PanelMode::Models);
+        app.panel.reset_effort_for_focus(&app.controls);
+    }
+
+    fn buffer(app: &mut App, width: u16, height: u16) -> ratatui::buffer::Buffer {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal
+            .draw(|frame| draw(frame, app))
+            .expect("draw the frame");
+        terminal.backend().buffer().clone()
+    }
+
+    #[test]
+    fn the_models_panel_is_a_bottom_layer_with_official_rows_only() {
+        let mut app = app();
+        open_models(&mut app);
+        let rows = screen(&mut app, 100, 30);
+        let joined = compact(&rows);
+        assert!(
+            !joined.iter().any(|row| row.contains("权限：工作区写入")),
+            "status bar hidden: {joined:?}"
+        );
+        assert!(
+            !joined.iter().any(|row| row.contains(">继续提问")),
+            "composer hidden: {joined:?}"
+        );
+        assert!(
+            joined.iter().any(|row| {
+                row.contains("模型")
+                    && row.contains("当前：Chat")
+                    && row.contains("默认（模型默认：High）")
+            }),
+            "header names the model default: {joined:?}"
+        );
+        assert!(
+            joined.iter().any(|row| {
+                row.contains("Low")
+                    && row.contains("High")
+                    && row.contains("XHigh")
+                    && row.contains("Max")
+            }),
+            "official labels drawn: {joined:?}"
+        );
+        assert!(
+            !joined.iter().any(|row| row.contains("（当前）")),
+            "no current marker: {joined:?}"
+        );
+        assert!(
+            !joined.iter().any(|row| row.contains("Provider")),
+            "no provider group title: {joined:?}"
+        );
+        assert!(
+            !joined.iter().any(|row| row.contains("longdescription")),
+            "no model detail: {joined:?}"
+        );
+        assert!(
+            joined.iter().any(|row| {
+                row.contains("ThirdParty（目录读取失败）") && row.contains("nocredentials")
+            }),
+            "failure row keeps its reason: {joined:?}"
+        );
+    }
+
+    #[test]
+    fn the_default_effort_keeps_the_official_track_unlit() {
+        let mut app = app();
+        open_models(&mut app);
+        let colors = *app.theme.colors();
+        let frame = buffer(&mut app, 100, 30);
+        let labels_y = (0..30)
+            .find(|y| {
+                (0..100)
+                    .map(|x| frame[(x, *y)].symbol())
+                    .collect::<String>()
+                    .contains("XHigh")
+            })
+            .expect("labels row");
+        let bar_y = labels_y - 1;
+        for x in 2..98 {
+            assert_eq!(
+                frame[(x, bar_y)].bg,
+                colors.rule,
+                "default track is unlit at {x}"
+            );
+        }
+        assert!(!effort_animation_active(&app));
+    }
+
+    #[test]
+    fn effort_cycles_drive_the_fill_labels_and_animation_gate() {
+        let mut app = app();
+        open_models(&mut app);
+        let colors = *app.theme.colors();
+        app.panel.cycle_effort(&app.controls, 1);
+        assert!(matches!(
+            effort_area(&app),
+            EffortArea::Levels {
+                selected: Some(0),
+                ..
+            }
+        ));
+        assert!(!effort_animation_active(&app));
+        app.panel.cycle_effort(&app.controls, 1);
+        app.panel.cycle_effort(&app.controls, 1);
+        assert!(effort_animation_active(&app));
+        let levels = match effort_area(&app) {
+            EffortArea::Levels { levels, .. } => levels,
+            _ => unreachable!("chat advertises efforts"),
+        };
+        let backgrounds = |line: &Line<'static>| -> Vec<Color> {
+            line.spans.iter().filter_map(|span| span.style.bg).collect()
+        };
+        let sweep_a = effort_bar_line(&app, &levels, Some(2), 40, 560);
+        let sweep_b = effort_bar_line(&app, &levels, Some(2), 40, 1050);
+        assert!(backgrounds(&sweep_a).contains(&colors.effort_xhigh_highlight));
+        assert_ne!(backgrounds(&sweep_a), backgrounds(&sweep_b));
+        app.panel.cycle_effort(&app.controls, 1);
+        let pulse_a = effort_bar_line(&app, &levels, Some(3), 40, 0);
+        let pulse_b = effort_bar_line(&app, &levels, Some(3), 40, 600);
+        assert_ne!(backgrounds(&pulse_a), backgrounds(&pulse_b));
+        app.reduced_motion = true;
+        assert!(!effort_animation_active(&app));
+        let still = effort_bar_line(&app, &levels, Some(2), 40, 600);
+        assert!(!backgrounds(&still).contains(&colors.effort_xhigh_highlight));
+    }
+
+    #[test]
+    fn effort_labels_keep_the_current_level_visible_at_narrow_widths() {
+        let colors = Theme::Dark.colors();
+        let levels = vec![
+            ("low".to_string(), "Low".to_string()),
+            ("high".to_string(), "High".to_string()),
+            ("xhigh".to_string(), "XHigh".to_string()),
+            ("max".to_string(), "Max".to_string()),
+        ];
+        let line = effort_labels_line(&levels, Some(2), 60, colors, 0, true);
+        assert!(line.to_string().contains("XHigh"), "{line:?}");
+        assert!(line.spans.iter().any(|span| {
+            span.style.fg == Some(colors.accent) && span.content.contains("XHigh")
+        }));
+        let narrow = effort_labels_line(&levels, Some(2), 16, colors, 0, true);
+        assert!(
+            narrow.to_string().contains("XHigh"),
+            "current label survives a narrow track: {narrow:?}"
+        );
+    }
+
+    #[test]
+    fn duplicate_model_names_gain_the_provider_name() {
+        let rows = vec![
+            PanelRow {
+                group: Some("Alpha".into()),
+                label: "Chat".into(),
+                detail: None,
+                current: false,
+                disabled: None,
+                action: PanelAction::Close,
+            },
+            PanelRow {
+                group: Some("Beta".into()),
+                label: "Chat".into(),
+                detail: None,
+                current: false,
+                disabled: None,
+                action: PanelAction::Close,
+            },
+            PanelRow {
+                group: Some("Alpha".into()),
+                label: "Solo".into(),
+                detail: None,
+                current: false,
+                disabled: None,
+                action: PanelAction::Close,
+            },
+        ];
+        assert_eq!(duplicate_label_flags(&rows), vec![true, true, false]);
+        let colors = Theme::Dark.colors();
+        let line = models_row_line(&rows[0], true, 80, colors, true);
+        assert!(
+            line.spans
+                .iter()
+                .any(|span| span.content.contains("Alpha") && span.style.fg == Some(colors.muted)),
+            "provider suffix stays muted: {line:?}"
+        );
+    }
+
+    #[test]
+    fn shrinking_the_catalog_clamps_the_models_selection() {
+        let mut app = app();
+        open_models(&mut app);
+        app.panel.move_down(3);
+        app.panel.move_down(3);
+        assert_eq!(app.panel.selected(), 2);
+        app.controls
+            .apply_catalog(&json!({
+                "default": {"provider": "p", "model": "chat"},
+                "routableProviders": ["p"],
+                "groups": [{
+                    "id": "p",
+                    "name": "Provider",
+                    "models": [{"id": "chat", "name": "Chat"}]
+                }],
+                "failures": []
+            }))
+            .expect("smaller catalog");
+        let rows = screen(&mut app, 100, 30);
+        let joined = compact(&rows);
+        assert_eq!(app.panel.selected(), 0);
+        assert!(
+            joined.iter().any(|row| row.contains("▶Chat")),
+            "the surviving row stays visible: {joined:?}"
+        );
+        assert!(
+            joined
+                .iter()
+                .any(|row| row.contains("强度：该模型未声明（不可调）")),
+            "the effort area follows the clamped row: {joined:?}"
+        );
+    }
+
+    #[test]
+    fn an_unadvertised_explicit_effort_is_labelled_as_default_on_submit() {
+        let mut app = app();
+        app.controls.set_capabilities(true, true, true);
+        app.controls
+            .apply_state(&json!({
+                "address": {"rootSessionId": "root"},
+                "model": {"lastUsed": null, "next": {"provider": "p", "model": "chat", "reasoningEffort": "max"}},
+                "permission": {"current": null, "catalog": {"options": [], "defaultOptions": [], "defaultPreset": ""}},
+                "commands": []
+            }))
+            .expect("state");
+        app.controls
+            .apply_catalog(&json!({
+                "default": {"provider": "p", "model": "chat"},
+                "routableProviders": ["p"],
+                "groups": [{
+                    "id": "p",
+                    "name": "Provider",
+                    "models": [{"id": "chat", "name": "Chat", "reasoning": {
+                        "efforts": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}],
+                        "defaultEffort": "low"
+                    }}]
                 }],
                 "failures": []
             }))
             .expect("catalog");
         app.panel.open(PanelMode::Models);
-        app.panel.reset_effort_for_focus(&app.controls);
-        let line = effort_line(&app);
-        assert!(line.contains("○○○"), "{line}");
-        assert!(!line.contains('●'), "{line}");
+        let header = models_header_text(&app);
+        assert!(
+            header.contains("max（目录未声明，提交将用默认）"),
+            "the panel warns before the silent default: {header}"
+        );
+    }
+
+    #[test]
+    fn unavailable_and_disabled_models_explain_the_missing_track() {
+        let mut app = app();
+        open_models(&mut app);
+        app.panel.move_down(3);
+        assert!(matches!(effort_area(&app), EffortArea::Unavailable));
+        let lines = models_effort_lines(&app, 40);
+        assert!(
+            lines[0].to_string().contains("该模型未声明（不可调）"),
+            "{lines:?}"
+        );
+        app.panel.move_down(3);
+        assert!(matches!(effort_area(&app), EffortArea::Disabled));
+        let lines = models_effort_lines(&app, 40);
+        assert!(lines[0].to_string().contains("强度：—"), "{lines:?}");
+    }
+
+    #[test]
+    fn enter_on_a_failed_provider_shows_its_reason_inside_the_panel() {
+        let mut app = app();
+        open_models(&mut app);
+        app.panel.move_down(3);
+        app.panel.move_down(3);
+        assert!(app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        assert!(app.error.is_some());
+        let rows = screen(&mut app, 100, 30);
+        let joined = compact(&rows);
+        assert!(
+            joined.iter().any(|row| row.contains("nocredentials")),
+            "the failure reason is visible while the status bar is hidden: {joined:?}"
+        );
+    }
+
+    #[test]
+    fn overlapping_wide_effort_labels_keep_the_active_label() {
+        let colors = Theme::Dark.colors();
+        let levels = vec![
+            ("low".to_string(), "低".to_string()),
+            ("mid".to_string(), "中".to_string()),
+            ("high".to_string(), "高".to_string()),
+            ("max".to_string(), "极高".to_string()),
+        ];
+        let line = effort_labels_line(&levels, Some(3), 5, colors, 0, true);
+        assert!(
+            line.to_string().contains("极高"),
+            "the active label stays whole: {line:?}"
+        );
+    }
+
+    #[test]
+    fn effort_animation_stops_when_full_screen_views_cover_the_panel() {
+        let mut app = app();
+        open_models(&mut app);
+        for _ in 0..3 {
+            app.panel.cycle_effort(&app.controls, 1);
+        }
+        assert!(effort_animation_active(&app));
+        app.schedule.open = true;
+        assert!(!effort_animation_active(&app));
+        app.schedule.open = false;
+        assert!(effort_animation_active(&app));
+    }
+
+    #[test]
+    fn a_short_terminal_keeps_the_effort_labels() {
+        let mut app = app();
+        open_models(&mut app);
+        let rows = screen(&mut app, 100, 10);
+        let joined = compact(&rows);
+        assert!(
+            joined.iter().any(|row| row.contains("模型")),
+            "header survives: {joined:?}"
+        );
+        assert!(
+            joined.iter().any(|row| row.contains("LowHighXHighMax")),
+            "labels survive a short terminal: {joined:?}"
+        );
     }
 
     #[test]

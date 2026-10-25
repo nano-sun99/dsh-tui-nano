@@ -12,7 +12,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::diff::{DiffLine, DiffLineKind, DiffView};
-use crate::display::{char_width, display_text, elide, wrap_line};
+use crate::display::{char_width, display_text, elide, line_width, wrap_line, wrap_row_count};
 use crate::model::{Entry, EntryKind, PreviewEntry, TranscriptModel};
 use crate::scroll::{EntryOffset, ScrollState};
 use crate::tool::{
@@ -682,6 +682,11 @@ fn render_tool(
             );
             if let Some(diff) = diff {
                 output.lines.push(Line::from(Span::styled(
+                    "─".repeat(width.max(1)),
+                    Style::default().fg(theme.colors().rule),
+                )));
+                output.hits.push(toggle_hit(record));
+                output.lines.push(Line::from(Span::styled(
                     format!("  {}", diff.state.label()),
                     muted(theme),
                 )));
@@ -859,24 +864,42 @@ fn render_diff_body(
             rows.push(DiffRow::Line(line.clone()));
         }
     }
-    let budget = if expanded { rows.len() } else { DIFF_BUDGET };
-    let shown = budget.min(rows.len());
-    for row in rows.iter().take(shown) {
+    let text_width = width.saturating_sub(7).max(1);
+    let total: usize = rows
+        .iter()
+        .map(|row| match row {
+            DiffRow::Line(line) => wrap_row_count(&line.text, text_width),
+            DiffRow::Separator(_) => 1,
+        })
+        .sum();
+    let budget = if expanded { total } else { DIFF_BUDGET };
+    let mut shown = 0usize;
+    for row in &rows {
+        if shown >= budget {
+            break;
+        }
         match row {
             DiffRow::Separator(label) => {
                 output
                     .lines
                     .push(Line::from(Span::styled(format!("  {label}"), muted(theme))));
                 output.hits.push(toggle_hit(record));
+                shown += 1;
             }
             DiffRow::Line(line) => {
-                render_diff_line(output, line, width, record, theme);
+                shown += render_diff_line(output, line, width, record, theme, budget - shown);
             }
         }
     }
-    if shown < rows.len() {
+    let hidden = total.saturating_sub(shown);
+    if hidden > 0 {
+        let suffix = if expanded {
+            "（超出显示上限）"
+        } else {
+            " · 点击展开"
+        };
         output.lines.push(Line::from(Span::styled(
-            format!("  … 还有 {} 行 · 点击展开", rows.len() - shown),
+            format!("  … 还有 {hidden} 行{suffix}"),
             muted(theme),
         )));
         output.hits.push(toggle_hit(record));
@@ -889,7 +912,11 @@ fn render_diff_line(
     width: usize,
     record: &ToolRecord,
     theme: Theme,
-) {
+    max_rows: usize,
+) -> usize {
+    if max_rows == 0 {
+        return 0;
+    }
     let kind = line.kind;
     let number = line.old_no.or(line.new_no);
     let number = number
@@ -928,7 +955,12 @@ fn render_diff_line(
     };
     let text_width = width.saturating_sub(7).max(1);
     let mut text_offset = 0usize;
-    for (row_index, row) in wrap_line(&line.text, text_width).into_iter().enumerate() {
+    let mut rendered = 0usize;
+    for (row_index, row) in wrap_line(&line.text, text_width)
+        .into_iter()
+        .take(max_rows)
+        .enumerate()
+    {
         let mut spans = Vec::new();
         if row_index == 0 {
             spans.push(Span::styled(number.clone(), number_style));
@@ -974,10 +1006,16 @@ fn render_diff_line(
             }
             spans.push(Span::styled(run, style));
         }
+        let used = 7 + line_width(&row);
+        if used < width {
+            spans.push(Span::styled(" ".repeat(width - used), blank_style));
+        }
         output.lines.push(Line::from(spans));
         output.hits.push(toggle_hit(record));
         text_offset += row.chars().count();
+        rendered += 1;
     }
+    rendered
 }
 
 enum DiffRow {
@@ -1629,6 +1667,158 @@ mod tests {
             .lines
             .iter()
             .any(|line| line.to_string().contains("还有")));
+    }
+
+    fn diff_entry(old: &str, new: &str) -> Entry {
+        let diff = crate::diff::single_text_diff(
+            Some("a.txt".into()),
+            Some(old.into()),
+            Some(new.into()),
+            DiffState::Applied,
+        );
+        Entry {
+            identity: "call-c".into(),
+            fingerprint: 1,
+            kind: EntryKind::Tool(ToolRecord {
+                call_id: "c".into(),
+                name: "edit".into(),
+                status: ToolStatus::Succeeded,
+                display_status: DisplayStatus::Succeeded,
+                turn: None,
+                step: None,
+                arguments: "{}".into(),
+                result: None,
+                result_fact: None,
+                approval: None,
+                display: ToolDisplay::File {
+                    path: Some("a.txt".into()),
+                    diff: Some(diff),
+                },
+            }),
+        }
+    }
+
+    #[test]
+    fn a_wrapped_diff_line_spends_visual_row_budget() {
+        let long = "x".repeat(400);
+        let entry = diff_entry("a\n", &format!("a\n{long}"));
+        let rendered = render_one(entry, false, 40);
+        let colors = Theme::Dark.colors();
+        let diff_rows = rendered
+            .lines
+            .iter()
+            .filter(|line| {
+                line.spans
+                    .iter()
+                    .any(|span| span.style.bg == Some(colors.diff_add_bg))
+            })
+            .count();
+        assert_eq!(
+            diff_rows,
+            DIFF_BUDGET - 1,
+            "one context row plus wrapped add rows"
+        );
+        let hidden = rendered
+            .lines
+            .iter()
+            .map(Line::to_string)
+            .find(|line| line.contains("还有"))
+            .expect("hidden count");
+        assert!(hidden.contains("还有 6 行"), "{hidden}");
+        assert!(hidden.contains("点击展开"), "{hidden}");
+    }
+
+    #[test]
+    fn diff_add_and_delete_rows_fill_the_content_width() {
+        let entry = diff_entry("hello world\n", "hello there\n");
+        let rendered = render_one(entry, true, 40);
+        let colors = Theme::Dark.colors();
+        for line in &rendered.lines {
+            let line_bg = line.spans.iter().find_map(|span| span.style.bg);
+            if line_bg == Some(colors.diff_add_bg) || line_bg == Some(colors.diff_del_bg) {
+                let width = crate::display::line_width(&line.to_string());
+                assert_eq!(width, 40, "diff row fills the content width: {line:?}");
+                assert_eq!(
+                    line.spans.last().and_then(|span| span.style.bg),
+                    line_bg,
+                    "trailing cells keep the row background"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_diff_header_puts_a_rule_between_title_and_state() {
+        let entry = diff_entry("a\n", "a\nb\n");
+        let rendered = render_one(entry, false, 40);
+        let lines: Vec<String> = rendered.lines.iter().map(Line::to_string).collect();
+        let title = lines
+            .iter()
+            .position(|line| line.contains("Edit") && line.contains("a.txt"))
+            .expect("diff title");
+        assert!(
+            lines[title + 1]
+                .trim()
+                .chars()
+                .all(|character| character == '─'),
+            "rule follows the title: {:?}",
+            lines[title + 1]
+        );
+        assert!(
+            lines[title + 2].contains('应'),
+            "state follows the rule: {:?}",
+            lines[title + 2]
+        );
+    }
+
+    #[test]
+    fn an_oversized_diff_line_reports_the_true_hidden_row_count() {
+        let long = "x".repeat(4200);
+        let collapsed = render_one(diff_entry("a\n", &format!("a\n{long}")), false, 8);
+        let hidden = collapsed
+            .lines
+            .iter()
+            .map(Line::to_string)
+            .find(|line| line.contains("还有"))
+            .expect("hidden count");
+        assert!(hidden.contains("还有 4193 行"), "{hidden}");
+        let expanded = render_one(diff_entry("a\n", &format!("a\n{long}")), true, 8);
+        let hidden = expanded
+            .lines
+            .iter()
+            .map(Line::to_string)
+            .find(|line| line.contains("还有"))
+            .expect("expanded cap notice");
+        assert!(hidden.contains("超出显示上限"), "{hidden}");
+        assert!(hidden.contains("还有 200 行"), "{hidden}");
+    }
+
+    #[test]
+    fn diff_rows_with_emoji_still_fill_the_content_width() {
+        let entry = diff_entry("a\n", "a\n👨‍👩‍👧 x\n");
+        let rendered = render_one(entry, true, 40);
+        let colors = Theme::Dark.colors();
+        let mut checked = false;
+        for line in &rendered.lines {
+            if line
+                .spans
+                .iter()
+                .any(|span| span.style.bg == Some(colors.diff_add_bg))
+            {
+                checked = true;
+                assert_eq!(
+                    crate::display::line_width(&line.to_string()),
+                    40,
+                    "emoji row fills the content width: {line:?}"
+                );
+                assert_eq!(
+                    line.spans.last().and_then(|span| span.style.bg),
+                    Some(colors.diff_add_bg),
+                    "trailing cells keep the row background: {line:?}"
+                );
+            }
+        }
+        assert!(checked, "the added row was rendered");
     }
 
     #[test]

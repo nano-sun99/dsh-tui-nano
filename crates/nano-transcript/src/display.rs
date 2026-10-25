@@ -6,7 +6,7 @@
 //! record. Copying the transcript therefore keeps the real content; only the
 //! screen representation is normalised.
 
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// Maximum grapheme-less safety bound per source line. Long lines are still
 /// wrapped; the bound only keeps a hostile line from producing unbounded rows.
@@ -17,9 +17,10 @@ pub fn char_width(character: char) -> usize {
     UnicodeWidthChar::width(character).unwrap_or(0)
 }
 
-/// Display width of one line after control-character normalisation.
+/// Display width of one line after control-character normalisation. Wide
+/// emoji sequences (including ZWJ sequences) keep the width the terminal uses.
 pub fn line_width(line: &str) -> usize {
-    line.chars().map(char_width).sum()
+    UnicodeWidthStr::width(line)
 }
 
 /// Replace control characters that would move the terminal cursor. Tabs become
@@ -92,6 +93,34 @@ pub fn wrap_line(line: &str, width: usize) -> Vec<String> {
 /// Number of display rows one source text occupies at a width.
 pub fn row_count(text: &str, width: usize) -> usize {
     wrap_text(text, width).len()
+}
+
+/// Number of display rows one logical line occupies, ignoring the per-line
+/// safety cap used by `wrap_line`. Hidden-row counts stay truthful even when a
+/// hostile line exceeds `MAX_WRAPPED_ROWS_PER_LINE`.
+pub fn wrap_row_count(line: &str, width: usize) -> usize {
+    let width = width.max(1);
+    if line.is_empty() {
+        return 1;
+    }
+    let mut rows = 0usize;
+    let mut current = 0usize;
+    for character in line.chars() {
+        let character_width = char_width(character);
+        if current + character_width > width && current > 0 {
+            rows += 1;
+            current = 0;
+        }
+        current += character_width;
+        if current >= width {
+            rows += 1;
+            current = 0;
+        }
+    }
+    if current > 0 {
+        rows += 1;
+    }
+    rows.max(1)
 }
 
 /// Whether a source text contains at least one non-whitespace character.
