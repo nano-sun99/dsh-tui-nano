@@ -7836,7 +7836,7 @@ impl App {
             self.drain_decisions();
             changed = true;
         }
-        if !self.active_model().previews().is_empty() {
+        if self.active_model().previews().has_live() {
             self.transcript_dirty = true;
             changed = true;
         }

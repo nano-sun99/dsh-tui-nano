@@ -1,0 +1,2 @@
+01-main-empty-pty-100-dark.txt: cursor 4,32
+03-main-typed-pty-100-dark.txt: cursor 5,32

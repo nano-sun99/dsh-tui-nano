@@ -290,6 +290,124 @@ fn a_submission_echo_is_display_only_and_does_not_become_history() {
 }
 
 #[test]
+fn a_finished_preview_refreshes_through_the_render_cache() {
+    let mut model = ConversationModel::new(root());
+    let mut view = nano_transcript::TranscriptView::new(
+        root(),
+        TranscriptSource::Interactive,
+        nano_transcript::Theme::Dark,
+    );
+    model.apply_event(
+        "conversation.stream",
+        &json!({
+            "address": {"rootSessionId": "root"},
+            "frame": {"type": "start", "attemptId": "a-1", "revision": 1, "turn": 1, "step": 1}
+        }),
+    );
+    model.apply_event(
+        "conversation.stream",
+        &json!({
+            "address": {"rootSessionId": "root"},
+            "frame": {
+                "type": "chunk", "attemptId": "a-1", "revision": 1, "index": 0,
+                "chunk": {"type": "text-delta", "index": 0, "text": "partial"}
+            }
+        }),
+    );
+    view.sync(&model, Instant::now());
+    let live = view.render(80, 20);
+    assert!(live
+        .lines
+        .iter()
+        .any(|line| line.to_string().contains("生成中")));
+    model.apply_event(
+        "conversation.stream",
+        &json!({
+            "address": {"rootSessionId": "root"},
+            "frame": {
+                "type": "end", "attemptId": "a-1", "revision": 1, "index": 1,
+                "outcome": {"kind": "unknown"}
+            }
+        }),
+    );
+    view.sync(&model, Instant::now());
+    let finished = view.render(80, 20);
+    assert!(
+        finished
+            .lines
+            .iter()
+            .any(|line| line.to_string().contains("未收到完整回答")),
+        "{:?}",
+        finished
+            .lines
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+    );
+    assert!(!finished
+        .lines
+        .iter()
+        .any(|line| line.to_string().contains("生成中")));
+}
+
+#[test]
+fn a_finished_preview_freezes_its_reasoning_duration() {
+    let mut model = ConversationModel::new(root());
+    let mut view = nano_transcript::TranscriptView::new(
+        root(),
+        TranscriptSource::Interactive,
+        nano_transcript::Theme::Dark,
+    );
+    model.apply_event(
+        "conversation.stream",
+        &json!({
+            "address": {"rootSessionId": "root"},
+            "frame": {"type": "start", "attemptId": "a-1", "revision": 1, "turn": 1, "step": 1}
+        }),
+    );
+    model.apply_event(
+        "conversation.stream",
+        &json!({
+            "address": {"rootSessionId": "root"},
+            "frame": {
+                "type": "chunk", "attemptId": "a-1", "revision": 1, "index": 0,
+                "chunk": {"type": "reasoning-delta", "index": 0, "text": "think"}
+            }
+        }),
+    );
+    model.apply_event(
+        "conversation.stream",
+        &json!({
+            "address": {"rootSessionId": "root"},
+            "frame": {
+                "type": "end", "attemptId": "a-1", "revision": 1, "index": 1,
+                "outcome": {"kind": "abandoned"}
+            }
+        }),
+    );
+    let now = Instant::now();
+    view.sync(&model, now);
+    let first = view
+        .entries()
+        .iter()
+        .find_map(|entry| match &entry.kind {
+            EntryKind::Preview(preview) => preview.reasoning_ms,
+            _ => None,
+        })
+        .expect("reasoning duration");
+    view.sync(&model, now + std::time::Duration::from_secs(10));
+    let second = view
+        .entries()
+        .iter()
+        .find_map(|entry| match &entry.kind {
+            EntryKind::Preview(preview) => preview.reasoning_ms,
+            _ => None,
+        })
+        .expect("reasoning duration");
+    assert_eq!(first, second);
+}
+
+#[test]
 fn the_reading_anchor_survives_preview_to_message_handoff() {
     let mut model = ConversationModel::new(root());
     let mut view = nano_transcript::TranscriptView::new(

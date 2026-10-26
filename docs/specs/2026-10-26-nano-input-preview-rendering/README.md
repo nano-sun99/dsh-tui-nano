@@ -2,7 +2,7 @@
 
 - 组标识：`2026-10-26-nano-input-preview-rendering`
 - 角色：单份 spec，总纲与执行规格合一
-- 状态：方案期草案；轻审发现已修订，待合并；尚未创建实施 issue
+- 状态：已合入（方案 PR #64）；执行 issue：#65；实施 PR：#66
 - 结构：用户选择**不拆**——1 份 spec + 1 张执行 issue；实施保留两波，但不拆成多份 spec
 - 机制范围：用户选择**全要**——输入焦点可视化、流式预览状态分层、Markdown 表格适配、统一留白节奏；§4.3 / §4.4 是既有机制上的用户文案与证据要求，不新增机制
 - 上游：`2026-10-25-nano-visual-interaction-alignment`、`2026-10-24-nano-interaction`
@@ -49,6 +49,10 @@
 - `crates/nano-app/src/app.rs`：必要时补 composer / 动效刷新条件；不改变输入路由、提交语义或模型选择 RPC。
 - `crates/nano-transcript/src/render.rs`：流式预览文案、Markdown 表格渲染、entry 与内容块的间距规则。
 - `crates/nano-transcript/src/tool.rs`：只调整面向用户的未知状态文案映射，不改变成功、失败、中断、未知的事实判断。
+- `crates/nano-conversation/src/preview.rs`：预览只读投影增加 `finished` / `outcome`；end 帧标记结束并保留片段，下一次 Start 或 durable 结算时退休；不改 `StreamFrame` wire 形状。
+- `crates/nano-transcript/src/model.rs`：预览指纹纳入结束态与工具参数；结束耗时冻结。
+- `crates/nano-conversation/src/lib.rs`：导出预览投影新增字段。
+- 证据脚本 `scripts/pty-evidence-input-preview.py` 与对应证据目录。
 - 相关 Rust 单测、PTY 快照和真实终端证据。
 - 如需新增颜色，接入 `crates/nano-theme/src/lib.rs` 的共享 Palette；不在渲染函数内创建第二套主题来源。
 
@@ -91,6 +95,8 @@
 
 “当前只显示部分生成内容”只在检测到实际缺失 / 截断时出现；正常流式输出不常驻这句说明。预览被替换或退休时，不改变历史、模型上下文或服务器行为。
 
+终结 `finish` chunk 只结束流式动画，不当作官方结算；结束态文案由 end 帧的 `outcome` 决定，无 `outcome` 时保持 `生成中`。`abandoned` 或不可识别结论的预览保留已有片段，直到下一次 Start 或 durable 结算退休。
+
 ### 4.3 工具未知状态与退出状态
 
 状态判定不变，只改用户可见词和解释：
@@ -114,7 +120,7 @@
 
 ### 4.5 Markdown 表格
 
-只把符合 Markdown 表格最小结构的连续行识别为表格：至少一行表头，紧随一行由 `-` 与可选冒号组成的分隔线，并且两行含可解析的 cell 分隔符。其他含 `|` 的普通文本继续按普通 Markdown 渲染。
+只把符合 Markdown 表格最小结构的连续行识别为表格：至少一行表头，紧随一行由 `-` 与可选冒号组成的分隔线，并且两行含可解析的 cell 分隔符。标题行或列表行即使含 `|` 也不作为表头。其他含 `|` 的普通文本继续按普通 Markdown 渲染。
 
 表格渲染规则：
 
@@ -122,7 +128,7 @@
 2. 分隔线中的 `:---`、`---:`、`:---:` 分别表达左对齐、右对齐、居中；没有冒号时左对齐。
 3. 表头使用现有正文强调风格（粗体 / 主题 accent），正文使用普通 fg；列分隔符与分隔线使用 muted / rule。
 4. 依据终端显示宽度计算列宽，使用 `unicode-width` 处理 CJK 和宽字符；单元格长于列宽时按 cell 内换行，续行保持列对齐。
-5. 总宽超过可用宽度时优先压缩列宽并换行；仍无法容纳时对最长单元格做带省略号的可读截断。任何表格行不得溢出右边界。
+5. 总宽超过可用宽度时优先压缩列宽并换行；仍无法容纳（连最小可读列宽都放不下）时回退原始文本的安全换行，不强行渲染表格。任何表格行不得溢出右边界。
 6. 表格上下与普通段落之间各保留一行；表格内部不在每一行之间插空行。
 7. cell 内已有的 `**…**` 强调继续可见；表格无法可靠解析时回退到原始文本的安全换行，不删除或重排用户内容。
 8. 100 列验证完整表格、长单元格和中英文混排；60 列验证多列压缩、CJK 换行、表头仍可辨认和无横向溢出。
@@ -154,7 +160,7 @@
 
 ### 波次 B：预览、状态、表格与 transcript 间距
 
-- owner：`crates/nano-transcript/src/render.rs`、`crates/nano-transcript/src/tool.rs`；必要时只消费 `crates/nano-conversation/src/preview.rs` 已有字段，不改变其事件契约。
+- owner：`crates/nano-transcript/src/render.rs`、`crates/nano-transcript/src/tool.rs`；消费 `crates/nano-conversation/src/preview.rs` 的只读投影，允许增加 `finished` / `outcome` 字段并调整 finished 预览的退休时机，不改 `StreamFrame` wire 形状。
 - 产出：用户可读的预览状态、未知结果说明、Markdown 表格渲染、语义间距及对应单测。
 - 不碰：官方 durable history、预览数据所有权、工具事实判定和协议字段。
 - 开始：可与波次 A 并行阅读和设计，编码时先以波次 A 的稳定宽度 / 布局约定为输入。
@@ -164,7 +170,8 @@
 ### 文件地盘
 
 - 共享文件 `crates/nano-app/src/ui.rs` 只由本 spec 的同一执行 owner 修改，不拆给并行子 issue。
-- 本 spec 不拥有 `protocol/`、`bridge/`、`crates/nano-conversation/src/events.rs`、`crates/nano-conversation/src/history.rs` 的协议 / 历史语义。
+- 本 spec 拥有 `crates/nano-conversation/src/preview.rs` 的只读投影与 finished 退休时机，以及 `crates/nano-transcript/src/model.rs` 的预览指纹 / 耗时、`crates/nano-conversation/src/lib.rs` 的导出和证据脚本 `scripts/pty-evidence-input-preview.py`。
+- 本 spec 不拥有 `protocol/`、`bridge/`、`crates/nano-conversation/src/events.rs`、`crates/nano-conversation/src/history.rs` 的协议 / 历史语义；`StreamFrame` wire 形状不变。
 - 真实终端证据写入新的本组 evidence 目录；不覆盖 `docs/evidence/2026-10-25-nano-visual-interaction-alignment/` 历史证据。
 
 ## 6. 验收标准
@@ -246,3 +253,12 @@
 | 3 | 建议 | §2 表格第 38 行未转义的管道符破坏列结构 | 已改：改为“管道符”表述 |
 | 4 | 建议 | 三处 file:line 引用不足以支撑断言 | 已改：`ui.rs` 改为 2727-2885 并补光标门 2870-2874；`tool.rs` 改为 294-325；补 `scene.rs:190-195` 与 `app.rs:5845-5866` |
 | 5 | 建议 | 子代理占位现状与验收缺项 | 已改：§2 补子代理现状，§6 补子代理占位验收 |
+| 6 | 阻断 | 实施重审：预览结束态未进渲染指纹，真实缓存路径不刷新 | 已改：指纹纳入 finished / outcome / 工具项；补 `TranscriptView` 缓存回归测试 |
+| 7 | 重要 | 实施重审：`finish` chunk 被当作结算，成功回合短暂显示「未收到完整回答」 | 已改：只有 end 帧 outcome 驱动结束态；finish 仅结束流 |
+| 8 | 重要 | 实施重审：abandoned 预览永不退休，残留并占预览预算 | 已改：下一次 Start 退休 finished 预览；补回归测试 |
+| 9 | 重要 | 实施重审：证据 05/08/11 标浅色实为深色；05 未压缩；XHigh 缺 100-light / 60-dark | 已改：60 场景用 Light；05 换长表；补 17-20；新增 abandoned / dock 帧 |
+| 10 | 重要 | 实施重审：实现越出 §3.1 / §5 文件归属 | 已改：§3.1 / §5 / 文件地盘补入 preview.rs、model.rs、lib.rs、证据脚本；wire 形状不变 |
+| 11 | 建议 | 实施重审：结束耗时继续增长；表格后段落仍 lead 加粗；标题 / 列表行误判表头；底部间隔只看总高；AskUser 缺解释行 | 已改：冻结耗时、lead 仅首段、拒绝标题 / 列表表头、按剩余高度分配 gap、AskUser 也显示解释 |
+| 12 | 建议 | 实施重审：§4.5.5 省略号截断未实现 | 已改：§4.5.5 改为「仍放不下时回退原始文本的安全换行」，与实现一致 |
+| 13 | 建议 | 实施重审：XHigh 证据坐标不可复现 | 已改：证据 README 改为屏幕行列并写明测量方法 |
+| 14 | 建议 | 实施重审：表格空单元格 / 对齐覆盖不足；子代理 composer 未单列证据 | 已改：补空单元格 / emoji / 对齐断言；子代理 composer 走共享代码，证据未单列 |

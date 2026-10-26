@@ -106,6 +106,10 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
     } else {
         u16::from(app.activity_kind().is_some())
     };
+    // One blank row between the composer and the status bar keeps the bottom
+    // band readable; short terminals tighten this separator first. The feed
+    // keeps its three-row minimum, so the separator appears only when the
+    // actual remaining height allows it.
     let reserved = header_height + 3 + queue_height + completion_height + activity_height;
     let models_height = if models_panel {
         models_panel_height(app, area.height.saturating_sub(reserved))
@@ -128,6 +132,19 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
     } else {
         (activity_height, bottom_height)
     };
+    let fixed = header_height
+        + queue_height
+        + completion_height
+        + activity_height
+        + bottom_height
+        + status_height
+        + dock_height;
+    let free = area.height.saturating_sub(fixed);
+    let (bottom_gap, dock_gap) = if models_panel {
+        (0, 0)
+    } else {
+        bottom_gaps(free, dock_height > 0)
+    };
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -137,7 +154,9 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
             Constraint::Length(completion_height),
             Constraint::Length(activity_slot),
             Constraint::Length(bottom_slot),
+            Constraint::Length(bottom_gap),
             Constraint::Length(status_height),
+            Constraint::Length(dock_gap),
             Constraint::Length(dock_height),
         ])
         .split(area);
@@ -180,14 +199,23 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
         }
     }
     if status_height > 0 {
-        draw_status(frame, app, layout[6], area.width);
+        draw_status(frame, app, layout[7], area.width);
     }
     if dock_height > 0 {
-        draw_subagent_dock(frame, app, layout[7]);
+        draw_subagent_dock(frame, app, layout[9]);
     }
     if app.panel.is_open() && !models_panel {
         draw_panel(frame, app, full);
     }
+}
+
+/// Separator rows for composer→status and status→dock, never taking the
+/// transcript below its three-row minimum.
+fn bottom_gaps(free: u16, dock: bool) -> (u16, u16) {
+    let bottom = u16::from(free > 3);
+    let remaining = free.saturating_sub(bottom);
+    let dock_gap = u16::from(dock && remaining > 3);
+    (bottom, dock_gap)
 }
 
 fn inset_horizontal(area: Rect, margin: u16) -> Rect {
@@ -813,7 +841,7 @@ fn draw_feed(frame: &mut Frame, app: &mut App, area: Rect) {
     app.feed_area = area;
     app.jump_area = Rect::default();
     app.feed_height = area.height as usize;
-    if app.transcript_dirty || !app.active_model().previews().is_empty() {
+    if app.transcript_dirty || app.active_model().previews().has_live() {
         // The mounted child owns its own official model; the root model keeps
         // its history and previews untouched while the child view is active.
         if app.subagent_active() {
@@ -2692,25 +2720,37 @@ fn input_height(app: &App, width: u16) -> u16 {
 }
 
 /// The top and bottom composer lines. The left segment shows context
-/// occupancy; the rest stays the ordinary border.
-fn draw_input_border(frame: &mut Frame, row: Rect, occupancy: Occupancy, theme: Theme) {
+/// occupancy; the rest follows the composer focus state.
+fn draw_input_border(
+    frame: &mut Frame,
+    row: Rect,
+    occupancy: Occupancy,
+    theme: Theme,
+    focused: bool,
+) {
     let colors = theme.colors();
     let width = row.width as usize;
-    let (segment, style) = match occupancy {
-        Occupancy::Known { projected, window } if window > 0 => {
-            let percent = projected.saturating_mul(100) / window;
-            let color = if percent >= 95 {
-                colors.error
-            } else if percent >= 80 {
-                colors.warning
-            } else {
-                colors.accent
-            };
-            let cells = ((width as u64).saturating_mul(projected.min(window)) / window) as usize;
-            (cells.min(width), Style::default().fg(color))
+    let (segment, style) = if focused {
+        match occupancy {
+            Occupancy::Known { projected, window } if window > 0 => {
+                let percent = projected.saturating_mul(100) / window;
+                let color = if percent >= 95 {
+                    colors.error
+                } else if percent >= 80 {
+                    colors.warning
+                } else {
+                    colors.accent
+                };
+                let cells =
+                    ((width as u64).saturating_mul(projected.min(window)) / window) as usize;
+                (cells.min(width), Style::default().fg(color))
+            }
+            _ => (0, Style::default()),
         }
-        _ => (0, Style::default().fg(colors.rule)),
+    } else {
+        (0, Style::default())
     };
+    let rest_color = if focused { colors.accent } else { colors.rule };
     let mut spans = Vec::new();
     if segment > 0 {
         spans.push(Span::styled("─".repeat(segment), style));
@@ -2718,7 +2758,7 @@ fn draw_input_border(frame: &mut Frame, row: Rect, occupancy: Occupancy, theme: 
     if segment < width {
         spans.push(Span::styled(
             "─".repeat(width - segment),
-            Style::default().fg(colors.rule),
+            Style::default().fg(rest_color),
         ));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), row);
@@ -2743,8 +2783,22 @@ fn draw_input(frame: &mut Frame, app: &mut App, area: Rect) {
             .unwrap_or(Occupancy::Unknown)
     };
     app.send_area = Rect::default();
+    let focused = app.scene.focus().input_focused();
+    let prompt_style = if focused {
+        Style::default()
+            .fg(app.theme.colors().accent)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        muted_style(app.theme)
+    };
     if area.height >= 2 {
-        draw_input_border(frame, Rect { height: 1, ..area }, occupancy, app.theme);
+        draw_input_border(
+            frame,
+            Rect { height: 1, ..area },
+            occupancy,
+            app.theme,
+            focused,
+        );
         draw_input_border(
             frame,
             Rect {
@@ -2754,6 +2808,7 @@ fn draw_input(frame: &mut Frame, app: &mut App, area: Rect) {
             },
             occupancy,
             app.theme,
+            focused,
         );
     }
     let inner = Rect::new(
@@ -2791,19 +2846,9 @@ fn draw_input(frame: &mut Frame, app: &mut App, area: Rect) {
             let start = lines.len();
             send_start = Some(start);
             if draft.is_empty() {
-                let placeholder = if app.subagent_active() {
-                    app.subagents
-                        .mounted()
-                        .map(|mounted| format!("给 {} 发送消息…", safe_text(&mounted.label)))
-                        .unwrap_or_else(|| "继续提问…".to_string())
-                } else {
-                    "继续提问…".to_string()
-                };
-                let placeholder = truncate(&placeholder, width.saturating_sub(3));
-                lines.push(Line::from(vec![
-                    Span::styled("> ", Style::default().fg(app.theme.colors().accent)),
-                    Span::styled(placeholder, muted_style(app.theme)),
-                ]));
+                // Keep the same stable `> ` start whether or not a draft
+                // exists; an empty composer must not show a vanishing hint.
+                lines.push(Line::from(Span::styled("> ", prompt_style)));
                 cursor = Some((start, 2));
                 draft_rows = 1;
             } else {
@@ -2812,10 +2857,7 @@ fn draw_input(frame: &mut Frame, app: &mut App, area: Rect) {
                 draft_rows = styled.len();
                 for (index, line) in styled.into_iter().enumerate() {
                     let prefix = if index == 0 { "> " } else { "  " };
-                    let mut spans = vec![Span::styled(
-                        prefix,
-                        Style::default().fg(app.theme.colors().accent),
-                    )];
+                    let mut spans = vec![Span::styled(prefix, prompt_style)];
                     spans.extend(line.spans);
                     lines.push(Line::from(spans));
                 }
@@ -2867,12 +2909,7 @@ fn draw_input(frame: &mut Frame, app: &mut App, area: Rect) {
     }
     let visible: Vec<Line<'static>> = lines.into_iter().skip(offset).take(viewport).collect();
     frame.render_widget(Paragraph::new(Text::from(visible)), inner);
-    if sendable
-        && app.scene.focus().input_focused()
-        && !app.panel.is_open()
-        && (!app.drafts.current().text().is_empty() || app.picker.is_some())
-        && viewport > 0
-    {
+    if sendable && focused && !app.panel.is_open() && viewport > 0 {
         if let Some((row, column)) = cursor {
             let row = row.saturating_sub(offset).min(viewport.saturating_sub(1));
             let column = column.min(width.saturating_sub(2));
@@ -4410,6 +4447,29 @@ mod tests {
             .collect()
     }
 
+    fn screen_with_cursor(app: &mut App, width: u16, height: u16) -> (Vec<String>, (u16, u16)) {
+        use ratatui::backend::{Backend, TestBackend};
+        use ratatui::Terminal;
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal
+            .draw(|frame| draw(frame, app))
+            .expect("draw the frame");
+        let buffer = terminal.backend().buffer().clone();
+        let rows = (0..height)
+            .map(|y| {
+                (0..width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect();
+        let position = terminal
+            .backend_mut()
+            .get_cursor_position()
+            .expect("test backend cursor");
+        (rows, (position.x, position.y))
+    }
+
     fn app() -> App {
         App::new(crate::cli::Cli::default(), "root".to_string(), false)
     }
@@ -4473,18 +4533,161 @@ mod tests {
     }
 
     #[test]
-    fn the_main_screen_keeps_two_cell_margins_and_a_two_line_composer() {
+    fn the_main_screen_keeps_two_cell_margins_and_a_stable_composer() {
         let mut app = app();
         let rows = screen(&mut app, 100, 30);
         assert!(rows[0].starts_with("  nano"), "{:?}", rows[0]);
+        assert!(rows[1].trim().is_empty(), "one blank row under the title");
         let quiet: Vec<&String> = rows.iter().filter(|row| row.contains('─')).collect();
         assert_eq!(quiet.len(), 2, "composer has a top and bottom line");
         let compact = compact(&rows);
-        assert!(compact.iter().any(|row| row.contains(">继续提问…")));
+        assert!(
+            !compact.iter().any(|row| row.contains("继续提问")),
+            "the vanishing placeholder is gone: {compact:?}"
+        );
+        assert!(
+            compact.iter().any(|row| row.starts_with('>')),
+            "the stable prompt is still drawn: {compact:?}"
+        );
         let status = compact.last().expect("status row");
         assert!(status.contains("权限："));
         assert!(status.ends_with(&app.display_path()), "{status:?}");
         assert!(!status.contains("·权限"));
+    }
+
+    #[test]
+    fn the_empty_composer_keeps_a_visible_terminal_cursor() {
+        let mut app = app();
+        let (rows, cursor) = screen_with_cursor(&mut app, 100, 30);
+        let border_y = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| {
+                row.chars()
+                    .skip(2)
+                    .take(96)
+                    .all(|character| character == '─')
+            })
+            .map(|(y, _)| y)
+            .next()
+            .expect("composer top border");
+        assert_eq!(cursor.0, 4, "cursor sits after the `> ` prompt");
+        assert_eq!(cursor.1 as usize, border_y + 1);
+    }
+
+    #[test]
+    fn the_composer_focus_changes_the_border_and_prompt_style() {
+        use nano_conversation::scene::FocusId;
+
+        let mut app = app();
+        let focused = buffer(&mut app, 100, 30);
+        app.scene.focus_mut().reset(FocusId::queue());
+        let blurred = buffer(&mut app, 100, 30);
+        let border_y = |frame: &ratatui::buffer::Buffer| {
+            (0..30)
+                .find(|y| (2..98).all(|x| frame[(x, *y)].symbol() == "─"))
+                .expect("composer top border")
+        };
+        let colors = *app.theme.colors();
+        let focused_y = border_y(&focused);
+        let blurred_y = border_y(&blurred);
+        assert_eq!(focused[(50, focused_y)].fg, colors.accent);
+        assert_eq!(blurred[(50, blurred_y)].fg, colors.rule);
+
+        let prompt_cell = |frame: &ratatui::buffer::Buffer, y: u16| {
+            (0..100)
+                .find(|x| frame[(*x, y)].symbol() == ">")
+                .expect("prompt cell")
+        };
+        let focused_x = prompt_cell(&focused, focused_y + 1);
+        let blurred_x = prompt_cell(&blurred, blurred_y + 1);
+        assert_eq!(focused[(focused_x, focused_y + 1)].fg, colors.accent);
+        assert!(focused[(focused_x, focused_y + 1)]
+            .modifier
+            .contains(Modifier::BOLD));
+        assert_eq!(blurred[(blurred_x, blurred_y + 1)].fg, colors.muted);
+        assert!(!blurred[(blurred_x, blurred_y + 1)]
+            .modifier
+            .contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn empty_input_and_the_first_character_share_the_same_height() {
+        let mut app = app();
+        let empty = input_height(&app, 100);
+        app.drafts.current_mut().set_text("x");
+        let typed = input_height(&app, 100);
+        assert_eq!(empty, typed);
+    }
+
+    #[test]
+    fn a_dock_keeps_one_blank_row_from_the_status() {
+        let mut app = app();
+        install_subagents(
+            &mut app,
+            serde_json::json!([subagent_row("child", "continuable")]),
+        );
+        let rows = screen(&mut app, 100, 30);
+        let compact = compact(&rows);
+        let status = compact
+            .iter()
+            .position(|row| row.contains("权限："))
+            .expect("status row");
+        assert!(compact[status + 1].is_empty(), "{:?}", &compact[status..]);
+        assert!(rows[status + 2].contains('─'), "{:?}", &rows[status..]);
+    }
+
+    #[test]
+    fn bottom_gaps_respect_the_feed_minimum() {
+        assert_eq!(bottom_gaps(3, false), (0, 0));
+        assert_eq!(bottom_gaps(4, false), (1, 0));
+        assert_eq!(bottom_gaps(4, true), (1, 0));
+        assert_eq!(bottom_gaps(8, true), (1, 1));
+    }
+
+    #[test]
+    fn a_tight_terminal_drops_bottom_gaps_before_the_status() {
+        let mut app = app();
+        let rows = screen(&mut app, 100, 9);
+        let compact = compact(&rows);
+        let border_y = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| {
+                row.chars()
+                    .skip(2)
+                    .take(96)
+                    .all(|character| character == '─')
+            })
+            .map(|(y, _)| y)
+            .last()
+            .expect("composer bottom border");
+        assert!(compact[border_y + 1].contains("权限："));
+    }
+
+    #[test]
+    fn bottom_rows_keep_one_blank_separator_when_height_allows() {
+        let mut app = app();
+        let rows = screen(&mut app, 100, 30);
+        let compact = compact(&rows);
+        let border_y = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| {
+                row.chars()
+                    .skip(2)
+                    .take(96)
+                    .all(|character| character == '─')
+            })
+            .map(|(y, _)| y)
+            .last()
+            .expect("composer bottom border");
+        assert!(
+            compact[border_y + 1].is_empty(),
+            "one blank row between composer and status: {:?}",
+            &compact[border_y..]
+        );
+        assert!(compact[border_y + 2].contains("权限："));
     }
 
     #[test]
@@ -4694,18 +4897,16 @@ mod tests {
     fn the_context_line_uses_accent_warning_error_and_a_plain_unknown_border() {
         let mut app = app();
         let colors = border_colors(&mut app);
-        let rule = app.theme.colors().rule;
         let accent = app.theme.colors().accent;
         let warning = app.theme.colors().warning;
         let error = app.theme.colors().error;
-        assert!(colors.iter().all(|(_, color)| *color == rule));
+        // A focused composer uses the focus color across the free border.
+        assert!(colors.iter().all(|(_, color)| *color == accent));
 
         app.context = Some(meter(50, 100));
-        let colors = border_colors(&mut app);
-        let colored = colors.iter().filter(|(_, color)| *color == accent).count();
-        // 100 columns minus the 2ch margins on each side.
-        assert_eq!(colored, 48);
-        assert_eq!(colors[48].1, rule);
+        assert!(border_colors(&mut app)
+            .iter()
+            .all(|(_, color)| *color == accent));
 
         app.context = Some(meter(80, 100));
         assert!(border_colors(&mut app)
@@ -4715,6 +4916,13 @@ mod tests {
         assert!(border_colors(&mut app)
             .iter()
             .any(|(_, color)| *color == error));
+
+        use nano_conversation::scene::FocusId;
+        app.scene.focus_mut().reset(FocusId::queue());
+        let rule = app.theme.colors().rule;
+        assert!(border_colors(&mut app)
+            .iter()
+            .all(|(_, color)| *color == rule));
     }
 
     #[test]
@@ -4872,7 +5080,7 @@ mod tests {
             .draw(|frame| draw(frame, &mut app))
             .expect("60-column frame");
         let mut skip = 0usize;
-        let mut saw_rule = false;
+        let mut saw_focus = false;
         for (index, cell) in terminal.backend().buffer().content().iter().enumerate() {
             let x = index % 60;
             let y = index / 60;
@@ -4889,8 +5097,8 @@ mod tests {
                 Color::Reset,
                 "ordinary frame background stays Reset at ({x},{y}): {cell:?}"
             );
-            if cell.symbol() == "─" && cell.fg == Theme::Light.colors().rule {
-                saw_rule = true;
+            if cell.symbol() == "─" && cell.fg == Theme::Light.colors().accent {
+                saw_focus = true;
             }
             skip = cell
                 .symbol()
@@ -4900,7 +5108,7 @@ mod tests {
                 .unwrap_or(0)
                 .saturating_sub(1);
         }
-        assert!(saw_rule, "composer border uses the light rule role");
+        assert!(saw_focus, "composer border uses the light accent role");
     }
 
     #[test]
@@ -5806,5 +6014,318 @@ mod tests {
             bg == hover,
             "focused dock row uses the hover token, got {bg:?}"
         );
+    }
+
+    /// Evidence-only renderer. It draws a synthetic state through the real
+    /// `draw` path and prints the buffer as ANSI so a PTY capture can archive
+    /// deterministic frames (including states a live host rarely reaches).
+    /// Run with `NANO_EVIDENCE_SCENARIO=<name> cargo test -p nano-app
+    /// evidence_frame -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "evidence frame renderer; run with NANO_EVIDENCE_SCENARIO"]
+    fn evidence_frame() {
+        let scenario = std::env::var("NANO_EVIDENCE_SCENARIO").unwrap_or_default();
+        let Some((mut app, width, height, show_cursor)) = evidence_scenario(&scenario) else {
+            panic!("unknown evidence scenario: {scenario}");
+        };
+        use ratatui::backend::{Backend, TestBackend};
+        use ratatui::Terminal;
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal
+            .draw(|frame| draw(frame, &mut app))
+            .expect("draw the evidence frame");
+        let buffer = terminal.backend().buffer().clone();
+        let cursor = terminal
+            .backend_mut()
+            .get_cursor_position()
+            .expect("test backend cursor");
+        emit_ansi(&buffer, (cursor.x, cursor.y), show_cursor);
+        std::thread::sleep(std::time::Duration::from_millis(3000));
+    }
+
+    fn evidence_scenario(name: &str) -> Option<(App, u16, u16, bool)> {
+        let light = || {
+            App::with_theme(
+                crate::cli::Cli::default(),
+                "root".to_string(),
+                false,
+                Theme::Light,
+            )
+        };
+        match name {
+            "main-empty" => Some((app(), 100, 36, true)),
+            "main-typed" => {
+                let mut app = app();
+                app.drafts.current_mut().set_text("x");
+                Some((app, 100, 36, true))
+            }
+            "main-60-light" => Some((light(), 60, 30, true)),
+            "main-dock-100-dark" => {
+                let mut app = app();
+                install_subagents(
+                    &mut app,
+                    serde_json::json!([subagent_row("child", "continuable")]),
+                );
+                Some((app, 100, 36, false))
+            }
+            "main-dock-60-light" => {
+                let mut app = light();
+                install_subagents(
+                    &mut app,
+                    serde_json::json!([subagent_row("child", "continuable")]),
+                );
+                Some((app, 60, 30, false))
+            }
+            "table-100" => Some((evidence_table(app()), 100, 36, false)),
+            "table-60" => Some((evidence_table(light()), 60, 30, false)),
+            "tool-unknown" => Some((evidence_tool_unknown(), 100, 36, false)),
+            "preview-live-gap-100" => Some((evidence_preview_gap(app()), 100, 36, false)),
+            "preview-live-gap-60" => Some((evidence_preview_gap(light()), 60, 30, false)),
+            "preview-live-truncated-100" => Some((evidence_preview_truncated(), 100, 36, false)),
+            "preview-finished-unknown-100" => {
+                Some((evidence_preview_finished(app(), "unknown"), 100, 36, false))
+            }
+            "preview-finished-unknown-60" => {
+                Some((evidence_preview_finished(light(), "unknown"), 60, 30, false))
+            }
+            "preview-finished-abandoned-100" => Some((
+                evidence_preview_finished(app(), "abandoned"),
+                100,
+                36,
+                false,
+            )),
+            "preview-finished-abandoned-60" => Some((
+                evidence_preview_finished(light(), "abandoned"),
+                60,
+                30,
+                false,
+            )),
+            "model-default-100" => {
+                let mut app = app();
+                open_models(&mut app);
+                Some((app, 100, 36, false))
+            }
+            "model-xhigh-100-560" => Some((evidence_xhigh(app(), 560), 100, 36, false)),
+            "model-xhigh-100-1050" => Some((evidence_xhigh(app(), 1050), 100, 36, false)),
+            "model-xhigh-100-light-560" => Some((evidence_xhigh(light(), 560), 100, 36, false)),
+            "model-xhigh-100-light-1050" => Some((evidence_xhigh(light(), 1050), 100, 36, false)),
+            "model-xhigh-60-light-560" => Some((evidence_xhigh(light(), 560), 60, 30, false)),
+            "model-xhigh-60-light-1050" => Some((evidence_xhigh(light(), 1050), 60, 30, false)),
+            "model-xhigh-60-dark-560" => Some((evidence_xhigh(app(), 560), 60, 30, false)),
+            "model-xhigh-60-dark-1050" => Some((evidence_xhigh(app(), 1050), 60, 30, false)),
+            _ => None,
+        }
+    }
+
+    fn evidence_table(mut app: App) -> App {
+        assistant_event(
+            &mut app,
+            1,
+            "| 名称很长很长很长很长 | 状态说明文字 | 说明很长很长很长很长 | 备注很长很长很长很长 |\n| :--- | :---: | ---: | --- |\n| 内容很长很长很长很长 | 完成 | 更多说明很长很长很长很长 | 无 |\n| short | 失败 | 需要关注 | 中文长内容需要换行 |",
+        );
+        app
+    }
+
+    fn evidence_tool_unknown() -> App {
+        let mut app = app();
+        app.model.apply_event(
+            "session.event",
+            &serde_json::json!({
+                "address": {"rootSessionId": "root"},
+                "seq": 1,
+                "type": "tool/call",
+                "data": {
+                    "turn": 1,
+                    "step": 1,
+                    "callId": "c-1",
+                    "name": "bash",
+                    "arguments": "{\"command\":\"echo hi\"}"
+                }
+            }),
+        );
+        app.model.apply_event(
+            "session.event",
+            &serde_json::json!({
+                "address": {"rootSessionId": "root"},
+                "seq": 2,
+                "type": "tool/result",
+                "data": {
+                    "turn": 1,
+                    "step": 1,
+                    "message": {
+                        "id": "t-1",
+                        "role": "tool",
+                        "toolCallId": "c-1",
+                        "isError": false,
+                        "content": [{"type": "text", "text": "hello"}]
+                    }
+                }
+            }),
+        );
+        app.transcript_dirty = true;
+        app
+    }
+
+    fn evidence_preview_gap(mut app: App) -> App {
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "start", "turn": 1, "step": 1
+            }),
+        );
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 0,
+                "chunk": {"type": "text-delta", "index": 0, "text": "第一段已经到达。\n"}
+            }),
+        );
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 2,
+                "chunk": {"type": "text-delta", "index": 1, "text": "这段被缺口跳过。"}
+            }),
+        );
+        app
+    }
+
+    fn evidence_preview_truncated() -> App {
+        let mut app = app();
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "start", "turn": 1, "step": 1
+            }),
+        );
+        let huge = "x".repeat(nano_conversation::MAX_PREVIEW_BYTES + 1);
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 0,
+                "chunk": {"type": "text-delta", "index": 0, "text": huge}
+            }),
+        );
+        app
+    }
+
+    fn evidence_preview_finished(mut app: App, outcome: &str) -> App {
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "start", "turn": 1, "step": 1
+            }),
+        );
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 0,
+                "chunk": {"type": "text-delta", "index": 0, "text": "已经收到的片段。"}
+            }),
+        );
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "end", "index": 1,
+                "outcome": {"kind": outcome}
+            }),
+        );
+        app
+    }
+
+    fn evidence_xhigh(mut app: App, phase_ms: u64) -> App {
+        open_models(&mut app);
+        app.panel.cycle_effort(&app.controls, 1);
+        app.panel.cycle_effort(&app.controls, 1);
+        app.panel.cycle_effort(&app.controls, 1);
+        app.effort_anim_start = Instant::now() - std::time::Duration::from_millis(phase_ms);
+        app
+    }
+
+    fn assistant_event(app: &mut App, seq: u64, text: &str) {
+        app.model.apply_event(
+            "session.event",
+            &serde_json::json!({
+                "address": {"rootSessionId": "root"},
+                "seq": seq,
+                "type": "assistant/message",
+                "data": {
+                    "turn": 1,
+                    "step": 1,
+                    "message": {
+                        "id": format!("a-{seq}"),
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": text}]
+                    }
+                }
+            }),
+        );
+        app.transcript_dirty = true;
+    }
+
+    fn stream_event(app: &mut App, frame: serde_json::Value) {
+        app.model.apply_event(
+            "conversation.stream",
+            &serde_json::json!({
+                "address": {"rootSessionId": "root"},
+                "frame": frame
+            }),
+        );
+        app.transcript_dirty = true;
+    }
+
+    fn emit_ansi(buffer: &ratatui::buffer::Buffer, cursor: (u16, u16), show_cursor: bool) {
+        use std::fmt::Write as _;
+        use std::io::Write as _;
+        let mut out = String::new();
+        out.push_str("\x1b[2J");
+        for y in 0..buffer.area.height {
+            let _ = write!(out, "\x1b[{};1H", y.saturating_add(1));
+            let mut x = 0u16;
+            while x < buffer.area.width {
+                let cell = &buffer[(x, y)];
+                let mut params: Vec<String> = Vec::new();
+                if let Color::Rgb(r, g, b) = cell.fg {
+                    params.push(format!("38;2;{r};{g};{b}"));
+                }
+                if let Color::Rgb(r, g, b) = cell.bg {
+                    params.push(format!("48;2;{r};{g};{b}"));
+                }
+                if cell.modifier.contains(Modifier::BOLD) {
+                    params.push("1".to_string());
+                }
+                if !params.is_empty() {
+                    let _ = write!(out, "\x1b[{}m", params.join(";"));
+                }
+                out.push_str(cell.symbol());
+                if !params.is_empty() {
+                    out.push_str("\x1b[0m");
+                }
+                let advance = cell
+                    .symbol()
+                    .chars()
+                    .next()
+                    .map(display_width)
+                    .unwrap_or(0)
+                    .max(1) as u16;
+                x = x.saturating_add(advance);
+            }
+            // Cancel the terminal's pending wrap at the last column so the
+            // next absolute row placement does not scroll the pane.
+            out.push('\r');
+        }
+        if show_cursor {
+            let _ = write!(
+                out,
+                "\x1b[{};{}H\x1b[?25h",
+                cursor.1.saturating_add(1),
+                cursor.0.saturating_add(1)
+            );
+        } else {
+            out.push_str("\x1b[?25l");
+        }
+        print!("{out}");
+        std::io::stdout().flush().ok();
     }
 }

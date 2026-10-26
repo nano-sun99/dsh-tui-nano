@@ -32,7 +32,9 @@ pub use history::{
 pub use ids::new_request_id;
 pub use input::{DraftStore, InputBuffer, InputEvent, InputMode, InputOutcome};
 pub use model::{ConversationModel, SubmitError, SubmitPlan};
-pub use preview::{PreviewAccumulator, PreviewRetirement, PreviewView, ToolPreview};
+pub use preview::{
+    PreviewAccumulator, PreviewOutcome, PreviewRetirement, PreviewView, ToolPreview,
+};
 pub use queue::{InboxView, QueueTarget, QueuedItem};
 pub use scene::{
     FeatureContribution, FeatureId, FeatureRegistry, FocusId, FocusStack, SceneId, SceneState,

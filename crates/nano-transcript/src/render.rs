@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use nano_conversation::PreviewOutcome;
 use nano_theme::Theme;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -788,6 +789,13 @@ fn render_tool(
             }
         }
     }
+    if record.display_status == DisplayStatus::Unknown {
+        output.lines.push(Line::from(Span::styled(
+            "  工具未返回成功或失败结论",
+            muted(theme),
+        )));
+        output.hits.push(toggle_hit(record));
+    }
     if let Some(approval) = &record.approval {
         render_approval_line(output, approval, record, theme);
     }
@@ -1024,23 +1032,37 @@ enum DiffRow {
 }
 
 fn render_preview(output: &mut RenderedEntry, preview: &PreviewEntry, width: usize, theme: Theme) {
+    let (status, status_style) = if let Some(outcome) = preview.outcome {
+        match outcome {
+            PreviewOutcome::Committed => ("▸ 回答已提交", muted(theme)),
+            PreviewOutcome::Abandoned => {
+                ("▸ 生成已中断", Style::default().fg(theme.colors().warning))
+            }
+            PreviewOutcome::Unknown => ("▸ 未收到完整回答", muted(theme)),
+        }
+    } else {
+        // A terminal `finish` chunk ends the stream but not the attempt; the
+        // official settlement arrives with the end frame.
+        ("▸ 生成中", muted(theme))
+    };
+    output
+        .lines
+        .push(Line::from(Span::styled(status, status_style)));
+    output.hits.push(None);
     if !preview.reasoning.trim().is_empty() {
+        let timing = preview
+            .reasoning_ms
+            .map(format_duration)
+            .map(|duration| format!(" · {duration}"))
+            .unwrap_or_default();
+        let state = if preview.finished {
+            "已结束"
+        } else {
+            "进行中…"
+        };
         output.lines.push(Line::from(vec![
-            Span::styled("▸ 思考 进行中…", muted(theme)),
-            Span::styled(
-                if preview.reasoning_ms.is_some() {
-                    format!(
-                        " · {}",
-                        preview
-                            .reasoning_ms
-                            .map(format_duration)
-                            .unwrap_or_default()
-                    )
-                } else {
-                    String::new()
-                },
-                muted(theme),
-            ),
+            Span::styled(format!("▸ 思考 {state}"), muted(theme)),
+            Span::styled(timing, muted(theme)),
         ]));
         output.hits.push(None);
     }
@@ -1050,20 +1072,14 @@ fn render_preview(output: &mut RenderedEntry, preview: &PreviewEntry, width: usi
             .push(Line::from(Span::styled(row, Style::default())));
         output.hits.push(None);
     }
-    // One plain-language line per condition, wrapped like the body, so a
-    // 60-column terminal never clips the explanation.
-    for message in [
-        preview
-            .gap
-            .then_some("（实时预览有缺失，完整内容以最终消息为准）"),
-        preview
-            .truncated
-            .then_some("（实时预览过长已截断，完整内容以最终消息为准）"),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        for row in wrap_block(message, width, MAX_BLOCK_ROWS) {
+    // The partial-content notice only applies while the attempt is live: a
+    // finished attempt without a durable message must not promise a later one.
+    if !preview.finished && (preview.gap || preview.truncated) {
+        for row in wrap_block(
+            "当前只显示部分生成内容，最终回答到达后会补全",
+            width,
+            MAX_BLOCK_ROWS,
+        ) {
             output
                 .lines
                 .push(Line::from(Span::styled(row, muted(theme))));
@@ -1216,10 +1232,43 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
         if block_index > 0 {
             rows.push(Line::default());
         }
-        let lead = block_index == 0;
-        for line in block {
-            let line = line.trim_end();
+        let mut lead = block_index == 0;
+        let mut previous_kind: Option<MarkdownKind> = None;
+        let mut index = 0;
+        while index < block.len() {
+            if let Some(table) = parse_table(&block[index..], width) {
+                let consumed = 2 + table.body.len();
+                if rows.last().is_some_and(|line| !line.spans.is_empty()) {
+                    rows.push(Line::default());
+                }
+                rows.extend(table_rows(
+                    &table.header,
+                    &table.aligns,
+                    &table.body,
+                    width,
+                    theme,
+                ));
+                index += consumed;
+                previous_kind = None;
+                lead = false;
+                if index < block.len() {
+                    rows.push(Line::default());
+                }
+                continue;
+            }
+            let line = block[index].trim_end();
             let trimmed = line.trim_start();
+            let kind = if heading_text(trimmed).is_some() {
+                MarkdownKind::Heading
+            } else if list_item(trimmed).is_some() {
+                MarkdownKind::List
+            } else {
+                MarkdownKind::Paragraph
+            };
+            if previous_kind.is_some_and(|previous| markdown_gap(previous, kind)) {
+                rows.push(Line::default());
+            }
+            previous_kind = Some(kind);
             if let Some(heading) = heading_text(trimmed) {
                 for row in inline_rows(
                     heading,
@@ -1228,14 +1277,16 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
                 ) {
                     rows.push(row);
                 }
+                lead = false;
             } else if let Some(item) = list_item(trimmed) {
                 let item_rows = inline_rows(item, width.saturating_sub(2).max(1), Style::default());
-                for (index, row) in item_rows.into_iter().enumerate() {
-                    let prefix = if index == 0 { "- " } else { "  " };
+                for (item_index, row) in item_rows.into_iter().enumerate() {
+                    let prefix = if item_index == 0 { "- " } else { "  " };
                     let mut spans = vec![Span::styled(prefix, muted(theme))];
                     spans.extend(row.spans);
                     rows.push(Line::from(spans));
                 }
+                lead = false;
             } else {
                 let style = if lead {
                     Style::default().add_modifier(Modifier::BOLD)
@@ -1245,8 +1296,302 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
                 for row in inline_rows(line, width, style) {
                     rows.push(row);
                 }
+                lead = false;
+            }
+            index += 1;
+        }
+    }
+    rows
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MarkdownKind {
+    Heading,
+    List,
+    Paragraph,
+}
+
+/// One blank line between semantic groups; tight inside a list or a heading
+/// group.
+fn markdown_gap(previous: MarkdownKind, current: MarkdownKind) -> bool {
+    match (previous, current) {
+        (MarkdownKind::Heading, MarkdownKind::Heading) => false,
+        (MarkdownKind::Heading, _) => true,
+        (MarkdownKind::List, MarkdownKind::List) => false,
+        (MarkdownKind::List, _) => true,
+        (_, MarkdownKind::List) => true,
+        (MarkdownKind::Paragraph, MarkdownKind::Heading) => true,
+        (MarkdownKind::Paragraph, MarkdownKind::Paragraph) => false,
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TableAlign {
+    Left,
+    Right,
+    Center,
+}
+
+struct ParsedTable {
+    header: Vec<String>,
+    aligns: Vec<TableAlign>,
+    body: Vec<Vec<String>>,
+}
+
+/// A table needs a header row, a separator row, and matching column counts.
+/// Anything else stays ordinary Markdown text.
+fn parse_table(lines: &[&str], width: usize) -> Option<ParsedTable> {
+    if lines.len() < 2 {
+        return None;
+    }
+    let header_line = lines[0].trim_start();
+    if heading_text(header_line).is_some() || list_item(header_line).is_some() {
+        return None;
+    }
+    let header = split_table_cells(lines[0])?;
+    let aligns = parse_table_separator(lines[1])?;
+    if header.is_empty() || header.len() != aligns.len() {
+        return None;
+    }
+    let columns = header.len();
+    let minimum = columns * 2 + 3 * columns.saturating_sub(1);
+    if minimum > width {
+        return None;
+    }
+    let mut body = Vec::new();
+    for line in &lines[2..] {
+        let Some(cells) = split_table_cells(line) else {
+            break;
+        };
+        if cells.len() != columns {
+            break;
+        }
+        body.push(cells);
+    }
+    Some(ParsedTable {
+        header,
+        aligns,
+        body,
+    })
+}
+
+/// Split on unescaped pipes, keeping `\|` as a literal pipe inside a cell.
+fn split_table_cells(line: &str) -> Option<Vec<String>> {
+    let line = line.trim();
+    if !line.contains('|') {
+        return None;
+    }
+    let outer_left = line.starts_with('|');
+    let outer_right = line.ends_with('|') && !line.ends_with("\\|");
+    let mut cells = Vec::new();
+    let mut current = String::new();
+    let mut characters = line.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '\\' if characters.peek() == Some(&'|') => {
+                characters.next();
+                current.push('|');
+            }
+            '|' => {
+                cells.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(character),
+        }
+    }
+    cells.push(current.trim().to_string());
+    if outer_left && cells.first().is_some_and(|cell| cell.is_empty()) {
+        cells.remove(0);
+    }
+    if outer_right && cells.last().is_some_and(|cell| cell.is_empty()) {
+        cells.pop();
+    }
+    if cells.is_empty() {
+        None
+    } else {
+        Some(cells)
+    }
+}
+
+fn parse_table_separator(line: &str) -> Option<Vec<TableAlign>> {
+    let cells = split_table_cells(line)?;
+    let mut aligns = Vec::new();
+    for cell in cells {
+        let cell = cell.trim();
+        if cell.is_empty() {
+            return None;
+        }
+        let left = cell.starts_with(':');
+        let right = cell.ends_with(':') && cell.len() > 1;
+        let dashes = cell.strip_prefix(':').unwrap_or(cell);
+        let dashes = dashes.strip_suffix(':').unwrap_or(dashes);
+        if dashes.is_empty() || !dashes.chars().all(|character| character == '-') {
+            return None;
+        }
+        aligns.push(match (left, right) {
+            (true, true) => TableAlign::Center,
+            (false, true) => TableAlign::Right,
+            _ => TableAlign::Left,
+        });
+    }
+    if aligns.is_empty() {
+        None
+    } else {
+        Some(aligns)
+    }
+}
+
+fn table_rows(
+    header: &[String],
+    aligns: &[TableAlign],
+    body: &[Vec<String>],
+    width: usize,
+    theme: Theme,
+) -> Vec<Line<'static>> {
+    let columns = header.len();
+    let separators = 3 * columns.saturating_sub(1);
+    let minimum = columns * 2 + separators;
+    if minimum > width {
+        return Vec::new();
+    }
+    let mut widths: Vec<usize> = (0..columns)
+        .map(|index| {
+            let mut cell_width = plain_table_width(&header[index]).max(2);
+            for row in body {
+                if let Some(cell) = row.get(index) {
+                    cell_width = cell_width.max(plain_table_width(cell));
+                }
+            }
+            cell_width
+        })
+        .collect();
+    let mut total = widths.iter().sum::<usize>() + separators;
+    while total > width {
+        let widest = widths
+            .iter()
+            .enumerate()
+            .filter(|(_, cell_width)| **cell_width > 2)
+            .max_by_key(|(_, cell_width)| **cell_width)
+            .map(|(index, _)| index);
+        let Some(index) = widest else {
+            break;
+        };
+        widths[index] -= 1;
+        total -= 1;
+    }
+    if total > width {
+        return Vec::new();
+    }
+    let header_style = Style::default()
+        .fg(theme.colors().accent)
+        .add_modifier(Modifier::BOLD);
+    let mut rows = table_row_lines(header, &widths, aligns, header_style, theme);
+    rows.push(Line::from(Span::styled(
+        "─".repeat(total),
+        Style::default().fg(theme.colors().rule),
+    )));
+    for row in body {
+        rows.extend(table_row_lines(
+            row,
+            &widths,
+            aligns,
+            Style::default(),
+            theme,
+        ));
+    }
+    rows
+}
+
+fn table_row_lines(
+    cells: &[String],
+    widths: &[usize],
+    aligns: &[TableAlign],
+    base: Style,
+    theme: Theme,
+) -> Vec<Line<'static>> {
+    let wrapped: Vec<Vec<(Vec<Span<'static>>, usize)>> = widths
+        .iter()
+        .enumerate()
+        .map(|(index, width)| {
+            cell_rows(
+                cells.get(index).map(String::as_str).unwrap_or(""),
+                *width,
+                base,
+            )
+        })
+        .collect();
+    let height = wrapped.iter().map(Vec::len).max().unwrap_or(1).max(1);
+    let mut lines = Vec::new();
+    for line_index in 0..height {
+        let mut spans = Vec::new();
+        for (index, width) in widths.iter().enumerate() {
+            if index > 0 {
+                spans.push(Span::styled(
+                    " │ ",
+                    Style::default().fg(theme.colors().muted),
+                ));
+            }
+            let (content, used) = wrapped
+                .get(index)
+                .and_then(|rows| rows.get(line_index))
+                .map(|(content, used)| (content.clone(), *used))
+                .unwrap_or_default();
+            let pad = width.saturating_sub(used);
+            let (left, right) = match aligns.get(index).copied().unwrap_or(TableAlign::Left) {
+                TableAlign::Left => (0, pad),
+                TableAlign::Right => (pad, 0),
+                TableAlign::Center => (pad / 2, pad - pad / 2),
+            };
+            if left > 0 {
+                spans.push(Span::raw(" ".repeat(left)));
+            }
+            spans.extend(content);
+            if right > 0 {
+                spans.push(Span::raw(" ".repeat(right)));
             }
         }
+        lines.push(Line::from(spans));
+    }
+    lines
+}
+
+fn plain_table_width(cell: &str) -> usize {
+    line_width(&strip_inline_bold(cell).0)
+}
+
+fn cell_rows(text: &str, width: usize, base: Style) -> Vec<(Vec<Span<'static>>, usize)> {
+    let (plain, flags) = strip_inline_bold(text);
+    let mut rows = Vec::new();
+    let mut offset = 0usize;
+    for row in wrap_line(&plain, width.max(1)) {
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        let mut run = String::new();
+        let mut current_bold = flags.get(offset).copied().unwrap_or(false);
+        for (index, character) in row.chars().enumerate() {
+            let bold = flags.get(offset + index).copied().unwrap_or(false);
+            if bold != current_bold && !run.is_empty() {
+                let mut style = base;
+                if current_bold {
+                    style = style.add_modifier(Modifier::BOLD);
+                }
+                spans.push(Span::styled(std::mem::take(&mut run), style));
+                current_bold = bold;
+            }
+            run.push(character);
+        }
+        if !run.is_empty() {
+            let mut style = base;
+            if current_bold {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            spans.push(Span::styled(run, style));
+        }
+        let used = line_width(&row);
+        offset += row.chars().count();
+        rows.push((spans, used));
+    }
+    if rows.is_empty() {
+        rows.push((Vec::new(), 0));
     }
     rows
 }
@@ -1509,7 +1854,7 @@ mod tests {
     use crate::diff::DiffState;
     use crate::model::TranscriptSource;
     use crate::tool::{QuestionRecord, ToolDisplay, ToolRecord};
-    use nano_conversation::{SessionAddress, ToolStatus};
+    use nano_conversation::{PreviewOutcome, SessionAddress, ToolStatus};
     use nano_decisions::contract::parse_questions;
 
     fn model(entries: Vec<Entry>) -> TranscriptModel {
@@ -1957,13 +2302,15 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_exit_code_is_shown_as_unknown() {
+    fn a_missing_exit_code_is_shown_as_unconfirmed() {
         let entry = bash_entry(ToolStatus::Succeeded, "hello", DisplayStatus::Unknown);
         let rendered = render_one(entry, false, 80);
-        assert!(rendered
-            .lines
+        let text: Vec<String> = rendered.lines.iter().map(ToString::to_string).collect();
+        assert!(text.iter().any(|line| line.contains("结果未确认")));
+        assert!(text.iter().any(|line| line.contains("退出状态未返回")));
+        assert!(text
             .iter()
-            .any(|line| line.to_string().contains("退出码未知")));
+            .any(|line| line.contains("工具未返回成功或失败结论")));
     }
 
     #[test]
@@ -2169,7 +2516,7 @@ mod tests {
         assert!(!rendered
             .lines
             .iter()
-            .any(|line| line.to_string().contains("结果未知")));
+            .any(|line| line.to_string().contains("结果未确认")));
     }
 
     #[test]
@@ -2228,6 +2575,244 @@ mod tests {
             .any(|span| span.content.contains("改动")
                 && span.style.add_modifier.contains(Modifier::BOLD)));
         assert!(rows.iter().any(|row| row.starts_with("- 第一项")));
+    }
+
+    fn table_entry(text: &str) -> Entry {
+        Entry {
+            identity: "table-1".into(),
+            fingerprint: 1,
+            kind: EntryKind::Assistant {
+                text: text.into(),
+                reasoning: String::new(),
+                reasoning_ms: None,
+                interrupted: false,
+            },
+        }
+    }
+
+    #[test]
+    fn a_markdown_table_keeps_columns_alignment_and_header_emphasis() {
+        let entry =
+            table_entry("| 名称 | 状态 |\n| :--- | ---: |\n| 好 | 完成 |\n| 很长的单元格 | 失败 |");
+        let rendered = render_one(entry, false, 100);
+        let rows: Vec<String> = rendered.lines.iter().map(ToString::to_string).collect();
+        assert!(!rows.iter().any(|row| row.contains('|')), "{rows:?}");
+        assert!(
+            rows.iter()
+                .any(|row| row.trim_matches('─').is_empty() && row.contains('─')),
+            "header separator rule: {rows:?}"
+        );
+        for row in &rows {
+            assert!(line_width(row) <= 100, "no overflow: {row:?}");
+        }
+        let header = rendered
+            .lines
+            .iter()
+            .find(|line| line.to_string().contains("名称"))
+            .expect("header row");
+        assert!(header.spans.iter().any(|span| span.content.contains("名称")
+            && span.style.add_modifier.contains(Modifier::BOLD)));
+        let completed = rendered
+            .lines
+            .iter()
+            .find(|line| line.to_string().contains("完成"))
+            .expect("body row");
+        assert!(
+            completed.to_string().ends_with("完成"),
+            "right-aligned last column: {completed:?}"
+        );
+    }
+
+    #[test]
+    fn a_markdown_table_preserves_escaped_pipes_and_cjk_wrapping() {
+        let entry = table_entry(
+            "| 列一 | 列二 | 列三 |\n| --- | --- | --- |\n| 中文内容很长很长 | a \\| b | 短 |",
+        );
+        let rendered = render_one(entry, false, 60);
+        let rows: Vec<String> = rendered.lines.iter().map(ToString::to_string).collect();
+        for row in &rows {
+            assert!(line_width(row) <= 60, "no horizontal overflow: {row:?}");
+        }
+        let escaped = rendered
+            .lines
+            .iter()
+            .find(|line| line.to_string().contains("a | b"))
+            .expect("escaped pipe stays in one cell");
+        assert_eq!(escaped.to_string().matches('│').count(), 2);
+        for line in &rendered.lines {
+            let row = line.to_string();
+            if row.contains('│') {
+                assert_eq!(row.matches('│').count(), 2, "columns keep: {row:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_wide_table_compresses_to_sixty_columns_without_losing_labels() {
+        let entry = table_entry(
+            "| 名称很长很长很长很长 | 状态说明文字 | 说明很长很长很长很长 | 备注很长很长很长很长 |\n| --- | --- | --- | --- |\n| 内容很长很长很长很长 | 完成 | 更多说明很长很长很长很长 | 无 |",
+        );
+        let rendered = render_one(entry, false, 60);
+        let rows: Vec<String> = rendered.lines.iter().map(ToString::to_string).collect();
+        for row in &rows {
+            assert!(line_width(row) <= 60, "no horizontal overflow: {row:?}");
+        }
+        let table_text = rows.join("");
+        for label in ["名", "称", "状", "态", "说", "明", "备", "注"] {
+            assert!(table_text.contains(label), "header keeps {label}: {rows:?}");
+        }
+        assert!(
+            rows.iter()
+                .filter(|row| row.contains('│'))
+                .all(|row| row.matches('│').count() == 3),
+            "four columns keep three separators: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_table_keeps_empty_cells_wide_glyphs_and_column_alignment() {
+        let entry = table_entry(
+            "| left | center | right |\n| :--- | :---: | ---: |\n| a | bb | ccc |\n|  | 🚀 |  |",
+        );
+        let rendered = render_one(entry, false, 40);
+        let rows: Vec<String> = rendered.lines.iter().map(ToString::to_string).collect();
+        for row in &rows {
+            assert!(line_width(row) <= 40, "no overflow: {row:?}");
+        }
+        let rocket = rendered
+            .lines
+            .iter()
+            .find(|line| line.to_string().contains("🚀"))
+            .expect("emoji row");
+        assert_eq!(rocket.to_string().matches('│').count(), 2);
+        let body = rendered
+            .lines
+            .iter()
+            .find(|line| line.to_string().contains("bb"))
+            .expect("center row");
+        let text = body.to_string();
+        assert!(text.starts_with("a"), "{text:?}");
+        assert!(text.ends_with("ccc"), "right alignment: {text:?}");
+        let center = text.split('│').nth(1).expect("center cell");
+        let stripped = center.trim();
+        assert_eq!(stripped, "bb");
+        let start = center.find(stripped).expect("content offset");
+        let left = center[..start].chars().count();
+        let right = center[start + stripped.len()..].chars().count();
+        assert!(
+            left.abs_diff(right) <= 1,
+            "centered cell: {center:?} ({left}/{right})"
+        );
+    }
+
+    #[test]
+    fn a_pipe_line_without_a_separator_stays_plain_text() {
+        let rows = plain(&render_one(table_entry("a | b\njust text"), false, 40));
+        assert!(rows.iter().any(|row| row.contains("a | b")), "{rows:?}");
+        assert!(!rows.iter().any(|row| row.contains('│')));
+    }
+
+    #[test]
+    fn a_table_keeps_one_blank_line_from_surrounding_paragraphs() {
+        let rows = plain(&render_one(
+            table_entry("前文\n| A | B |\n| --- | --- |\n| 1 | 2 |\n后文"),
+            false,
+            40,
+        ));
+        let before = rows
+            .iter()
+            .position(|row| row.contains("前文"))
+            .expect("lead");
+        let header = rows
+            .iter()
+            .position(|row| row.contains('A') && row.contains('B'))
+            .expect("header");
+        let after = rows
+            .iter()
+            .position(|row| row.contains("后文"))
+            .expect("tail");
+        assert_eq!(header, before + 2, "{rows:?}");
+        assert_eq!(after, header + 4, "{rows:?}");
+        assert!(rows[before + 1].trim().is_empty());
+        assert!(rows[after - 1].trim().is_empty());
+    }
+
+    #[test]
+    fn markdown_semantic_blocks_keep_one_blank_line() {
+        let rows = plain(&render_one(
+            table_entry("# 标题\n正文\n- 项目\n- 第二项"),
+            false,
+            40,
+        ));
+        assert_eq!(rows[0], "标题", "{rows:?}");
+        assert!(rows[1].trim().is_empty(), "{rows:?}");
+        assert_eq!(rows[2], "正文", "{rows:?}");
+        assert!(rows[3].trim().is_empty(), "{rows:?}");
+        assert!(rows[4].starts_with("- 项目"), "{rows:?}");
+        assert!(
+            rows[5].starts_with("- 第二项"),
+            "list items stay tight: {rows:?}"
+        );
+        assert_eq!(rows.last().map(|row| row.as_str()), Some(""), "{rows:?}");
+    }
+
+    #[test]
+    fn a_heading_or_list_line_with_pipes_is_not_a_table_header() {
+        for text in [
+            "- 项 | 说明\n--- | ---\n- a | b",
+            "# 标题 | x\n--- | ---\n| 1 | 2 |",
+        ] {
+            let rows = plain(&render_one(table_entry(text), false, 40));
+            assert!(
+                !rows.iter().any(|row| row.contains('│')),
+                "no table for {text:?}: {rows:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_paragraph_after_a_lead_table_is_not_bold() {
+        let rendered = render_one(
+            table_entry("前言\n| A | B |\n| --- | --- |\n| 1 | 2 |\n结论段落"),
+            false,
+            40,
+        );
+        let paragraph = rendered
+            .lines
+            .iter()
+            .find(|line| line.to_string().contains("结论段落"))
+            .expect("paragraph");
+        assert!(
+            !paragraph
+                .spans
+                .iter()
+                .any(|span| span.style.add_modifier.contains(Modifier::BOLD)),
+            "{paragraph:?}"
+        );
+    }
+
+    #[test]
+    fn a_table_cell_keeps_inline_bold() {
+        let rendered = render_one(
+            table_entry("| 名称 | 值 |\n| --- | --- |\n| **重要** | 好 |"),
+            false,
+            60,
+        );
+        let bold_row = rendered
+            .lines
+            .iter()
+            .find(|line| line.to_string().contains("重要"))
+            .expect("cell row");
+        assert_eq!(bold_row.to_string().matches('│').count(), 1);
+        assert!(bold_row
+            .spans
+            .iter()
+            .any(|span| span.content.contains("重要")
+                && span.style.add_modifier.contains(Modifier::BOLD)));
+        assert!(!rendered
+            .lines
+            .iter()
+            .any(|line| line.to_string().contains("**")));
     }
 
     #[test]
@@ -2336,8 +2921,20 @@ mod tests {
                 tools: Vec::new(),
                 gap,
                 truncated,
+                finished: false,
+                outcome: None,
             }),
         }
+    }
+
+    fn finished_preview(outcome: PreviewOutcome) -> Entry {
+        let mut entry = preview_entry(false, false);
+        let EntryKind::Preview(preview) = &mut entry.kind else {
+            unreachable!("preview entry");
+        };
+        preview.finished = true;
+        preview.outcome = Some(outcome);
+        entry
     }
 
     fn plain(rendered: &RenderedEntry) -> Vec<String> {
@@ -2354,47 +2951,86 @@ mod tests {
     }
 
     #[test]
-    fn preview_gap_and_truncation_use_separate_wrapped_muted_lines() {
+    fn a_live_preview_shows_a_stable_generating_status_and_one_partial_warning() {
         let rendered = render_one(preview_entry(true, true), false, 60);
         let rows = plain(&rendered);
-        let gap = rows
-            .iter()
-            .position(|row| row.contains("实时预览有缺失"))
-            .expect("gap note");
-        let truncated = rows
-            .iter()
-            .position(|row| row.contains("实时预览过长已截断"))
-            .expect("truncated note");
-        assert_ne!(gap, truncated, "each note owns its row");
+        assert!(rows.iter().any(|row| row.contains("生成中")), "{rows:?}");
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.contains("当前只显示部分生成内容，最终回答到达后会补全"))
+                .count(),
+            1,
+            "{rows:?}"
+        );
+        assert!(rows.iter().all(|row| {
+            !row.contains("preview")
+                && !row.contains("gap")
+                && !row.contains("revision")
+                && !row.contains("attempt")
+        }));
         assert!(rows
             .iter()
             .all(|row| row.chars().map(char_width).sum::<usize>() <= 60));
-        let muted = rendered
+        let note = rendered
             .lines
             .iter()
-            .filter(|line| {
-                line.spans
-                    .iter()
-                    .any(|span| span.content.contains("实时预览"))
-            })
-            .all(|line| {
-                line.spans
-                    .iter()
-                    .all(|span| span.style.fg == Some(Theme::Dark.colors().muted))
-            });
-        assert!(muted, "preview notes are muted");
+            .find(|line| line.to_string().contains("当前只显示部分生成内容"))
+            .expect("partial note");
+        assert!(note
+            .spans
+            .iter()
+            .all(|span| span.style.fg == Some(Theme::Dark.colors().muted)));
+    }
 
-        let durable = Entry {
-            identity: "assistant-1".into(),
-            fingerprint: 1,
-            kind: EntryKind::Assistant {
-                text: "done".into(),
-                reasoning: String::new(),
-                reasoning_ms: None,
-                interrupted: false,
-            },
+    #[test]
+    fn a_live_preview_without_gaps_has_no_partial_warning() {
+        let rows = plain(&render_one(preview_entry(false, false), false, 60));
+        assert!(rows.iter().any(|row| row.contains("生成中")));
+        assert!(!rows.iter().any(|row| row.contains("只显示部分生成内容")));
+    }
+
+    #[test]
+    fn a_finished_preview_without_a_conclusion_keeps_its_fragments() {
+        let rows = plain(&render_one(
+            finished_preview(PreviewOutcome::Unknown),
+            false,
+            60,
+        ));
+        assert!(
+            rows.iter().any(|row| row.contains("未收到完整回答")),
+            "{rows:?}"
+        );
+        assert!(rows.iter().any(|row| row.contains("hello")));
+        assert!(!rows.iter().any(|row| row.contains("生成中")));
+        assert!(!rows.iter().any(|row| row.contains("最终回答到达后会补全")));
+        assert!(!rows.iter().any(|row| row.contains("preview")));
+    }
+
+    #[test]
+    fn a_finished_stream_without_an_outcome_still_reads_as_generating() {
+        let mut entry = preview_entry(false, false);
+        let EntryKind::Preview(preview) = &mut entry.kind else {
+            unreachable!("preview entry");
         };
-        let rendered = render_one(durable, false, 80);
-        assert!(!plain(&rendered).iter().any(|row| row.contains("实时预览")));
+        preview.finished = true;
+        preview.outcome = None;
+        let rows = plain(&render_one(entry, false, 60));
+        assert!(rows.iter().any(|row| row.contains("生成中")), "{rows:?}");
+        assert!(!rows.iter().any(|row| row.contains("未收到完整回答")));
+    }
+
+    #[test]
+    fn a_finished_preview_uses_the_official_outcome() {
+        for (outcome, expected) in [
+            (PreviewOutcome::Committed, "回答已提交"),
+            (PreviewOutcome::Abandoned, "生成已中断"),
+        ] {
+            let rows = plain(&render_one(finished_preview(outcome), false, 60));
+            assert!(
+                rows.iter().any(|row| row.contains(expected)),
+                "{outcome:?}: {rows:?}"
+            );
+            assert!(rows.iter().any(|row| row.contains("hello")));
+        }
     }
 }

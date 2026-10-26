@@ -1,8 +1,8 @@
 //! Live assistant-stream previews.
 //!
-//! A preview is presentation data, never history. It is replaced by the
-//! durable `assistant/message`, retired when the attempt settles, and dropped
-//! on reconnect where the durable log is the only baseline.
+//! A preview is presentation data, never history. It is marked finished when
+//! the attempt settles, replaced by the durable `assistant/message`, and
+//! dropped on reconnect where the durable log is the only baseline.
 
 use std::collections::BTreeMap;
 
@@ -100,6 +100,10 @@ pub struct PreviewView {
     pub gap: bool,
     /// Whether the preview was cut by its byte bound.
     pub truncated: bool,
+    /// Whether the attempt emitted its terminal finish.
+    pub finished: bool,
+    /// Settlement reported by the end frame, when one was seen.
+    pub outcome: Option<PreviewOutcome>,
 }
 
 /// Bounded live preview set.
@@ -153,8 +157,16 @@ impl PreviewAccumulator {
                 tools: preview.tools.values().cloned().collect(),
                 gap: preview.gap,
                 truncated: preview.truncated,
+                finished: preview.finished,
+                outcome: preview.outcome,
             })
             .collect()
+    }
+
+    /// Whether any attempt is still streaming. Finished previews stay visible
+    /// until a durable settlement retires them, but they need no frame ticks.
+    pub fn has_live(&self) -> bool {
+        self.previews.values().any(|preview| !preview.finished)
     }
 
     /// Apply one live frame. Unknown attempts and unknown chunk types are
@@ -167,6 +179,10 @@ impl PreviewAccumulator {
                 turn,
                 step,
             } => {
+                // A new attempt supersedes any finished preview still parked
+                // in the live set (notably an abandoned attempt with no
+                // durable settlement).
+                self.retire_finished();
                 self.remove(attempt_id);
                 let preview = Preview {
                     attempt_id: attempt_id.clone(),
@@ -266,13 +282,13 @@ impl PreviewAccumulator {
                 outcome,
                 ..
             } => {
-                let preview = self.remove(attempt_id)?;
-                Some(PreviewRetirement {
-                    attempt_id: preview.attempt_id,
-                    turn: preview.turn,
-                    step: preview.step,
-                    outcome: outcome_of(outcome),
-                })
+                // Keep the last visible fragments in the live set, marked with
+                // the official settlement. They retire when durable history
+                // arrives (or when the next attempt replaces them).
+                let preview = self.previews.get_mut(attempt_id)?;
+                preview.finished = true;
+                preview.outcome = Some(outcome_of(outcome));
+                None
             }
         }
     }
@@ -454,6 +470,18 @@ impl PreviewAccumulator {
         Some(preview)
     }
 
+    fn retire_finished(&mut self) {
+        let ids: Vec<String> = self
+            .previews
+            .iter()
+            .filter(|(_, preview)| preview.finished)
+            .map(|(attempt_id, _)| attempt_id.clone())
+            .collect();
+        for attempt_id in ids {
+            self.remove(&attempt_id);
+        }
+    }
+
     /// Enforce the total bound globally; called after each applied chunk.
     fn enforce_bounds(&mut self) -> Option<PreviewRetirement> {
         // Per-attempt bounds are enforced while appending. The global bound is
@@ -529,7 +557,7 @@ mod tests {
     }
 
     #[test]
-    fn text_deltas_merge_and_end_retires_the_preview() {
+    fn text_deltas_merge_and_end_marks_the_preview_finished() {
         let mut previews = PreviewAccumulator::default();
         assert!(previews.apply(&start("a", 1, 1)).is_none());
         previews.apply(&chunk(
@@ -543,16 +571,62 @@ mod tests {
             json!({"type": "text-delta", "index": 0, "text": "lo"}),
         ));
         assert_eq!(previews.views()[0].text, "hello");
-        let retired = previews
-            .apply(&StreamFrame::End {
-                attempt_id: "a".into(),
-                revision: 1,
-                index: 2,
-                outcome: json!({"kind": "committed", "eventType": "assistant/message", "seq": 9}),
-            })
-            .unwrap();
-        assert_eq!(retired.outcome, PreviewOutcome::Committed);
+        assert!(previews.has_live());
+        let retired = previews.apply(&StreamFrame::End {
+            attempt_id: "a".into(),
+            revision: 1,
+            index: 2,
+            outcome: json!({"kind": "committed", "eventType": "assistant/message", "seq": 9}),
+        });
+        assert!(retired.is_none());
+        let view = &previews.views()[0];
+        assert!(view.finished);
+        assert_eq!(view.outcome, Some(PreviewOutcome::Committed));
+        assert_eq!(view.text, "hello");
+        assert!(!previews.has_live());
+        assert!(!previews.is_empty());
+        let retired = previews.retire_turn_step(1, 1);
+        assert_eq!(retired.len(), 1);
         assert!(previews.is_empty());
+    }
+
+    #[test]
+    fn a_finish_chunk_stops_the_stream_without_settling() {
+        let mut previews = PreviewAccumulator::default();
+        previews.apply(&start("a", 1, 1));
+        previews.apply(&chunk(
+            "a",
+            0,
+            json!({"type": "text-delta", "index": 0, "text": "done"}),
+        ));
+        previews.apply(&chunk("a", 1, json!({"type": "finish"})));
+        let view = &previews.views()[0];
+        assert!(view.finished);
+        assert_eq!(view.outcome, None);
+        assert!(!previews.has_live());
+    }
+
+    #[test]
+    fn a_new_attempt_retires_an_abandoned_finished_preview() {
+        let mut previews = PreviewAccumulator::default();
+        previews.apply(&start("a", 1, 1));
+        previews.apply(&chunk(
+            "a",
+            0,
+            json!({"type": "text-delta", "index": 0, "text": "bye"}),
+        ));
+        previews.apply(&StreamFrame::End {
+            attempt_id: "a".into(),
+            revision: 1,
+            index: 1,
+            outcome: json!({"kind": "abandoned"}),
+        });
+        assert_eq!(previews.views().len(), 1);
+        assert!(previews.views()[0].finished);
+        previews.apply(&start("b", 2, 1));
+        let views = previews.views();
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].attempt_id, "b");
     }
 
     #[test]
