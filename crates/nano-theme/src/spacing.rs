@@ -46,6 +46,10 @@ impl Gap {
     }
 
     /// Adjacent margins collapse to the larger role, never sum.
+    ///
+    /// The transcript realizes this for the current 0/1 roles in
+    /// `RenderedEntry::push_gap`: a block that already ends with a blank row
+    /// skips the next gap.
     pub const fn collapse(self, next: Self) -> Self {
         if self.rank() >= next.rank() {
             self

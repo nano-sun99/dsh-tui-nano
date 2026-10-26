@@ -39,6 +39,8 @@ pub const MAX_MOUNTED_ROWS: usize = 300;
 const MAX_CACHED_ENTRIES: usize = 512;
 /// Wrapped source rows kept per block, even when expanded.
 const MAX_BLOCK_ROWS: usize = 4_000;
+/// Fixed width of the diff line-number column.
+const DIFF_LINE_NUMBER_WIDTH: usize = 4;
 
 /// What a click does on a rendered row.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +102,8 @@ impl RenderedEntry {
     }
 
     /// Append the role's blank rows unless the last row is already blank.
+    /// That blank row is the collapsed Section/Block gap, so adding another
+    /// would sum the margins instead of collapsing them.
     fn push_gap(&mut self, gap: Gap) {
         for _ in 0..gap.rows() {
             if self.last_is_blank() {
@@ -199,6 +203,19 @@ impl<'a> Unit<'a> {
             Self::Context(_) => (Role::Turn, Role::Turn),
         }
     }
+
+    /// An assistant step that only requested tools renders no content. It
+    /// stays as a zero-height barrier so it still separates context groups.
+    fn is_empty(&self) -> bool {
+        match self {
+            Self::Single(entry) => matches!(
+                &entry.kind,
+                EntryKind::Assistant { text, reasoning, .. }
+                    if text.trim().is_empty() && reasoning.trim().is_empty()
+            ),
+            Self::Context(_) => false,
+        }
+    }
 }
 
 /// Group consecutive ordinary injected context into one display unit.
@@ -206,15 +223,6 @@ impl<'a> Unit<'a> {
 fn units(model: &TranscriptModel) -> Vec<Unit<'_>> {
     let mut units: Vec<Unit<'_>> = Vec::new();
     for entry in model.entries() {
-        // An assistant step that only requested tools has no visible content;
-        // it must not leave a gap behind.
-        if matches!(
-            &entry.kind,
-            EntryKind::Assistant { text, reasoning, .. }
-                if text.trim().is_empty() && reasoning.trim().is_empty()
-        ) {
-            continue;
-        }
         let ordinary = matches!(
             &entry.kind,
             EntryKind::Context {
@@ -364,9 +372,14 @@ pub fn render(
     let units = units(model);
     let roles: Vec<(Role, Role)> = units.iter().map(Unit::roles).collect();
     let gaps: Vec<Gap> = (0..units.len())
-        .map(|index| match roles.get(index + 1) {
-            Some((next_lead, _)) => gap_between(roles[index].1, *next_lead),
-            None => Gap::Block,
+        .map(|index| {
+            if units[index].is_empty() {
+                return Gap::None;
+            }
+            match roles.get(index + 1) {
+                Some((next_lead, _)) => gap_between(roles[index].1, *next_lead),
+                None => Gap::Block,
+            }
         })
         .collect();
     let mut entries = Vec::new();
@@ -607,7 +620,7 @@ fn render_echo(output: &mut RenderedEntry, width: usize, text: &str, state: &str
         };
         let row_width = row.chars().map(char_width).sum::<usize>();
         let mut spans = vec![Span::styled(prefix, style), Span::styled(row, style)];
-        if index == last && 2 + row_width + suffix_width <= width {
+        if index == last && spacing::INDENT + row_width + suffix_width <= width {
             spans.push(Span::styled(suffix.clone(), muted(theme)));
             appended = true;
         }
@@ -1096,8 +1109,8 @@ fn render_diff_line(
     let kind = line.kind;
     let number = line.old_no.or(line.new_no);
     let number = number
-        .map(|number| format!("{number:>4}"))
-        .unwrap_or_else(|| " ".repeat(spacing::NESTED));
+        .map(|number| format!("{number:>width$}", width = DIFF_LINE_NUMBER_WIDTH))
+        .unwrap_or_else(|| " ".repeat(DIFF_LINE_NUMBER_WIDTH));
     let colors = theme.colors();
     let (marker, background, emphasis_background, marker_color) = match kind {
         DiffLineKind::Add => (
@@ -1234,10 +1247,12 @@ fn render_preview(output: &mut RenderedEntry, preview: &PreviewEntry, width: usi
         ]));
         output.hits.push(None);
     }
-    if !preview.text.trim().is_empty() {
+    let text_rows = wrap_block(&preview.text, width, MAX_BLOCK_ROWS);
+    let first = first_visible_row(&text_rows);
+    if first < text_rows.len() {
         output.push_gap(Gap::Section);
     }
-    for row in wrap_block(&preview.text, width, MAX_BLOCK_ROWS) {
+    for row in text_rows.into_iter().skip(first) {
         output
             .lines
             .push(Line::from(Span::styled(row, Style::default())));
@@ -1306,19 +1321,26 @@ fn render_context_group(
     if !expanded {
         return;
     }
-    for (index, entry) in entries.iter().enumerate() {
-        if index > 0 {
-            output.push_gap(Gap::Block);
-        }
+    let mut written = 0usize;
+    for entry in entries {
         let EntryKind::Context { text, .. } = &entry.kind else {
             continue;
         };
-        for row in wrap_block(text, width, MAX_BLOCK_ROWS) {
+        let rows = wrap_block(text, width, MAX_BLOCK_ROWS);
+        let first = first_visible_row(&rows);
+        if first == rows.len() {
+            continue;
+        }
+        if written > 0 {
+            output.push_gap(Gap::Block);
+        }
+        for row in rows.into_iter().skip(first) {
             output
                 .lines
                 .push(Line::from(Span::styled(row, muted(theme))));
             output.hits.push(hit.clone());
         }
+        written += 1;
     }
 }
 
@@ -1354,6 +1376,8 @@ fn render_labeled_context(
         kind: HitKind::Toggle,
     });
     output.hits.push(hit.clone());
+    let first = first_visible_row(&rows);
+    let rows = &rows[first..];
     if rows.is_empty() {
         return;
     }
@@ -1380,6 +1404,13 @@ fn render_labeled_context(
         )));
         output.hits.push(hit);
     }
+}
+
+/// First row that carries visible text, skipping leading blank rows.
+fn first_visible_row(rows: &[String]) -> usize {
+    rows.iter()
+        .position(|row| !row.trim().is_empty())
+        .unwrap_or(rows.len())
 }
 
 /// Append one gap row unless the previous row is already blank.
@@ -1962,7 +1993,7 @@ fn push_two_column(
         right = truncate_spans(right, width);
     }
     let right_width = spans_width(&right);
-    let left_room = width.saturating_sub(right_width + 1);
+    let left_room = width.saturating_sub(right_width + spacing::INLINE);
     let mut left = truncate_spans(left, left_room);
     let left_width = spans_width(&left);
     let used = left_width + right_width;
@@ -2116,6 +2147,18 @@ mod tests {
                 finished: false,
                 outcome: None,
             }),
+        }
+    }
+
+    fn context_entry(identity: &str, text: &str) -> Entry {
+        Entry {
+            identity: identity.into(),
+            fingerprint: identity.len() as u64,
+            kind: EntryKind::Context {
+                text: text.into(),
+                bash: false,
+                monitor: false,
+            },
         }
     }
 
@@ -2915,6 +2958,108 @@ mod tests {
             || render_unit(&unit, 80, false, Theme::Dark, Gap::Block),
         );
         assert_eq!(blocked, tight + 1);
+    }
+
+    #[test]
+    fn a_first_unit_has_no_leading_gap() {
+        let rows = render_model_lines(vec![assistant_entry("a-1", "开头", "")], 80);
+        assert!(
+            !rows.first().is_some_and(|row| row.trim().is_empty()),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_single_tool_ends_with_one_bottom_gap() {
+        let rows = render_model_lines(
+            vec![bash_entry(
+                ToolStatus::Succeeded,
+                "ok",
+                DisplayStatus::Succeeded,
+            )],
+            80,
+        );
+        assert_eq!(rows.last().map(String::as_str), Some(""));
+        assert!(
+            rows.iter()
+                .rev()
+                .nth(1)
+                .is_some_and(|row| !row.trim().is_empty()),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_context_group_separator_has_no_hit() {
+        let mut model = model(vec![
+            context_entry("ctx-a", "第一段"),
+            context_entry("ctx-b", "第二段"),
+        ]);
+        model.reveal("ctx-a");
+        let mut cache = RenderCache::new();
+        let mut scroll = ScrollState::default();
+        let rendered = render(&model, &mut cache, &mut scroll, 80, 40, Theme::Dark);
+        let first = rendered
+            .lines
+            .iter()
+            .position(|line| line.to_string().contains("第一段"))
+            .expect("first context row");
+        let second = rendered
+            .lines
+            .iter()
+            .position(|line| line.to_string().contains("第二段"))
+            .expect("second context row");
+        assert_eq!(
+            second,
+            first + 2,
+            "one separator row: {:?}",
+            rendered
+                .lines
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        );
+        assert!(rendered.hits[first].is_some());
+        assert!(rendered.hits[first + 1].is_none());
+        assert!(rendered.hits[second].is_some());
+    }
+
+    #[test]
+    fn a_preview_leading_newline_does_not_double_the_gap() {
+        let entries = vec![preview_entry_with_thinking("\n\n流式正文", "先想想")];
+        let rows = render_model_lines(entries, 80);
+        assert!(
+            !rows
+                .windows(2)
+                .any(|pair| pair[0].is_empty() && pair[1].is_empty()),
+            "{rows:?}"
+        );
+        let text = rows
+            .iter()
+            .position(|row| row.contains("流式正文"))
+            .expect("preview text");
+        assert!(rows[text - 1].is_empty());
+        assert!(
+            !rows[text - 2].is_empty(),
+            "only one gap before the text: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn an_empty_assistant_keeps_contexts_as_separate_groups() {
+        let rows = render_model_lines(
+            vec![
+                context_entry("ctx-a", "第一段"),
+                assistant_entry("a-empty", "", ""),
+                context_entry("ctx-b", "第二段"),
+            ],
+            80,
+        );
+        let headers = rows.iter().filter(|row| row.contains("上下文")).count();
+        assert_eq!(
+            headers, 2,
+            "the empty assistant remains a barrier: {rows:?}"
+        );
     }
 
     #[test]
