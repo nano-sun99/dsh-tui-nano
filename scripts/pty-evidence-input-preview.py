@@ -336,9 +336,8 @@ def capture_frames(out, session, name, header, seconds=3.2, interval=0.05):
         delay = start + index * interval - time.monotonic()
         if delay > 0:
             time.sleep(delay)
-    (out / name).write_text(
-        header + "\n" + "\n".join(frames) + "\n", encoding="utf-8"
-    )
+    body = header + "\n" + "\n".join(frames)
+    (out / name).write_text(body.rstrip("\n") + "\n", encoding="utf-8")
     print(f"captured {name}")
 
 
@@ -346,10 +345,8 @@ def capture_gap(out, session, name, gap_ms, header):
     first = tmux("capture-pane", "-p", "-e", "-t", session).stdout
     time.sleep(gap_ms / 1000.0)
     second = tmux("capture-pane", "-p", "-e", "-t", session).stdout
-    (out / name).write_text(
-        header + f"\nframe 0 t=0ms\n{first}\nframe 1 t={gap_ms}ms\n{second}\n",
-        encoding="utf-8",
-    )
+    body = header + f"\nframe 0 t=0ms\n{first}\nframe 1 t={gap_ms}ms\n{second}"
+    (out / name).write_text(body.rstrip("\n") + "\n", encoding="utf-8")
     print(f"captured {name}")
 
 
