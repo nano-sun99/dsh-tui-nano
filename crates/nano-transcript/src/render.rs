@@ -124,7 +124,8 @@ impl RenderedEntry {
 /// How one display unit opens and closes for adjacent-gap purposes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Role {
-    /// Part of the compact process group (thinking header, tool summary).
+    /// A process summary (thinking header or tool card). Kept for a future
+    /// denser rhythm; the current gap rule treats every visible unit the same.
     Process,
     /// A visible answer or interrupted note.
     Answer,
@@ -2969,6 +2970,24 @@ mod tests {
             !rows.first().is_some_and(|row| row.trim().is_empty()),
             "{rows:?}"
         );
+    }
+
+    #[test]
+    fn a_bash_card_keeps_its_header_command_and_output_tight() {
+        let rows = render_model_lines(
+            vec![bash_entry(
+                ToolStatus::Succeeded,
+                "ok",
+                DisplayStatus::Succeeded,
+            )],
+            80,
+        );
+        let header = rows
+            .iter()
+            .position(|row| row.contains("▸ Bash"))
+            .expect("tool header");
+        assert_eq!(rows[header + 1].trim(), "echo hi");
+        assert_eq!(rows[header + 2].trim(), "ok");
     }
 
     #[test]
