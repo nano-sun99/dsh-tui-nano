@@ -314,6 +314,7 @@ fn display_status(
             ExitStatus::Code(0) => DisplayStatus::Succeeded,
             ExitStatus::Code(_) | ExitStatus::TimedOut => DisplayStatus::Failed,
             ExitStatus::Signal(_) | ExitStatus::Stopped(_) => DisplayStatus::Interrupted,
+            ExitStatus::Unknown if call.status == ToolStatus::Succeeded => DisplayStatus::Succeeded,
             ExitStatus::Unknown => DisplayStatus::Unknown,
         };
     }
@@ -542,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_exit_marker_is_unknown_not_zero() {
+    fn a_missing_exit_marker_does_not_downgrade_explicit_success() {
         let record = ToolRecord::build(
             &call("bash", r#"{"command":"echo hi"}"#, Some("hi\n"), false),
             None,
@@ -555,8 +556,155 @@ mod tests {
         assert_eq!(*exit, ExitStatus::Unknown);
         assert_eq!(exit.label(), "退出状态未返回");
         assert_eq!(output, "hi");
+        assert_eq!(record.display_status, DisplayStatus::Succeeded);
+        assert_eq!(record.display_status.label(), "完成");
+    }
+
+    #[test]
+    fn explicit_success_with_empty_output_is_complete() {
+        let record = ToolRecord::build(
+            &call("bash", r#"{"command":"true"}"#, Some(""), false),
+            None,
+            None,
+            None,
+        );
+        let ToolDisplay::Bash { exit, output, .. } = &record.display else {
+            panic!("expected bash");
+        };
+        assert_eq!(output, "");
+        assert_eq!(*exit, ExitStatus::Unknown);
+        assert_eq!(record.display_status, DisplayStatus::Succeeded);
+    }
+
+    #[test]
+    fn a_missing_result_and_exit_fact_stays_unknown() {
+        let mut with_result = call("bash", r#"{"command":"x"}"#, Some("hi"), false);
+        with_result.status = ToolStatus::Unknown;
+        let record = ToolRecord::build(&with_result, None, None, None);
         assert_eq!(record.display_status, DisplayStatus::Unknown);
-        assert_eq!(record.display_status.label(), "结果未确认");
+
+        let mut without_result = call("bash", r#"{"command":"x"}"#, None, false);
+        without_result.status = ToolStatus::Unknown;
+        let record = ToolRecord::build(&without_result, None, None, None);
+        assert_eq!(record.display_status, DisplayStatus::Unknown);
+    }
+
+    #[test]
+    fn a_zero_exit_is_success() {
+        let record = ToolRecord::build(
+            &call(
+                "bash",
+                r#"{"command":"true"}"#,
+                Some("ok\n[exit code: 0]"),
+                false,
+            ),
+            None,
+            None,
+            None,
+        );
+        let ToolDisplay::Bash { exit, .. } = &record.display else {
+            panic!("expected bash");
+        };
+        assert_eq!(*exit, ExitStatus::Code(0));
+        assert_eq!(record.display_status, DisplayStatus::Succeeded);
+    }
+
+    #[test]
+    fn a_timeout_is_a_failure() {
+        let record = ToolRecord::build(
+            &call(
+                "bash",
+                r#"{"command":"sleep"}"#,
+                Some("[timed out after 10s]"),
+                false,
+            ),
+            None,
+            None,
+            None,
+        );
+        let ToolDisplay::Bash { exit, .. } = &record.display else {
+            panic!("expected bash");
+        };
+        assert_eq!(*exit, ExitStatus::TimedOut);
+        assert_eq!(record.display_status, DisplayStatus::Failed);
+    }
+
+    #[test]
+    fn a_stopped_result_is_interrupted() {
+        let record = ToolRecord::build(
+            &call(
+                "bash",
+                r#"{"command":"sleep"}"#,
+                Some("[stopped: user]"),
+                false,
+            ),
+            None,
+            None,
+            None,
+        );
+        let ToolDisplay::Bash { exit, .. } = &record.display else {
+            panic!("expected bash");
+        };
+        assert_eq!(*exit, ExitStatus::Stopped("user".into()));
+        assert_eq!(record.display_status, DisplayStatus::Interrupted);
+    }
+
+    #[test]
+    fn an_explicit_error_wins_over_a_zero_exit_marker() {
+        let record = ToolRecord::build(
+            &call(
+                "bash",
+                r#"{"command":"false"}"#,
+                Some("bad\n[exit code: 0]"),
+                true,
+            ),
+            None,
+            None,
+            None,
+        );
+        assert_eq!(record.display_status, DisplayStatus::Failed);
+    }
+
+    #[test]
+    fn structured_outcome_unknown_wins_over_explicit_success() {
+        let fact = ToolResultFact {
+            call_id: "c-1".into(),
+            meta: None,
+            error: Some(ToolErrorFact {
+                name: "ToolError".into(),
+                code: "TOOL_OUTCOME_UNKNOWN".into(),
+                reason: None,
+            }),
+            text: Some("outcome unknown".into()),
+        };
+        let record = ToolRecord::build(
+            &call("bash", r#"{"command":"x"}"#, Some("outcome unknown"), false),
+            Some(&fact),
+            None,
+            None,
+        );
+        assert_eq!(record.display_status, DisplayStatus::Unknown);
+    }
+
+    #[test]
+    fn not_started_stays_interrupted_without_an_exit_marker() {
+        let fact = ToolResultFact {
+            call_id: "c-1".into(),
+            meta: None,
+            error: Some(ToolErrorFact {
+                name: "ToolError".into(),
+                code: "TOOL_NOT_STARTED".into(),
+                reason: None,
+            }),
+            text: Some("not started".into()),
+        };
+        let record = ToolRecord::build(
+            &call("bash", r#"{"command":"x"}"#, Some("not started"), false),
+            Some(&fact),
+            None,
+            None,
+        );
+        assert_eq!(record.display_status, DisplayStatus::Interrupted);
     }
 
     #[test]
