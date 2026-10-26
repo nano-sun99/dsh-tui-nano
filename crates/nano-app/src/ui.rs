@@ -16,6 +16,7 @@ use nano_jobs::{BashRecord, BashState, JobStatus};
 use nano_schedule::RowKind;
 use nano_sessions::{format_clock, Occupancy};
 use nano_subagents::{ComposerGate, Lamp};
+use nano_theme::spacing;
 use nano_theme::Theme;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -56,7 +57,7 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
     }
     // The conversation surfaces keep 2 terminal cells of breathing room on
     // both sides; the interactive terminal keeps its full grid.
-    let area = inset_horizontal(full, 2);
+    let area = inset_horizontal(full, spacing::EDGE as u16);
     if app.schedule.open {
         draw_schedule(frame, app, full);
         return;
@@ -96,11 +97,16 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
     let dock_height = if dock_rows.is_empty() && dock_overflow == 0 {
         0
     } else {
-        (dock_rows.len() + usize::from(dock_overflow > 0)) as u16 + 1
+        (dock_rows.len() + usize::from(dock_overflow > 0)) as u16 + spacing::CHROME_GAP as u16
     };
     // The header reserves one blank row beneath the title, matching the
     // design's one-line gap before the transcript.
-    let header_height = if child_active { 3 } else { 2 };
+    let header_gap = spacing::CHROME_GAP as u16;
+    let header_height = if child_active {
+        2 + header_gap
+    } else {
+        1 + header_gap
+    };
     let activity_height = if models_panel {
         0
     } else {
@@ -212,9 +218,10 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
 /// Separator rows for composer→status and status→dock, never taking the
 /// transcript below its three-row minimum.
 fn bottom_gaps(free: u16, dock: bool) -> (u16, u16) {
-    let bottom = u16::from(free > 3);
+    let gap = spacing::CHROME_GAP as u16;
+    let bottom = if free > 3 { gap } else { 0 };
     let remaining = free.saturating_sub(bottom);
-    let dock_gap = u16::from(dock && remaining > 3);
+    let dock_gap = if dock && remaining > 3 { gap } else { 0 };
     (bottom, dock_gap)
 }
 
@@ -6511,6 +6518,24 @@ mod tests {
                 Some((app, 100, 36, true))
             }
             "main-60-light" => Some((light(), 60, 30, true)),
+            "spacing-tool-thinking-answer-100-dark" => {
+                Some((evidence_process_answer(app()), 100, 36, false))
+            }
+            "spacing-tool-thinking-answer-60-light" => {
+                Some((evidence_process_answer(light()), 60, 30, false))
+            }
+            "spacing-tool-thinking-answer-100-light" => {
+                Some((evidence_process_answer(light()), 100, 36, false))
+            }
+            "spacing-tool-thinking-answer-60-dark" => {
+                Some((evidence_process_answer(app()), 60, 30, false))
+            }
+            "spacing-preview-answer-100-dark" => {
+                Some((evidence_preview_section(app()), 100, 36, false))
+            }
+            "spacing-preview-answer-60-light" => {
+                Some((evidence_preview_section(light()), 60, 30, false))
+            }
             "main-dock-100-dark" => {
                 let mut app = app();
                 install_subagents(
@@ -6723,6 +6748,66 @@ mod tests {
             app.view.reveal("call-c-1");
         }
         app.transcript_dirty = true;
+        app
+    }
+
+    fn evidence_process_answer(mut app: App) -> App {
+        app = evidence_tool(app, "ok", Some(false), false);
+        let payload = serde_json::json!({
+            "address": {"rootSessionId": "root"},
+            "seq": 3,
+            "type": "assistant/message",
+            "data": {
+                "turn": 1,
+                "step": 1,
+                "message": {
+                    "id": "a-3",
+                    "role": "assistant",
+                    "content": [
+                        {"type": "reasoning", "text": "先核对命令输出，再给出结论。"},
+                        {"type": "text", "text": "一句话：这是 DeepSeek Harness 的终端界面。"}
+                    ]
+                },
+                "stream": [{"type": "reasoning-chunks", "time0": 0, "dt": [2800]}]
+            }
+        });
+        app.model.apply_event("session.event", &payload);
+        app.view.apply_event("session.event", &payload);
+        app.transcript_dirty = true;
+        app
+    }
+
+    fn evidence_preview_section(mut app: App) -> App {
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "start", "turn": 1, "step": 1
+            }),
+        );
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 0,
+                "chunk": {"type": "reasoning-delta", "index": 0, "text": "先想想。"}
+            }),
+        );
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 1,
+                "chunk": {"type": "text-delta", "index": 0, "text": "流式正文。"}
+            }),
+        );
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 2,
+                "chunk": {
+                    "type": "tool-call-delta", "index": 0, "id": "c-1",
+                    "name": "bash", "argumentsDelta": "{}"
+                }
+            }),
+        );
         app
     }
 
