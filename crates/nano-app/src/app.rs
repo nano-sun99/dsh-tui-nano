@@ -542,8 +542,8 @@ pub struct App {
     pub activity_at: Option<Instant>,
     /// Start of the `/model` effort animation clock.
     pub effort_anim_start: Instant,
-    /// Start of the XHigh sweep clock while XHigh is active.
-    pub xhigh_anim_start: Option<Instant>,
+    /// Start of the effort sweep clock while the sweep level is active.
+    pub sweep_anim_start: Option<Instant>,
     /// Next scheduled `/model` effort animation frame.
     pub effort_anim_at: Option<Instant>,
     /// Composer send button region from the last draw.
@@ -799,7 +799,7 @@ impl App {
             activity_phase: false,
             activity_at: None,
             effort_anim_start: Instant::now(),
-            xhigh_anim_start: None,
+            sweep_anim_start: None,
             effort_anim_at: None,
             send_area: Rect::default(),
             input_area: Rect::default(),
@@ -7887,13 +7887,13 @@ impl App {
         } else {
             self.subagent_blink_at = None;
         }
-        let xhigh_active = crate::ui::xhigh_animation_active(self);
-        if xhigh_active {
-            if self.xhigh_anim_start.is_none() {
-                self.xhigh_anim_start = Some(now);
+        let sweep_active = crate::ui::sweep_animation_active(self);
+        if sweep_active {
+            if self.sweep_anim_start.is_none() {
+                self.sweep_anim_start = Some(now);
                 changed = true;
             }
-        } else if self.xhigh_anim_start.take().is_some() {
+        } else if self.sweep_anim_start.take().is_some() {
             changed = true;
         }
         if crate::ui::effort_animation_active(self) {

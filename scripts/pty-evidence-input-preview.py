@@ -5,11 +5,14 @@ The `evidence_frame` test renders a deterministic state through the real
 `draw` path and prints ANSI. Each scenario runs inside tmux at the target
 size, so the archive is a real PTY capture of the renderer output. The
 `outcome-xhigh` group also runs `evidence_sweep`, which drives the real tick
-clock and writes time-stamped continuous ANSI bar frames.
+clock and writes time-stamped continuous ANSI bar frames. The
+`effort-sweep-binding` group launches the real binary against the account's
+live model catalog, selects the sweep level, and records continuous frames.
 
 Run after `cargo build -p nano-app --tests`:
     python3 scripts/pty-evidence-input-preview.py                 # input/preview/table
     python3 scripts/pty-evidence-input-preview.py outcome-xhigh  # outcome/XHigh
+    python3 scripts/pty-evidence-input-preview.py effort-sweep-binding  # real catalog
 """
 import os
 import re
@@ -22,6 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "evidence" / "2026-10-26-nano-input-preview-rendering"
 NEW_OUT = ROOT / "docs" / "evidence" / "2026-10-26-nano-outcome-xhigh-correction"
+REAL_OUT = ROOT / "docs" / "evidence" / "2026-10-26-nano-effort-sweep-binding"
 
 SCENARIOS = [
     ("01-main-empty-pty-100-dark.txt", "main-empty", 100, 36, False),
@@ -259,11 +263,172 @@ def capture_stream(out, binary, name, scenario):
     print(f"captured {name}")
 
 
+def wait_for(session, needle, timeout=15.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if needle in tmux("capture-pane", "-p", "-t", session).stdout:
+            return
+        time.sleep(0.1)
+    raise SystemExit(f"timed out waiting for {needle!r} in {session}")
+
+
+def wait_until_absent(session, needle, timeout=10.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if needle not in tmux("capture-pane", "-p", "-t", session).stdout:
+            return
+        time.sleep(0.1)
+    raise SystemExit(f"timed out waiting for {needle!r} to leave {session}")
+
+
+def real_binary():
+    subprocess.run(["cargo", "build", "-p", "nano-app"], cwd=ROOT, check=True)
+    return ROOT / "target" / "debug" / "nano"
+
+
+def open_real_models(session, width, height, theme, reduced_motion=False):
+    tmux("kill-session", "-t", session, check=False)
+    env = [f"NANO_THEME={theme}"]
+    if reduced_motion:
+        env.append("NANO_REDUCED_MOTION=1")
+    command = f"cd {ROOT} && {' '.join(env)} ./target/debug/nano"
+    tmux(
+        "new-session",
+        "-d",
+        "-s",
+        session,
+        "-x",
+        str(width),
+        "-y",
+        str(height),
+        command,
+    )
+    wait_for(session, "nano  ~/", timeout=20)
+    try:
+        wait_for(session, "Enter / Esc 关闭", timeout=20)
+        tmux("send-keys", "-t", session, "Enter")  # close the startup sources panel
+        wait_until_absent(session, "Enter / Esc 关闭")
+    except SystemExit:
+        pass
+    time.sleep(0.5)
+    tmux("send-keys", "-t", session, "/model", "Enter")
+    wait_for(session, "模型")
+    time.sleep(0.5)
+
+
+def cycle_effort(session, times):
+    for _ in range(times):
+        tmux("send-keys", "-t", session, "-H", "1b", "5b", "43")
+        time.sleep(0.15)
+
+
+def capture_frames(out, session, name, header, seconds=3.2, interval=0.05):
+    frames = []
+    start = time.monotonic()
+    index = 0
+    while True:
+        elapsed = int((time.monotonic() - start) * 1000)
+        if elapsed > seconds * 1000:
+            break
+        captured = tmux("capture-pane", "-p", "-e", "-t", session).stdout
+        frames.append(f"frame {index} t={elapsed}ms\n{captured}")
+        index += 1
+        delay = start + index * interval - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+    body = header + "\n" + "\n".join(frames)
+    (out / name).write_text(body.rstrip("\n") + "\n", encoding="utf-8")
+    print(f"captured {name}")
+
+
+def capture_gap(out, session, name, gap_ms, header):
+    first = tmux("capture-pane", "-p", "-e", "-t", session).stdout
+    time.sleep(gap_ms / 1000.0)
+    second = tmux("capture-pane", "-p", "-e", "-t", session).stdout
+    body = header + f"\nframe 0 t=0ms\n{first}\nframe 1 t={gap_ms}ms\n{second}"
+    (out / name).write_text(body.rstrip("\n") + "\n", encoding="utf-8")
+    print(f"captured {name}")
+
+
+def capture_real_catalog(out):
+    """Record the account's live catalog (Off/Low/High/Max) in a real PTY."""
+    commit = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+    def header(width, theme, level):
+        return (
+            f"# scenario=real-catalog width={width} theme={theme} "
+            f"level={level} commit={commit}"
+        )
+
+    for name, width, theme in [
+        ("01-real-sweep-100-dark.txt", 100, "dark"),
+        ("02-real-sweep-60-light.txt", 60, "light"),
+        ("03-real-sweep-100-light.txt", 100, "light"),
+        ("04-real-sweep-60-dark.txt", 60, "dark"),
+    ]:
+        session = f"nano-real-sweep-{width}-{theme}"
+        open_real_models(session, width, 36 if width == 100 else 30, theme)
+        cycle_effort(session, 3)  # None -> Off -> Low -> High (second-highest)
+        capture_frames(out, session, name, header(width, theme, "High"))
+        tmux("kill-session", "-t", session, check=False)
+
+    session = "nano-real-max"
+    open_real_models(session, 100, 36, "dark")
+    cycle_effort(session, 4)  # High -> Max keeps its pulse
+    capture_gap(
+        out,
+        session,
+        "05-real-max-pulse-100-dark.txt",
+        600,
+        header(100, "dark", "Max"),
+    )
+    tmux("kill-session", "-t", session, check=False)
+
+    session = "nano-real-low"
+    open_real_models(session, 100, 36, "dark")
+    cycle_effort(session, 2)  # None -> Off -> Low stays static
+    capture_gap(
+        out,
+        session,
+        "06-real-low-static-100-dark.txt",
+        600,
+        header(100, "dark", "Low"),
+    )
+    tmux("kill-session", "-t", session, check=False)
+
+    session = "nano-real-reduced"
+    open_real_models(session, 100, 36, "dark", reduced_motion=True)
+    cycle_effort(session, 3)
+    capture_gap(
+        out,
+        session,
+        "07-real-reduced-motion-100-dark.txt",
+        700,
+        header(100, "dark", "High reduced-motion"),
+    )
+    tmux("kill-session", "-t", session, check=False)
+
+
 def main():
     if shutil.which("tmux") is None:
         print("tmux is required", file=sys.stderr)
         return 2
     group = sys.argv[1] if len(sys.argv) > 1 else "input-preview"
+    if group == "effort-sweep-binding":
+        out = REAL_OUT
+        if out.exists():
+            for path in out.glob("*.txt"):
+                path.unlink()
+        out.mkdir(parents=True, exist_ok=True)
+        real_binary()
+        capture_real_catalog(out)
+        return 0
     if group == "outcome-xhigh":
         out = NEW_OUT
         scenarios = NEW_SCENARIOS

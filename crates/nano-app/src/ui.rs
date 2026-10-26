@@ -3443,41 +3443,66 @@ fn models_effort_lines(app: &App, width: usize) -> Vec<Line<'static>> {
             Style::default().fg(colors.muted),
         ))],
         EffortArea::Levels { levels, selected } => {
-            let selected_id = selected
-                .and_then(|index| levels.get(index))
-                .map(|(id, _)| id.as_str());
-            let phase = effort_phase(app, selected_id);
+            let sweep = is_sweep_level(&levels, selected);
+            let phase = effort_phase(app, sweep);
             vec![
-                effort_bar_line(app, &levels, selected, width, phase),
+                effort_bar_line(app, &levels, selected, width, phase, sweep),
                 effort_labels_line(&levels, selected, width, colors, phase, app.reduced_motion),
             ]
         }
     }
 }
 
-/// The original design's linear XHigh sweep period.
-const XHIGH_SWEEP_MS: u64 = 1400;
+/// The original design's linear sweep period.
+const SWEEP_PERIOD_MS: u64 = 1400;
 
-fn effort_phase(app: &App, level_id: Option<&str>) -> u64 {
+/// The sweep level is the second-highest official effort (index `len - 2`)
+/// when the set has at least three levels and that level is not `Max`.
+fn sweep_level(levels: &[(String, String)]) -> Option<usize> {
+    if levels.len() < 3 {
+        return None;
+    }
+    let index = levels.len() - 2;
+    if levels[index].0.eq_ignore_ascii_case("max") {
+        None
+    } else {
+        Some(index)
+    }
+}
+
+fn is_sweep_level(levels: &[(String, String)], selected: Option<usize>) -> bool {
+    selected.is_some_and(|index| sweep_level(levels) == Some(index))
+}
+
+fn is_max_level(levels: &[(String, String)], selected: Option<usize>) -> bool {
+    selected
+        .and_then(|index| levels.get(index))
+        .is_some_and(|(id, _)| id.eq_ignore_ascii_case("max"))
+}
+
+fn effort_phase(app: &App, sweep: bool) -> u64 {
     if app.reduced_motion {
         return 0;
     }
-    let start = match level_id {
-        Some(id) if id.eq_ignore_ascii_case("xhigh") => app.xhigh_anim_start,
-        _ => Some(app.effort_anim_start),
+    let start = if sweep {
+        app.sweep_anim_start
+    } else {
+        Some(app.effort_anim_start)
     };
     start.map_or(0, |start| start.elapsed().as_millis() as u64)
 }
 
 /// One cell-high bar. The unfilled track uses the rule role; the filled part
-/// uses the official level role. `XHigh` sweeps a highlight and `Max` pulses
-/// between two palette shades; reduced motion freezes both.
+/// uses the official level role. The sweep level (the second-highest effort)
+/// sweeps a highlight and `Max` pulses between two palette shades; reduced
+/// motion freezes both.
 fn effort_bar_line(
     app: &App,
     levels: &[(String, String)],
     selected: Option<usize>,
     width: usize,
     phase: u64,
+    sweep: bool,
 ) -> Line<'static> {
     let colors = app.theme.colors();
     let level_id = selected.map(|index| levels[index].0.as_str()).unwrap_or("");
@@ -3488,9 +3513,9 @@ fn effort_bar_line(
         Some(_) => width,
         None => 0,
     };
-    let highlight = if !app.reduced_motion && level_id.eq_ignore_ascii_case("xhigh") && filled > 0 {
+    let highlight = if !app.reduced_motion && sweep && filled > 0 {
         let radius = (filled as f32 * 0.25).max(1.0);
-        let progress = (phase % XHIGH_SWEEP_MS) as f32 / XHIGH_SWEEP_MS as f32;
+        let progress = (phase % SWEEP_PERIOD_MS) as f32 / SWEEP_PERIOD_MS as f32;
         Some((progress * filled as f32, radius))
     } else {
         None
@@ -3501,12 +3526,16 @@ fn effort_bar_line(
         0.0
     };
     let fill_style = |column: usize| -> Style {
-        let base = match level_id.to_ascii_lowercase().as_str() {
-            "low" => colors.muted,
-            "high" => colors.effort_high,
-            "xhigh" => colors.effort_xhigh,
-            "max" => mix_color(colors.effort_max, colors.effort_max_bright, pulse),
-            _ => colors.muted,
+        let base = if sweep {
+            colors.effort_xhigh
+        } else {
+            match level_id.to_ascii_lowercase().as_str() {
+                "low" => colors.muted,
+                "high" => colors.effort_high,
+                "xhigh" => colors.effort_xhigh,
+                "max" => mix_color(colors.effort_max, colors.effort_max_bright, pulse),
+                _ => colors.muted,
+            }
         };
         let color = match highlight {
             Some((center, radius)) => {
@@ -3861,29 +3890,20 @@ pub(crate) fn effort_animation_active(app: &App) -> bool {
         return false;
     }
     match effort_area(app) {
-        EffortArea::Levels {
-            levels,
-            selected: Some(index),
-        } => {
-            let id = levels[index].0.to_ascii_lowercase();
-            id == "xhigh" || id == "max"
+        EffortArea::Levels { levels, selected } => {
+            is_sweep_level(&levels, selected) || is_max_level(&levels, selected)
         }
         _ => false,
     }
 }
 
-/// Whether the XHigh sweep specifically needs animation frames.
-pub(crate) fn xhigh_animation_active(app: &App) -> bool {
+/// Whether the sweep specifically needs animation frames.
+pub(crate) fn sweep_animation_active(app: &App) -> bool {
     if !effort_animation_active(app) {
         return false;
     }
     match effort_area(app) {
-        EffortArea::Levels {
-            levels,
-            selected: Some(index),
-        } => levels
-            .get(index)
-            .is_some_and(|(id, _)| id.eq_ignore_ascii_case("xhigh")),
+        EffortArea::Levels { levels, selected } => is_sweep_level(&levels, selected),
         _ => false,
     }
 }
@@ -5587,6 +5607,18 @@ mod tests {
     }
 
     fn open_models(app: &mut App) {
+        open_models_with_efforts(
+            app,
+            json!([
+                {"id": "low", "name": "Low"},
+                {"id": "high", "name": "High"},
+                {"id": "xhigh", "name": "XHigh"},
+                {"id": "max", "name": "Max"}
+            ]),
+        );
+    }
+
+    fn open_models_with_efforts(app: &mut App, efforts: serde_json::Value) {
         app.controls.set_capabilities(true, true, true);
         app.controls
             .apply_state(&json!({
@@ -5609,12 +5641,7 @@ mod tests {
                             "name": "Chat",
                             "description": "long description",
                             "reasoning": {
-                                "efforts": [
-                                    {"id": "low", "name": "Low"},
-                                    {"id": "high", "name": "High"},
-                                    {"id": "xhigh", "name": "XHigh"},
-                                    {"id": "max", "name": "Max"}
-                                ],
+                                "efforts": efforts,
                                 "defaultEffort": "high"
                             }
                         },
@@ -5739,9 +5766,9 @@ mod tests {
         let backgrounds = |line: &Line<'static>| -> Vec<Color> {
             line.spans.iter().filter_map(|span| span.style.bg).collect()
         };
-        let sweep_a = effort_bar_line(&app, &levels, Some(2), 40, 350);
-        let sweep_b = effort_bar_line(&app, &levels, Some(2), 40, 700);
-        let sweep_c = effort_bar_line(&app, &levels, Some(2), 40, 1050);
+        let sweep_a = effort_bar_line(&app, &levels, Some(2), 40, 350, true);
+        let sweep_b = effort_bar_line(&app, &levels, Some(2), 40, 700, true);
+        let sweep_c = effort_bar_line(&app, &levels, Some(2), 40, 1050, true);
         assert_ne!(backgrounds(&sweep_a), backgrounds(&sweep_b));
         assert_ne!(backgrounds(&sweep_b), backgrounds(&sweep_c));
         assert!(
@@ -5754,13 +5781,131 @@ mod tests {
             backgrounds(&sweep_b)
         );
         app.panel.cycle_effort(&app.controls, 1);
-        let pulse_a = effort_bar_line(&app, &levels, Some(3), 40, 0);
-        let pulse_b = effort_bar_line(&app, &levels, Some(3), 40, 600);
+        let pulse_a = effort_bar_line(&app, &levels, Some(3), 40, 0, false);
+        let pulse_b = effort_bar_line(&app, &levels, Some(3), 40, 600, false);
         assert_ne!(backgrounds(&pulse_a), backgrounds(&pulse_b));
         app.reduced_motion = true;
         assert!(!effort_animation_active(&app));
-        let still = effort_bar_line(&app, &levels, Some(2), 40, 600);
+        let still = effort_bar_line(&app, &levels, Some(2), 40, 600, true);
         assert!(!backgrounds(&still).contains(&colors.effort_xhigh_highlight));
+    }
+
+    #[test]
+    fn the_real_catalog_sweeps_on_the_second_highest_level() {
+        let mut app = app();
+        open_models_with_efforts(
+            &mut app,
+            json!([
+                {"id": "off", "name": "Off"},
+                {"id": "low", "name": "Low"},
+                {"id": "high", "name": "High"},
+                {"id": "max", "name": "Max"}
+            ]),
+        );
+        let colors = *app.theme.colors();
+        for _ in 0..3 {
+            app.panel.cycle_effort(&app.controls, 1);
+        }
+        assert!(matches!(
+            effort_area(&app),
+            EffortArea::Levels {
+                selected: Some(2),
+                ..
+            }
+        ));
+        assert!(effort_animation_active(&app));
+        assert!(sweep_animation_active(&app));
+        assert!(app.sweep_anim_start.is_none());
+        app.tick();
+        assert!(
+            app.sweep_anim_start.is_some(),
+            "High starts the sweep clock"
+        );
+
+        let levels = match effort_area(&app) {
+            EffortArea::Levels { levels, .. } => levels,
+            _ => unreachable!("real catalog advertises efforts"),
+        };
+        let backgrounds = |line: &Line<'static>| -> Vec<Color> {
+            line.spans.iter().filter_map(|span| span.style.bg).collect()
+        };
+        let left = effort_bar_line(&app, &levels, Some(2), 40, 350, true);
+        let middle = effort_bar_line(&app, &levels, Some(2), 40, 700, true);
+        assert_ne!(backgrounds(&left), backgrounds(&middle));
+        assert!(
+            backgrounds(&left).contains(&colors.effort_xhigh),
+            "the sweep uses the deep-blue base"
+        );
+        assert!(
+            !backgrounds(&left).contains(&colors.effort_high),
+            "High drops its gray-blue while sweeping"
+        );
+    }
+
+    #[test]
+    fn sets_without_a_second_highest_level_do_not_sweep() {
+        let two = vec![
+            ("low".to_string(), "Low".to_string()),
+            ("high".to_string(), "High".to_string()),
+        ];
+        assert_eq!(sweep_level(&two), None);
+        assert!(!is_sweep_level(&two, Some(0)));
+        assert!(!is_sweep_level(&two, Some(1)));
+
+        let app = app();
+        let colors = *app.theme.colors();
+        let line = effort_bar_line(&app, &two, Some(1), 40, 700, false);
+        let backgrounds: Vec<Color> = line.spans.iter().filter_map(|span| span.style.bg).collect();
+        assert!(
+            !backgrounds.contains(&colors.effort_xhigh_highlight),
+            "a two-level set has no sweep highlight"
+        );
+    }
+
+    #[test]
+    fn a_max_second_to_last_keeps_the_pulse_without_the_sweep() {
+        let levels = vec![
+            ("low".to_string(), "Low".to_string()),
+            ("max".to_string(), "Max".to_string()),
+            ("ultra".to_string(), "Ultra".to_string()),
+        ];
+        assert_eq!(sweep_level(&levels), None);
+        assert!(!is_sweep_level(&levels, Some(1)));
+        assert!(is_max_level(&levels, Some(1)));
+
+        let app = app();
+        let colors = *app.theme.colors();
+        let backgrounds = |line: &Line<'static>| -> Vec<Color> {
+            line.spans.iter().filter_map(|span| span.style.bg).collect()
+        };
+        let bar = effort_bar_line(&app, &levels, Some(1), 40, 700, false);
+        assert!(!backgrounds(&bar).contains(&colors.effort_xhigh_highlight));
+        let pulse_a = effort_bar_line(&app, &levels, Some(1), 40, 0, false);
+        let pulse_b = effort_bar_line(&app, &levels, Some(1), 40, 600, false);
+        assert_ne!(
+            backgrounds(&pulse_a),
+            backgrounds(&pulse_b),
+            "Max still pulses"
+        );
+    }
+
+    #[test]
+    fn an_xhigh_that_is_not_second_to_last_stays_static() {
+        let levels = vec![
+            ("low".to_string(), "Low".to_string()),
+            ("xhigh".to_string(), "XHigh".to_string()),
+            ("high".to_string(), "High".to_string()),
+            ("max".to_string(), "Max".to_string()),
+        ];
+        assert_eq!(sweep_level(&levels), Some(2));
+        assert!(!is_sweep_level(&levels, Some(1)));
+        assert!(is_sweep_level(&levels, Some(2)));
+
+        let app = app();
+        let colors = *app.theme.colors();
+        let line = effort_bar_line(&app, &levels, Some(1), 40, 700, false);
+        let backgrounds: Vec<Color> = line.spans.iter().filter_map(|span| span.style.bg).collect();
+        assert!(!backgrounds.contains(&colors.effort_xhigh_highlight));
     }
 
     fn fill_colors(line: &Line<'static>, filled: usize) -> Vec<Color> {
@@ -5794,7 +5939,7 @@ mod tests {
     }
 
     #[test]
-    fn the_xhigh_sweep_runs_on_a_fixed_1400ms_period_at_any_width() {
+    fn the_sweep_runs_on_a_fixed_1400ms_period_at_any_width() {
         let app = app();
         let levels = vec![
             ("low".to_string(), "Low".to_string()),
@@ -5803,9 +5948,9 @@ mod tests {
             ("max".to_string(), "Max".to_string()),
         ];
         for width in [40, 96] {
-            let start = effort_bar_line(&app, &levels, Some(2), width, 0);
-            let wrapped = effort_bar_line(&app, &levels, Some(2), width, 1400);
-            let middle = effort_bar_line(&app, &levels, Some(2), width, 700);
+            let start = effort_bar_line(&app, &levels, Some(2), width, 0, true);
+            let wrapped = effort_bar_line(&app, &levels, Some(2), width, 1400, true);
+            let middle = effort_bar_line(&app, &levels, Some(2), width, 700, true);
             assert_eq!(
                 fill_colors(&start, width),
                 fill_colors(&wrapped, width),
@@ -5820,7 +5965,7 @@ mod tests {
     }
 
     #[test]
-    fn the_xhigh_sweep_is_visible_from_the_first_frame_and_never_blanks() {
+    fn the_sweep_is_visible_from_the_first_frame_and_never_blanks() {
         let app = app();
         let colors = *app.theme.colors();
         let levels = vec![
@@ -5830,8 +5975,8 @@ mod tests {
             ("max".to_string(), "Max".to_string()),
         ];
         let width = 40;
-        for phase in (0..XHIGH_SWEEP_MS).step_by(50) {
-            let line = effort_bar_line(&app, &levels, Some(2), width, phase);
+        for phase in (0..SWEEP_PERIOD_MS).step_by(50) {
+            let line = effort_bar_line(&app, &levels, Some(2), width, phase, true);
             assert!(
                 fill_colors(&line, 27)
                     .iter()
@@ -5842,7 +5987,7 @@ mod tests {
     }
 
     #[test]
-    fn the_xhigh_sweep_moves_left_to_right_over_the_fill() {
+    fn the_sweep_moves_left_to_right_over_the_fill() {
         let app = app();
         let colors = *app.theme.colors();
         let levels = vec![
@@ -5855,7 +6000,7 @@ mod tests {
         let filled = ((2.0 / 3.0) * width as f64).round() as usize;
         let center = |phase: u64| {
             brightest_cell(
-                &effort_bar_line(&app, &levels, Some(2), width, phase),
+                &effort_bar_line(&app, &levels, Some(2), width, phase, true),
                 filled,
                 colors.effort_xhigh,
                 colors.effort_xhigh_highlight,
@@ -5872,15 +6017,15 @@ mod tests {
     }
 
     #[test]
-    fn the_xhigh_evidence_helper_sets_the_xhigh_clock() {
-        let phase_560 = effort_phase(&evidence_xhigh(app(), 560), Some("xhigh"));
-        let phase_1050 = effort_phase(&evidence_xhigh(app(), 1050), Some("xhigh"));
+    fn the_sweep_evidence_helper_sets_the_sweep_clock() {
+        let phase_560 = effort_phase(&evidence_sweep_fixture(app(), 560), true);
+        let phase_1050 = effort_phase(&evidence_sweep_fixture(app(), 1050), true);
         assert!((560..700).contains(&phase_560), "phase {phase_560}");
         assert!((1050..1200).contains(&phase_1050), "phase {phase_1050}");
     }
 
     #[test]
-    fn the_xhigh_clock_restarts_on_entry_and_reopen_but_not_on_repaint() {
+    fn the_sweep_clock_restarts_on_entry_and_reopen_but_not_on_repaint() {
         let mut app = app();
         open_models(&mut app);
         for _ in 0..3 {
@@ -5893,18 +6038,18 @@ mod tests {
                 ..
             }
         ));
-        assert!(app.xhigh_anim_start.is_none());
+        assert!(app.sweep_anim_start.is_none());
         let max_clock = app.effort_anim_start;
         app.tick();
-        assert!(app.xhigh_anim_start.is_some(), "entry starts the clock");
+        assert!(app.sweep_anim_start.is_some(), "entry starts the clock");
         assert_eq!(
             app.effort_anim_start, max_clock,
-            "the XHigh entry must not reset the Max clock"
+            "the sweep entry must not reset the Max clock"
         );
 
-        app.xhigh_anim_start = Some(Instant::now() - Duration::from_millis(900));
+        app.sweep_anim_start = Some(Instant::now() - Duration::from_millis(900));
         app.tick();
-        let kept = app.xhigh_anim_start.expect("clock keeps running");
+        let kept = app.sweep_anim_start.expect("clock keeps running");
         assert!(
             kept.elapsed() >= Duration::from_millis(900),
             "a repaint must not restart the sweep"
@@ -5912,14 +6057,14 @@ mod tests {
 
         app.panel.close();
         app.tick();
-        assert!(app.xhigh_anim_start.is_none(), "closing stops the clock");
+        assert!(app.sweep_anim_start.is_none(), "closing stops the clock");
 
         app.panel.open(PanelMode::Models);
         for _ in 0..3 {
             app.panel.cycle_effort(&app.controls, 1);
         }
         app.tick();
-        let restarted = app.xhigh_anim_start.expect("reopen starts the clock");
+        let restarted = app.sweep_anim_start.expect("reopen starts the clock");
         assert!(
             restarted.elapsed() < Duration::from_millis(200),
             "reopening restarts from the left"
@@ -5927,7 +6072,7 @@ mod tests {
     }
 
     #[test]
-    fn the_drawn_xhigh_bar_follows_the_xhigh_clock() {
+    fn the_drawn_sweep_bar_follows_the_sweep_clock() {
         let mut app = app();
         open_models(&mut app);
         for _ in 0..3 {
@@ -5945,11 +6090,11 @@ mod tests {
                 .expect("labels row");
             (2..98).map(|x| frame[(x, labels_y - 1)].bg).collect()
         };
-        app.xhigh_anim_start = Some(Instant::now() - Duration::from_millis(350));
+        app.sweep_anim_start = Some(Instant::now() - Duration::from_millis(350));
         let left = bar_row(&mut app);
-        app.xhigh_anim_start = Some(Instant::now() - Duration::from_millis(700));
+        app.sweep_anim_start = Some(Instant::now() - Duration::from_millis(700));
         let middle = bar_row(&mut app);
-        assert_ne!(left, middle, "the drawn bar must follow the XHigh clock");
+        assert_ne!(left, middle, "the drawn bar must follow the sweep clock");
     }
 
     #[test]
@@ -6305,7 +6450,7 @@ mod tests {
             app.panel.cycle_effort(&app.controls, 1);
         }
         app.tick();
-        let start = app.xhigh_anim_start.expect("sweep clock");
+        let start = app.sweep_anim_start.expect("sweep clock");
         let levels = match effort_area(&app) {
             EffortArea::Levels { levels, .. } => levels,
             _ => panic!("expected effort levels"),
@@ -6317,8 +6462,8 @@ mod tests {
         let mut index = 0u64;
         while start.elapsed() < std::time::Duration::from_millis(3200) {
             app.tick();
-            let phase = effort_phase(&app, Some("xhigh"));
-            let bar = effort_bar_line(&app, &levels, Some(2), width as usize, phase);
+            let phase = effort_phase(&app, true);
+            let bar = effort_bar_line(&app, &levels, Some(2), width as usize, phase, true);
             let labels = effort_labels_line(
                 &levels,
                 Some(2),
@@ -6339,7 +6484,7 @@ mod tests {
             println!(
                 "frame {index} t={}ms cycle={}ms",
                 start.elapsed().as_millis(),
-                phase % XHIGH_SWEEP_MS
+                phase % SWEEP_PERIOD_MS
             );
             emit_ansi(&buffer, (0, 0), false);
             println!();
@@ -6505,14 +6650,24 @@ mod tests {
                 open_models(&mut app);
                 Some((app, 100, 36, false))
             }
-            "model-xhigh-100-560" => Some((evidence_xhigh(app(), 560), 100, 36, false)),
-            "model-xhigh-100-1050" => Some((evidence_xhigh(app(), 1050), 100, 36, false)),
-            "model-xhigh-100-light-560" => Some((evidence_xhigh(light(), 560), 100, 36, false)),
-            "model-xhigh-100-light-1050" => Some((evidence_xhigh(light(), 1050), 100, 36, false)),
-            "model-xhigh-60-light-560" => Some((evidence_xhigh(light(), 560), 60, 30, false)),
-            "model-xhigh-60-light-1050" => Some((evidence_xhigh(light(), 1050), 60, 30, false)),
-            "model-xhigh-60-dark-560" => Some((evidence_xhigh(app(), 560), 60, 30, false)),
-            "model-xhigh-60-dark-1050" => Some((evidence_xhigh(app(), 1050), 60, 30, false)),
+            "model-xhigh-100-560" => Some((evidence_sweep_fixture(app(), 560), 100, 36, false)),
+            "model-xhigh-100-1050" => Some((evidence_sweep_fixture(app(), 1050), 100, 36, false)),
+            "model-xhigh-100-light-560" => {
+                Some((evidence_sweep_fixture(light(), 560), 100, 36, false))
+            }
+            "model-xhigh-100-light-1050" => {
+                Some((evidence_sweep_fixture(light(), 1050), 100, 36, false))
+            }
+            "model-xhigh-60-light-560" => {
+                Some((evidence_sweep_fixture(light(), 560), 60, 30, false))
+            }
+            "model-xhigh-60-light-1050" => {
+                Some((evidence_sweep_fixture(light(), 1050), 60, 30, false))
+            }
+            "model-xhigh-60-dark-560" => Some((evidence_sweep_fixture(app(), 560), 60, 30, false)),
+            "model-xhigh-60-dark-1050" => {
+                Some((evidence_sweep_fixture(app(), 1050), 60, 30, false))
+            }
             _ => None,
         }
     }
@@ -6638,12 +6793,12 @@ mod tests {
         app
     }
 
-    fn evidence_xhigh(mut app: App, phase_ms: u64) -> App {
+    fn evidence_sweep_fixture(mut app: App, phase_ms: u64) -> App {
         open_models(&mut app);
         app.panel.cycle_effort(&app.controls, 1);
         app.panel.cycle_effort(&app.controls, 1);
         app.panel.cycle_effort(&app.controls, 1);
-        app.xhigh_anim_start = Some(Instant::now() - std::time::Duration::from_millis(phase_ms));
+        app.sweep_anim_start = Some(Instant::now() - std::time::Duration::from_millis(phase_ms));
         app
     }
 
