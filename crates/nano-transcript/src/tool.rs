@@ -37,7 +37,7 @@ impl DisplayStatus {
             Self::Succeeded => "完成",
             Self::Failed => "失败",
             Self::Interrupted => "已中断",
-            Self::Unknown => "结果未知",
+            Self::Unknown => "结果未确认",
         }
     }
 }
@@ -65,7 +65,7 @@ impl ExitStatus {
             Self::Signal(signal) => format!("信号 {signal}"),
             Self::TimedOut => "超时".to_string(),
             Self::Stopped(reason) => format!("已停止：{reason}"),
-            Self::Unknown => "退出码未知".to_string(),
+            Self::Unknown => "退出状态未返回".to_string(),
         }
     }
 }
@@ -553,9 +553,10 @@ mod tests {
             panic!("expected bash");
         };
         assert_eq!(*exit, ExitStatus::Unknown);
+        assert_eq!(exit.label(), "退出状态未返回");
         assert_eq!(output, "hi");
         assert_eq!(record.display_status, DisplayStatus::Unknown);
-        assert_eq!(record.display_status.label(), "结果未知");
+        assert_eq!(record.display_status.label(), "结果未确认");
     }
 
     #[test]

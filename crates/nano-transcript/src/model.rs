@@ -10,7 +10,8 @@ use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
 use nano_conversation::{
-    ConversationItem, ConversationModel, MessageKind, MessageView, SessionAddress, ToolCallView,
+    ConversationItem, ConversationModel, MessageKind, MessageView, PreviewOutcome, SessionAddress,
+    ToolCallView,
 };
 use nano_decisions::approval::ApprovalOutcome;
 use nano_decisions::contract::{parse_answers, parse_questions, AnswerItem};
@@ -123,6 +124,10 @@ pub struct PreviewEntry {
     pub gap: bool,
     /// The preview was cut by its byte bound.
     pub truncated: bool,
+    /// Whether the attempt emitted its terminal finish.
+    pub finished: bool,
+    /// Settlement reported by the end frame, when one was seen.
+    pub outcome: Option<PreviewOutcome>,
 }
 
 /// One tool call inside a live preview.
@@ -317,6 +322,8 @@ impl TranscriptModel {
                     tools,
                     gap: preview.gap,
                     truncated: preview.truncated,
+                    finished: preview.finished,
+                    outcome: preview.outcome,
                 }),
             });
         }
