@@ -630,7 +630,12 @@ fn render_tool(
                     .push(Line::from(Span::styled(format!("  {row}"), muted(theme))));
                 output.hits.push(toggle_hit(record));
             }
-            if !matches!(exit, ExitStatus::Code(0)) {
+            let show_exit = match exit {
+                ExitStatus::Code(0) => false,
+                ExitStatus::Unknown => status == DisplayStatus::Unknown,
+                _ => true,
+            };
+            if show_exit {
                 let exit_style = match exit {
                     ExitStatus::Code(0) => Style::default().fg(theme.colors().success),
                     ExitStatus::Unknown => Style::default().fg(theme.colors().warning),
@@ -2311,6 +2316,37 @@ mod tests {
         assert!(text
             .iter()
             .any(|line| line.contains("工具未返回成功或失败结论")));
+    }
+
+    #[test]
+    fn an_explicit_success_hides_missing_exit_warnings() {
+        let entry = bash_entry(ToolStatus::Succeeded, "hello", DisplayStatus::Succeeded);
+        let rendered = render_one(entry, false, 80);
+        let text: Vec<String> = rendered.lines.iter().map(ToString::to_string).collect();
+        assert!(text.iter().any(|line| line.contains("完成")));
+        assert!(!text.iter().any(|line| line.contains("结果未确认")));
+        assert!(!text.iter().any(|line| line.contains("退出状态未返回")));
+        assert!(!text
+            .iter()
+            .any(|line| line.contains("工具未返回成功或失败结论")));
+    }
+
+    #[test]
+    fn an_explicit_failure_without_an_exit_marker_skips_the_missing_exit_warning() {
+        let entry = bash_entry(ToolStatus::Failed, "bad", DisplayStatus::Failed);
+        let rendered = render_one(entry, false, 80);
+        let text: Vec<String> = rendered.lines.iter().map(ToString::to_string).collect();
+        assert!(text.iter().any(|line| line.contains("失败")));
+        assert!(!text.iter().any(|line| line.contains("退出状态未返回")));
+    }
+
+    #[test]
+    fn an_interrupted_call_without_an_exit_marker_skips_the_missing_exit_warning() {
+        let entry = bash_entry(ToolStatus::Failed, "stopped", DisplayStatus::Interrupted);
+        let rendered = render_one(entry, false, 80);
+        let text: Vec<String> = rendered.lines.iter().map(ToString::to_string).collect();
+        assert!(text.iter().any(|line| line.contains("已中断")));
+        assert!(!text.iter().any(|line| line.contains("退出状态未返回")));
     }
 
     #[test]

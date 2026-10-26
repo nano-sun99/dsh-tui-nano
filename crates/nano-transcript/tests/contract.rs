@@ -3,8 +3,8 @@
 
 use nano_conversation::{ConversationModel, Delivery, SessionAddress};
 use nano_transcript::{
-    EntryKind, RecordedQuestionState, RenderCache, ScrollState, ToolDisplay, TranscriptModel,
-    TranscriptSource,
+    DisplayStatus, EntryKind, RecordedQuestionState, RenderCache, ScrollState, ToolDisplay,
+    TranscriptModel, TranscriptSource,
 };
 use serde_json::{json, Value};
 use std::time::Instant;
@@ -461,4 +461,99 @@ fn the_reading_anchor_survives_preview_to_message_handoff() {
             .map(|anchor| anchor.identity.as_str()),
         Some("m-1")
     );
+}
+
+#[test]
+fn explicit_success_without_exit_markers_survives_live_snapshot_and_replay() {
+    let calls = [
+        ("c-1", "one"),
+        ("c-2", "two"),
+        ("c-3", "three"),
+        ("c-4", "four"),
+    ];
+    let results = [
+        ("c-3", "three"),
+        ("c-1", "one"),
+        ("c-4", "four"),
+        ("c-2", "two"),
+    ];
+    let mut events = Vec::new();
+    let mut seq = 1;
+    for &(call_id, _) in &calls {
+        events.push(payload(
+            seq,
+            "tool/call",
+            json!({
+                "turn": 1,
+                "step": 1,
+                "callId": call_id,
+                "name": "bash",
+                "arguments": format!("{{\"command\":\"echo {call_id}\"}}")
+            }),
+        ));
+        seq += 1;
+    }
+    for &(call_id, output) in &results {
+        events.push(payload(
+            seq,
+            "tool/result",
+            json!({
+                "turn": 1,
+                "step": 1,
+                "job": {
+                    "id": format!("job-{call_id}"),
+                    "settled": "completed",
+                    "producerReported": true,
+                    "detail": "exit code: 0"
+                },
+                "message": {
+                    "id": format!("t-{call_id}"),
+                    "role": "tool",
+                    "toolCallId": call_id,
+                    "isError": false,
+                    "content": [{"type": "text", "text": output}]
+                }
+            }),
+        ));
+        seq += 1;
+    }
+
+    let live = {
+        let mut model = ConversationModel::new(root());
+        let mut transcript = TranscriptModel::new(root(), TranscriptSource::Interactive);
+        for event in &events {
+            apply(&mut model, &mut transcript, event);
+            transcript.sync(&model, Instant::now());
+        }
+        transcript
+    };
+
+    let replay = {
+        let mut model = ConversationModel::new(root());
+        let mut transcript = TranscriptModel::new(root(), TranscriptSource::Interactive);
+        for event in &events {
+            apply(&mut model, &mut transcript, event);
+        }
+        // A fresh rebuild, then a second snapshot, must both agree.
+        transcript.sync(&model, Instant::now());
+        transcript.sync(&model, Instant::now());
+        transcript
+    };
+
+    for transcript in [live, replay] {
+        for &(call_id, expected) in &calls {
+            let entry = transcript
+                .entries()
+                .iter()
+                .find(|entry| entry.identity == format!("call-{call_id}"))
+                .unwrap_or_else(|| panic!("missing {call_id}"));
+            let EntryKind::Tool(record) = &entry.kind else {
+                panic!("expected tool record for {call_id}");
+            };
+            assert_eq!(record.call_id, call_id);
+            assert_eq!(record.result.as_deref(), Some(expected));
+            assert_eq!(record.display_status, DisplayStatus::Succeeded);
+            assert_eq!(record.display_status.label(), "完成");
+        }
+    }
 }

@@ -3443,7 +3443,10 @@ fn models_effort_lines(app: &App, width: usize) -> Vec<Line<'static>> {
             Style::default().fg(colors.muted),
         ))],
         EffortArea::Levels { levels, selected } => {
-            let phase = effort_phase(app);
+            let selected_id = selected
+                .and_then(|index| levels.get(index))
+                .map(|(id, _)| id.as_str());
+            let phase = effort_phase(app, selected_id);
             vec![
                 effort_bar_line(app, &levels, selected, width, phase),
                 effort_labels_line(&levels, selected, width, colors, phase, app.reduced_motion),
@@ -3452,12 +3455,18 @@ fn models_effort_lines(app: &App, width: usize) -> Vec<Line<'static>> {
     }
 }
 
-fn effort_phase(app: &App) -> u64 {
+/// The original design's linear XHigh sweep period.
+const XHIGH_SWEEP_MS: u64 = 1400;
+
+fn effort_phase(app: &App, level_id: Option<&str>) -> u64 {
     if app.reduced_motion {
-        0
-    } else {
-        app.effort_anim_start.elapsed().as_millis() as u64
+        return 0;
     }
+    let start = match level_id {
+        Some(id) if id.eq_ignore_ascii_case("xhigh") => app.xhigh_anim_start,
+        _ => Some(app.effort_anim_start),
+    };
+    start.map_or(0, |start| start.elapsed().as_millis() as u64)
 }
 
 /// One cell-high bar. The unfilled track uses the rule role; the filled part
@@ -3480,8 +3489,9 @@ fn effort_bar_line(
         None => 0,
     };
     let highlight = if !app.reduced_motion && level_id.eq_ignore_ascii_case("xhigh") && filled > 0 {
-        let travel = width as i64 + 16;
-        Some((phase / 70) as i64 % travel - 8)
+        let radius = (filled as f32 * 0.25).max(1.0);
+        let progress = (phase % XHIGH_SWEEP_MS) as f32 / XHIGH_SWEEP_MS as f32;
+        Some((progress * filled as f32, radius))
     } else {
         None
     };
@@ -3499,8 +3509,16 @@ fn effort_bar_line(
             _ => colors.muted,
         };
         let color = match highlight {
-            Some(center) if (column as i64 - center).abs() <= 3 => colors.effort_xhigh_highlight,
-            _ => base,
+            Some((center, radius)) => {
+                let span = filled as f32;
+                let mut distance = (column as f32 + 0.5 - center).abs();
+                if distance > span / 2.0 {
+                    distance = span - distance;
+                }
+                let intensity = (1.0 - distance / radius).clamp(0.0, 1.0);
+                mix_color(base, colors.effort_xhigh_highlight, intensity)
+            }
+            None => base,
         };
         Style::default().bg(color)
     };
@@ -3850,6 +3868,22 @@ pub(crate) fn effort_animation_active(app: &App) -> bool {
             let id = levels[index].0.to_ascii_lowercase();
             id == "xhigh" || id == "max"
         }
+        _ => false,
+    }
+}
+
+/// Whether the XHigh sweep specifically needs animation frames.
+pub(crate) fn xhigh_animation_active(app: &App) -> bool {
+    if !effort_animation_active(app) {
+        return false;
+    }
+    match effort_area(app) {
+        EffortArea::Levels {
+            levels,
+            selected: Some(index),
+        } => levels
+            .get(index)
+            .is_some_and(|(id, _)| id.eq_ignore_ascii_case("xhigh")),
         _ => false,
     }
 }
@@ -5705,10 +5739,20 @@ mod tests {
         let backgrounds = |line: &Line<'static>| -> Vec<Color> {
             line.spans.iter().filter_map(|span| span.style.bg).collect()
         };
-        let sweep_a = effort_bar_line(&app, &levels, Some(2), 40, 560);
-        let sweep_b = effort_bar_line(&app, &levels, Some(2), 40, 1050);
-        assert!(backgrounds(&sweep_a).contains(&colors.effort_xhigh_highlight));
+        let sweep_a = effort_bar_line(&app, &levels, Some(2), 40, 350);
+        let sweep_b = effort_bar_line(&app, &levels, Some(2), 40, 700);
+        let sweep_c = effort_bar_line(&app, &levels, Some(2), 40, 1050);
         assert_ne!(backgrounds(&sweep_a), backgrounds(&sweep_b));
+        assert_ne!(backgrounds(&sweep_b), backgrounds(&sweep_c));
+        assert!(
+            backgrounds(&sweep_b).iter().any(|color| {
+                *color != colors.effort_xhigh
+                    && *color != colors.effort_xhigh_highlight
+                    && *color != colors.rule
+            }),
+            "the sweep interpolates its edges: {:?}",
+            backgrounds(&sweep_b)
+        );
         app.panel.cycle_effort(&app.controls, 1);
         let pulse_a = effort_bar_line(&app, &levels, Some(3), 40, 0);
         let pulse_b = effort_bar_line(&app, &levels, Some(3), 40, 600);
@@ -5717,6 +5761,161 @@ mod tests {
         assert!(!effort_animation_active(&app));
         let still = effort_bar_line(&app, &levels, Some(2), 40, 600);
         assert!(!backgrounds(&still).contains(&colors.effort_xhigh_highlight));
+    }
+
+    fn fill_colors(line: &Line<'static>, filled: usize) -> Vec<Color> {
+        let mut colors = Vec::new();
+        for span in &line.spans {
+            let count = span.content.chars().count();
+            let bg = span.style.bg.unwrap_or(Color::Reset);
+            colors.extend(std::iter::repeat(bg).take(count));
+        }
+        colors.truncate(filled);
+        colors
+    }
+
+    fn brightest_cell(line: &Line<'static>, filled: usize, base: Color, highlight: Color) -> usize {
+        let distance = |color: Color| -> i64 {
+            match (color, base, highlight) {
+                (Color::Rgb(r, g, b), Color::Rgb(br, bg, bb), Color::Rgb(hr, hg, hb)) => {
+                    (r as i64 - br as i64) * (hr as i64 - br as i64)
+                        + (g as i64 - bg as i64) * (hg as i64 - bg as i64)
+                        + (b as i64 - bb as i64) * (hb as i64 - bb as i64)
+                }
+                _ => 0,
+            }
+        };
+        fill_colors(line, filled)
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, color)| distance(**color))
+            .map(|(index, _)| index)
+            .unwrap_or(0)
+    }
+
+    #[test]
+    fn the_xhigh_sweep_runs_on_a_fixed_1400ms_period_at_any_width() {
+        let app = app();
+        let levels = vec![
+            ("low".to_string(), "Low".to_string()),
+            ("high".to_string(), "High".to_string()),
+            ("xhigh".to_string(), "XHigh".to_string()),
+            ("max".to_string(), "Max".to_string()),
+        ];
+        for width in [40, 96] {
+            let start = effort_bar_line(&app, &levels, Some(2), width, 0);
+            let wrapped = effort_bar_line(&app, &levels, Some(2), width, 1400);
+            let middle = effort_bar_line(&app, &levels, Some(2), width, 700);
+            assert_eq!(
+                fill_colors(&start, width),
+                fill_colors(&wrapped, width),
+                "width {width} wraps at 1400ms"
+            );
+            assert_ne!(
+                fill_colors(&start, width),
+                fill_colors(&middle, width),
+                "width {width} moves within the period"
+            );
+        }
+    }
+
+    #[test]
+    fn the_xhigh_sweep_is_visible_from_the_first_frame_and_never_blanks() {
+        let app = app();
+        let colors = *app.theme.colors();
+        let levels = vec![
+            ("low".to_string(), "Low".to_string()),
+            ("high".to_string(), "High".to_string()),
+            ("xhigh".to_string(), "XHigh".to_string()),
+            ("max".to_string(), "Max".to_string()),
+        ];
+        let width = 40;
+        for phase in (0..XHIGH_SWEEP_MS).step_by(50) {
+            let line = effort_bar_line(&app, &levels, Some(2), width, phase);
+            assert!(
+                fill_colors(&line, 27)
+                    .iter()
+                    .any(|color| { *color != colors.effort_xhigh && *color != colors.rule }),
+                "the sweep must be visible at {phase}ms"
+            );
+        }
+    }
+
+    #[test]
+    fn the_xhigh_sweep_moves_left_to_right_over_the_fill() {
+        let app = app();
+        let colors = *app.theme.colors();
+        let levels = vec![
+            ("low".to_string(), "Low".to_string()),
+            ("high".to_string(), "High".to_string()),
+            ("xhigh".to_string(), "XHigh".to_string()),
+            ("max".to_string(), "Max".to_string()),
+        ];
+        let width = 40;
+        let filled = ((2.0 / 3.0) * width as f64).round() as usize;
+        let center = |phase: u64| {
+            brightest_cell(
+                &effort_bar_line(&app, &levels, Some(2), width, phase),
+                filled,
+                colors.effort_xhigh,
+                colors.effort_xhigh_highlight,
+            )
+        };
+        let left = center(350);
+        let middle = center(700);
+        let right = center(1050);
+        assert!(left < middle, "left {left} should precede middle {middle}");
+        assert!(
+            middle < right,
+            "middle {middle} should precede right {right}"
+        );
+    }
+
+    #[test]
+    fn the_xhigh_clock_restarts_on_entry_and_reopen_but_not_on_repaint() {
+        let mut app = app();
+        open_models(&mut app);
+        for _ in 0..3 {
+            app.panel.cycle_effort(&app.controls, 1);
+        }
+        assert!(matches!(
+            effort_area(&app),
+            EffortArea::Levels {
+                selected: Some(2),
+                ..
+            }
+        ));
+        assert!(app.xhigh_anim_start.is_none());
+        let max_clock = app.effort_anim_start;
+        app.tick();
+        assert!(app.xhigh_anim_start.is_some(), "entry starts the clock");
+        assert_eq!(
+            app.effort_anim_start, max_clock,
+            "the XHigh entry must not reset the Max clock"
+        );
+
+        app.xhigh_anim_start = Some(Instant::now() - Duration::from_millis(900));
+        app.tick();
+        let kept = app.xhigh_anim_start.expect("clock keeps running");
+        assert!(
+            kept.elapsed() >= Duration::from_millis(900),
+            "a repaint must not restart the sweep"
+        );
+
+        app.panel.close();
+        app.tick();
+        assert!(app.xhigh_anim_start.is_none(), "closing stops the clock");
+
+        app.panel.open(PanelMode::Models);
+        for _ in 0..3 {
+            app.panel.cycle_effort(&app.controls, 1);
+        }
+        app.tick();
+        let restarted = app.xhigh_anim_start.expect("reopen starts the clock");
+        assert!(
+            restarted.elapsed() < Duration::from_millis(200),
+            "reopening restarts from the left"
+        );
     }
 
     #[test]
@@ -6044,6 +6243,78 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(3000));
     }
 
+    /// Evidence-only sweep loop. It drives the real tick clock and prints
+    /// time-stamped ANSI bar frames for at least two full 1400ms cycles.
+    /// Run with `NANO_EVIDENCE_SCENARIO=xhigh-sweep-<width>-<theme>
+    /// cargo test -p nano-app evidence_sweep -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "evidence sweep loop; run with NANO_EVIDENCE_SCENARIO"]
+    fn evidence_sweep() {
+        let scenario = std::env::var("NANO_EVIDENCE_SCENARIO").unwrap_or_default();
+        let light = || {
+            App::with_theme(
+                crate::cli::Cli::default(),
+                "root".to_string(),
+                false,
+                Theme::Light,
+            )
+        };
+        let (mut app, width) = match scenario.as_str() {
+            "xhigh-sweep-100-dark" => (app(), 100u16),
+            "xhigh-sweep-60-dark" => (app(), 60),
+            "xhigh-sweep-100-light" => (light(), 100),
+            "xhigh-sweep-60-light" => (light(), 60),
+            other => panic!("unknown sweep scenario: {other}"),
+        };
+        open_models(&mut app);
+        for _ in 0..3 {
+            app.panel.cycle_effort(&app.controls, 1);
+        }
+        app.tick();
+        let start = app.xhigh_anim_start.expect("sweep clock");
+        let levels = match effort_area(&app) {
+            EffortArea::Levels { levels, .. } => levels,
+            _ => panic!("expected effort levels"),
+        };
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+        let mut terminal = Terminal::new(TestBackend::new(width, 2)).expect("sweep terminal");
+        println!("# scenario={scenario} width={width} fixture=synthetic");
+        let mut index = 0u64;
+        while start.elapsed() < std::time::Duration::from_millis(3200) {
+            app.tick();
+            let phase = effort_phase(&app, Some("xhigh"));
+            let bar = effort_bar_line(&app, &levels, Some(2), width as usize, phase);
+            let labels = effort_labels_line(
+                &levels,
+                Some(2),
+                width as usize,
+                app.theme.colors(),
+                phase,
+                app.reduced_motion,
+            );
+            terminal
+                .draw(|f| {
+                    f.render_widget(
+                        Paragraph::new(Text::from(vec![bar.clone(), labels.clone()])),
+                        f.area(),
+                    );
+                })
+                .expect("draw sweep frame");
+            let buffer = terminal.backend().buffer().clone();
+            println!(
+                "frame {index} t={}ms cycle={}ms",
+                start.elapsed().as_millis(),
+                phase % XHIGH_SWEEP_MS
+            );
+            emit_ansi(&buffer, (0, 0), false);
+            println!();
+            index += 1;
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        println!("# frames={index} elapsed={}ms", start.elapsed().as_millis());
+    }
+
     fn evidence_scenario(name: &str) -> Option<(App, u16, u16, bool)> {
         let light = || {
             App::with_theme(
@@ -6079,7 +6350,71 @@ mod tests {
             }
             "table-100" => Some((evidence_table(app()), 100, 36, false)),
             "table-60" => Some((evidence_table(light()), 60, 30, false)),
-            "tool-unknown" => Some((evidence_tool_unknown(), 100, 36, false)),
+            "tool-unknown" => Some((evidence_tool(app(), "hello", None, false), 100, 36, false)),
+            "tool-success-100-dark" => Some((
+                evidence_tool(app(), "hello", Some(false), false),
+                100,
+                36,
+                false,
+            )),
+            "tool-success-60-light" => Some((
+                evidence_tool(light(), "hello", Some(false), false),
+                60,
+                30,
+                false,
+            )),
+            "tool-success-expanded-100-dark" => Some((
+                evidence_tool(app(), "hello", Some(false), true),
+                100,
+                36,
+                false,
+            )),
+            "tool-failure-100-dark" => Some((
+                evidence_tool(app(), "bad", Some(true), false),
+                100,
+                36,
+                false,
+            )),
+            "tool-failure-60-light" => Some((
+                evidence_tool(light(), "bad", Some(true), false),
+                60,
+                30,
+                false,
+            )),
+            "tool-failure-expanded-100-dark" => Some((
+                evidence_tool(app(), "bad", Some(true), true),
+                100,
+                36,
+                false,
+            )),
+            "tool-unknown-60-light" => {
+                Some((evidence_tool(light(), "hello", None, false), 60, 30, false))
+            }
+            "tool-unknown-expanded-100-dark" => {
+                Some((evidence_tool(app(), "hello", None, true), 100, 36, false))
+            }
+            "model-default-100-dark" => {
+                let mut app = app();
+                open_models(&mut app);
+                Some((app, 100, 36, false))
+            }
+            "model-max-100-dark" => {
+                let mut app = app();
+                open_models(&mut app);
+                for _ in 0..4 {
+                    app.panel.cycle_effort(&app.controls, 1);
+                }
+                Some((app, 100, 36, false))
+            }
+            "model-reduced-motion-100-dark" => {
+                let mut app = app();
+                open_models(&mut app);
+                for _ in 0..3 {
+                    app.panel.cycle_effort(&app.controls, 1);
+                }
+                app.reduced_motion = true;
+                Some((app, 100, 36, false))
+            }
             "preview-live-gap-100" => Some((evidence_preview_gap(app()), 100, 36, false)),
             "preview-live-gap-60" => Some((evidence_preview_gap(light()), 60, 30, false)),
             "preview-live-truncated-100" => Some((evidence_preview_truncated(), 100, 36, false)),
@@ -6127,8 +6462,7 @@ mod tests {
         app
     }
 
-    fn evidence_tool_unknown() -> App {
-        let mut app = app();
+    fn evidence_tool(mut app: App, output: &str, is_error: Option<bool>, expanded: bool) -> App {
         app.model.apply_event(
             "session.event",
             &serde_json::json!({
@@ -6144,6 +6478,15 @@ mod tests {
                 }
             }),
         );
+        let mut message = serde_json::json!({
+            "id": "t-1",
+            "role": "tool",
+            "toolCallId": "c-1",
+            "content": [{"type": "text", "text": output}]
+        });
+        if let Some(is_error) = is_error {
+            message["isError"] = serde_json::json!(is_error);
+        }
         app.model.apply_event(
             "session.event",
             &serde_json::json!({
@@ -6153,16 +6496,13 @@ mod tests {
                 "data": {
                     "turn": 1,
                     "step": 1,
-                    "message": {
-                        "id": "t-1",
-                        "role": "tool",
-                        "toolCallId": "c-1",
-                        "isError": false,
-                        "content": [{"type": "text", "text": "hello"}]
-                    }
+                    "message": message
                 }
             }),
         );
+        if expanded {
+            app.view.reveal("call-c-1");
+        }
         app.transcript_dirty = true;
         app
     }
