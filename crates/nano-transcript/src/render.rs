@@ -8,6 +8,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use nano_conversation::PreviewOutcome;
+use nano_theme::spacing::{self, Gap};
 use nano_theme::Theme;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -85,7 +86,7 @@ pub struct RenderCache {
     order: VecDeque<CacheKey>,
 }
 
-type CacheKey = (String, u64, usize, bool, u8);
+type CacheKey = (String, u64, usize, bool, u8, u8);
 
 #[derive(Debug, Clone, Default)]
 struct RenderedEntry {
@@ -96,6 +97,74 @@ struct RenderedEntry {
 impl RenderedEntry {
     fn height(&self) -> usize {
         self.lines.len()
+    }
+
+    /// Append the role's blank rows unless the last row is already blank.
+    fn push_gap(&mut self, gap: Gap) {
+        for _ in 0..gap.rows() {
+            if self.last_is_blank() {
+                break;
+            }
+            self.lines.push(Line::default());
+            self.hits.push(None);
+        }
+    }
+
+    fn last_is_blank(&self) -> bool {
+        self.lines
+            .last()
+            .is_some_and(|line| line.spans.iter().all(|span| span.content.trim().is_empty()))
+    }
+}
+
+/// How one display unit opens and closes for adjacent-gap purposes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Role {
+    /// Part of the compact process group (thinking header, tool summary).
+    Process,
+    /// A visible answer or interrupted note.
+    Answer,
+    /// A turn boundary: user, notice, context, echo.
+    Turn,
+}
+
+/// The leading and trailing roles one entry contributes to the rhythm.
+fn entry_roles(entry: &Entry) -> (Role, Role) {
+    match &entry.kind {
+        EntryKind::User { .. }
+        | EntryKind::Notice { .. }
+        | EntryKind::Context { .. }
+        | EntryKind::Echo { .. } => (Role::Turn, Role::Turn),
+        EntryKind::Assistant {
+            text, reasoning, ..
+        } => {
+            if text.trim().is_empty() && reasoning.trim().is_empty() {
+                // `render_entry` returns before drawing anything.
+                (Role::Turn, Role::Turn)
+            } else if text.trim().is_empty() {
+                (Role::Process, Role::Process)
+            } else if reasoning.trim().is_empty() {
+                (Role::Answer, Role::Answer)
+            } else {
+                (Role::Process, Role::Answer)
+            }
+        }
+        EntryKind::Tool(_) => (Role::Process, Role::Process),
+        EntryKind::Preview(preview) => {
+            if preview.text.trim().is_empty() {
+                (Role::Process, Role::Process)
+            } else {
+                (Role::Process, Role::Answer)
+            }
+        }
+    }
+}
+
+/// Adjacent process summaries stay joined; every other boundary is a block.
+fn gap_between(previous: Role, next: Role) -> Gap {
+    match (previous, next) {
+        (Role::Process, Role::Process) => Gap::None,
+        _ => Gap::Block,
     }
 }
 
@@ -123,6 +192,13 @@ impl<'a> Unit<'a> {
             }),
         }
     }
+
+    fn roles(&self) -> (Role, Role) {
+        match self {
+            Self::Single(entry) => entry_roles(entry),
+            Self::Context(_) => (Role::Turn, Role::Turn),
+        }
+    }
 }
 
 /// Group consecutive ordinary injected context into one display unit.
@@ -130,6 +206,15 @@ impl<'a> Unit<'a> {
 fn units(model: &TranscriptModel) -> Vec<Unit<'_>> {
     let mut units: Vec<Unit<'_>> = Vec::new();
     for entry in model.entries() {
+        // An assistant step that only requested tools has no visible content;
+        // it must not leave a gap behind.
+        if matches!(
+            &entry.kind,
+            EntryKind::Assistant { text, reasoning, .. }
+                if text.trim().is_empty() && reasoning.trim().is_empty()
+        ) {
+            continue;
+        }
         let ordinary = matches!(
             &entry.kind,
             EntryKind::Context {
@@ -151,8 +236,14 @@ fn units(model: &TranscriptModel) -> Vec<Unit<'_>> {
     units
 }
 
-fn render_unit(unit: &Unit<'_>, width: usize, expanded: bool, theme: Theme) -> RenderedEntry {
-    match unit {
+fn render_unit(
+    unit: &Unit<'_>,
+    width: usize,
+    expanded: bool,
+    theme: Theme,
+    gap_after: Gap,
+) -> RenderedEntry {
+    let mut output = match unit {
         Unit::Single(entry) => render_entry(entry, width, expanded, theme),
         Unit::Context(entries) => {
             let mut output = RenderedEntry::default();
@@ -164,11 +255,11 @@ fn render_unit(unit: &Unit<'_>, width: usize, expanded: bool, theme: Theme) -> R
                 expanded,
                 theme,
             );
-            output.lines.push(Line::default());
-            output.hits.push(None);
             output
         }
-    }
+    };
+    output.push_gap(gap_after);
+    output
 }
 
 impl RenderCache {
@@ -184,6 +275,7 @@ impl RenderCache {
         width: usize,
         expanded: bool,
         theme: Theme,
+        gap: Gap,
         render: F,
     ) -> &RenderedEntry
     where
@@ -195,6 +287,7 @@ impl RenderCache {
             width.max(1),
             expanded,
             theme as u8,
+            gap as u8,
         );
         if !self.lines.contains_key(&key) {
             let rendered = render();
@@ -225,6 +318,7 @@ impl RenderCache {
         width: usize,
         expanded: bool,
         theme: Theme,
+        gap: Gap,
         render: F,
     ) -> usize
     where
@@ -236,22 +330,23 @@ impl RenderCache {
             width.max(1),
             expanded,
             theme as u8,
+            gap as u8,
         );
         if let Some(height) = self.heights.get(&key) {
             return *height;
         }
-        self.ensure(identity, fingerprint, width, expanded, theme, render)
+        self.ensure(identity, fingerprint, width, expanded, theme, gap, render)
             .height()
     }
 
     /// Drop cache rows for entries that no longer exist.
     pub fn retain(&mut self, identities: &HashSet<&str>) {
         self.lines
-            .retain(|(identity, _, _, _, _), _| identities.contains(identity.as_str()));
+            .retain(|(identity, _, _, _, _, _), _| identities.contains(identity.as_str()));
         self.order
-            .retain(|(identity, _, _, _, _)| identities.contains(identity.as_str()));
+            .retain(|(identity, _, _, _, _, _)| identities.contains(identity.as_str()));
         self.heights
-            .retain(|(identity, _, _, _, _), _| identities.contains(identity.as_str()));
+            .retain(|(identity, _, _, _, _, _), _| identities.contains(identity.as_str()));
     }
 }
 
@@ -267,18 +362,27 @@ pub fn render(
     let width = width.max(1);
     let viewport = viewport.max(1);
     let units = units(model);
+    let roles: Vec<(Role, Role)> = units.iter().map(Unit::roles).collect();
+    let gaps: Vec<Gap> = (0..units.len())
+        .map(|index| match roles.get(index + 1) {
+            Some((next_lead, _)) => gap_between(roles[index].1, *next_lead),
+            None => Gap::Block,
+        })
+        .collect();
     let mut entries = Vec::new();
     let mut starts = Vec::new();
     let mut start = 0usize;
-    for unit in &units {
+    for (index, unit) in units.iter().enumerate() {
         let expanded = model.is_expanded(unit.identity());
+        let gap = gaps[index];
         let height = cache.height(
             unit.identity(),
             unit.fingerprint(),
             width,
             expanded,
             theme,
-            || render_unit(unit, width, expanded, theme),
+            gap,
+            || render_unit(unit, width, expanded, theme, gap),
         );
         starts.push(start);
         entries.push(EntryOffset {
@@ -310,6 +414,7 @@ pub fn render(
             continue;
         }
         let expanded = model.is_expanded(unit.identity());
+        let gap = gaps[index];
         let rendered = cache
             .ensure(
                 unit.identity(),
@@ -317,7 +422,8 @@ pub fn render(
                 width,
                 expanded,
                 theme,
-                || render_unit(unit, width, expanded, theme),
+                gap,
+                || render_unit(unit, width, expanded, theme, gap),
             )
             .clone();
         let first = window_start.saturating_sub(offset.start);
@@ -374,7 +480,8 @@ fn render_entry(entry: &Entry, width: usize, expanded: bool, theme: Theme) -> Re
             reasoning_ms,
             interrupted,
         } => {
-            if !reasoning.trim().is_empty() {
+            let has_thinking = !reasoning.trim().is_empty();
+            if has_thinking {
                 render_thinking(
                     &mut output,
                     &entry.identity,
@@ -384,6 +491,9 @@ fn render_entry(entry: &Entry, width: usize, expanded: bool, theme: Theme) -> Re
                     expanded,
                     theme,
                 );
+            }
+            if has_thinking && (!text.trim().is_empty() || *interrupted) {
+                output.push_gap(Gap::Section);
             }
             if !text.trim().is_empty() {
                 for row in markdown_rows(text, width, theme) {
@@ -446,10 +556,6 @@ fn render_entry(entry: &Entry, width: usize, expanded: bool, theme: Theme) -> Re
         EntryKind::Preview(preview) => render_preview(&mut output, preview, width, theme),
         EntryKind::Echo { text, state } => render_echo(&mut output, width, text, state, theme),
     }
-    // One display row between entries keeps blocks visually separate and is
-    // included in the measured height for anchor math.
-    output.lines.push(Line::default());
-    output.hits.push(None);
     output
 }
 
@@ -461,9 +567,17 @@ fn render_user(output: &mut RenderedEntry, width: usize, text: &str, theme: Them
     let style = Style::default()
         .fg(theme.colors().accent)
         .add_modifier(Modifier::BOLD);
-    let rows = wrap_block(text, width.saturating_sub(2).max(1), MAX_BLOCK_ROWS);
+    let rows = wrap_block(
+        text,
+        width.saturating_sub(spacing::INDENT).max(1),
+        MAX_BLOCK_ROWS,
+    );
     for (index, row) in rows.into_iter().enumerate() {
-        let prefix = if index == 0 { "> " } else { "  " };
+        let prefix = if index == 0 {
+            "> ".to_string()
+        } else {
+            " ".repeat(spacing::INDENT)
+        };
         output.lines.push(Line::from(vec![
             Span::styled(prefix, style),
             Span::styled(row, style),
@@ -476,13 +590,21 @@ fn render_echo(output: &mut RenderedEntry, width: usize, text: &str, state: &str
     let style = Style::default()
         .fg(theme.colors().accent)
         .add_modifier(Modifier::BOLD);
-    let rows = wrap_block(text, width.saturating_sub(2).max(1), MAX_BLOCK_ROWS);
+    let rows = wrap_block(
+        text,
+        width.saturating_sub(spacing::INDENT).max(1),
+        MAX_BLOCK_ROWS,
+    );
     let suffix = format!("（{state}）");
     let suffix_width = suffix.chars().map(char_width).sum::<usize>();
     let last = rows.len().saturating_sub(1);
     let mut appended = false;
     for (index, row) in rows.into_iter().enumerate() {
-        let prefix = if index == 0 { "> " } else { "  " };
+        let prefix = if index == 0 {
+            "> ".to_string()
+        } else {
+            " ".repeat(spacing::INDENT)
+        };
         let row_width = row.chars().map(char_width).sum::<usize>();
         let mut spans = vec![Span::styled(prefix, style), Span::styled(row, style)];
         if index == last && 2 + row_width + suffix_width <= width {
@@ -527,10 +649,15 @@ fn render_thinking(
         hit.clone(),
     );
     if expanded {
-        for row in wrap_block(reasoning, width.saturating_sub(2).max(1), MAX_BLOCK_ROWS) {
-            output
-                .lines
-                .push(Line::from(Span::styled(format!("  {row}"), muted(theme))));
+        for row in wrap_block(
+            reasoning,
+            width.saturating_sub(spacing::INDENT).max(1),
+            MAX_BLOCK_ROWS,
+        ) {
+            output.lines.push(Line::from(Span::styled(
+                format!("{}{row}", " ".repeat(spacing::INDENT)),
+                muted(theme),
+            )));
             output.hits.push(hit.clone());
         }
     }
@@ -554,9 +681,19 @@ fn render_tool(
             let status = record.display_status;
             let command_rows = command
                 .as_deref()
-                .map(|command| wrap_block(command, width.saturating_sub(2).max(1), MAX_BLOCK_ROWS))
+                .map(|command| {
+                    wrap_block(
+                        command,
+                        width.saturating_sub(spacing::INDENT).max(1),
+                        MAX_BLOCK_ROWS,
+                    )
+                })
                 .unwrap_or_default();
-            let output_rows = wrap_block(body, width.saturating_sub(2).max(1), MAX_BLOCK_ROWS);
+            let output_rows = wrap_block(
+                body,
+                width.saturating_sub(spacing::INDENT).max(1),
+                MAX_BLOCK_ROWS,
+            );
             let (shown_command, shown_output): (Vec<String>, Vec<String>) = if expanded {
                 (command_rows.clone(), output_rows.clone())
             } else {
@@ -612,22 +749,27 @@ fn render_tool(
                 toggle_hit(record),
             );
             for row in &shown_command {
-                output
-                    .lines
-                    .push(Line::from(Span::styled(format!("  {row}"), muted(theme))));
+                output.lines.push(Line::from(Span::styled(
+                    format!("{}{row}", " ".repeat(spacing::INDENT)),
+                    muted(theme),
+                )));
                 output.hits.push(toggle_hit(record));
             }
             if status == DisplayStatus::Pending && !expanded {
                 output.lines.push(Line::from(Span::styled(
-                    "  （等待结果；没有来源时不显示假输出）",
+                    format!(
+                        "{}（等待结果；没有来源时不显示假输出）",
+                        " ".repeat(spacing::INDENT)
+                    ),
                     muted(theme),
                 )));
                 output.hits.push(toggle_hit(record));
             }
             for row in &shown_output {
-                output
-                    .lines
-                    .push(Line::from(Span::styled(format!("  {row}"), muted(theme))));
+                output.lines.push(Line::from(Span::styled(
+                    format!("{}{row}", " ".repeat(spacing::INDENT)),
+                    muted(theme),
+                )));
                 output.hits.push(toggle_hit(record));
             }
             let show_exit = match exit {
@@ -642,7 +784,7 @@ fn render_tool(
                     _ => Style::default().fg(theme.colors().error),
                 };
                 output.lines.push(Line::from(vec![
-                    Span::raw("  "),
+                    Span::raw(" ".repeat(spacing::INDENT)),
                     Span::styled(exit.label(), exit_style),
                 ]));
                 output.hits.push(toggle_hit(record));
@@ -693,14 +835,14 @@ fn render_tool(
                 )));
                 output.hits.push(toggle_hit(record));
                 output.lines.push(Line::from(Span::styled(
-                    format!("  {}", diff.state.label()),
+                    format!("{}{}", " ".repeat(spacing::INDENT), diff.state.label()),
                     muted(theme),
                 )));
                 output.hits.push(toggle_hit(record));
                 render_diff_body(output, diff, width, expanded, record, theme);
             } else {
                 output.lines.push(Line::from(Span::styled(
-                    "  （没有可显示的差异数据）",
+                    format!("{}（没有可显示的差异数据）", " ".repeat(spacing::INDENT)),
                     muted(theme),
                 )));
                 output.hits.push(toggle_hit(record));
@@ -745,10 +887,22 @@ fn render_tool(
                             question.state.label().to_string()
                         }
                     });
-                let text = format!("  {} → {}", one_line(&item.question), answer);
+                let text = format!(
+                    "{}{} → {}",
+                    " ".repeat(spacing::INDENT),
+                    one_line(&item.question),
+                    answer
+                );
                 for (offset, row) in wrap_line(&text, width).into_iter().enumerate() {
                     output.lines.push(Line::from(vec![
-                        Span::styled(if offset == 0 { "  " } else { "    " }, Style::default()),
+                        Span::styled(
+                            if offset == 0 {
+                                " ".repeat(spacing::INDENT)
+                            } else {
+                                " ".repeat(spacing::NESTED)
+                            },
+                            Style::default(),
+                        ),
                         Span::styled(row, muted(theme)),
                     ]));
                     output.hits.push(question_hit.clone());
@@ -758,7 +912,11 @@ fn render_tool(
         ToolDisplay::Generic => {
             let name = official_name(&record.name);
             let body = record.result.as_deref().unwrap_or("");
-            let rows = wrap_block(body, width.saturating_sub(2).max(1), MAX_BLOCK_ROWS);
+            let rows = wrap_block(
+                body,
+                width.saturating_sub(spacing::INDENT).max(1),
+                MAX_BLOCK_ROWS,
+            );
             let shown = if expanded {
                 rows.len()
             } else {
@@ -787,16 +945,17 @@ fn render_tool(
                 toggle_hit(record),
             );
             for row in rows.iter().take(shown) {
-                output
-                    .lines
-                    .push(Line::from(Span::styled(format!("  {row}"), muted(theme))));
+                output.lines.push(Line::from(Span::styled(
+                    format!("{}{row}", " ".repeat(spacing::INDENT)),
+                    muted(theme),
+                )));
                 output.hits.push(toggle_hit(record));
             }
         }
     }
     if record.display_status == DisplayStatus::Unknown {
         output.lines.push(Line::from(Span::styled(
-            "  工具未返回成功或失败结论",
+            format!("{}工具未返回成功或失败结论", " ".repeat(spacing::INDENT)),
             muted(theme),
         )));
         output.hits.push(toggle_hit(record));
@@ -820,7 +979,10 @@ fn render_approval_line(
         .or(approval.reason.as_deref())
         .unwrap_or("");
     output.lines.push(Line::from(vec![
-        Span::styled("  审批 ", muted(theme)),
+        Span::styled(
+            format!("{}审批 ", " ".repeat(spacing::INDENT)),
+            muted(theme),
+        ),
         Span::styled(
             approval.outcome_label(),
             Style::default().fg(match approval.outcome {
@@ -859,7 +1021,7 @@ fn render_diff_body(
 ) {
     if diff.coarse {
         output.lines.push(Line::from(Span::styled(
-            "  （差异过大，仅显示统计）",
+            format!("{}（差异过大，仅显示统计）", " ".repeat(spacing::INDENT)),
             Style::default().fg(theme.colors().warning),
         )));
         output.hits.push(toggle_hit(record));
@@ -893,9 +1055,10 @@ fn render_diff_body(
         }
         match row {
             DiffRow::Separator(label) => {
-                output
-                    .lines
-                    .push(Line::from(Span::styled(format!("  {label}"), muted(theme))));
+                output.lines.push(Line::from(Span::styled(
+                    format!("{}{label}", " ".repeat(spacing::INDENT)),
+                    muted(theme),
+                )));
                 output.hits.push(toggle_hit(record));
                 shown += 1;
             }
@@ -912,7 +1075,7 @@ fn render_diff_body(
             " · 点击展开"
         };
         output.lines.push(Line::from(Span::styled(
-            format!("  … 还有 {hidden} 行{suffix}"),
+            format!("{}… 还有 {hidden} 行{suffix}", " ".repeat(spacing::INDENT)),
             muted(theme),
         )));
         output.hits.push(toggle_hit(record));
@@ -934,7 +1097,7 @@ fn render_diff_line(
     let number = line.old_no.or(line.new_no);
     let number = number
         .map(|number| format!("{number:>4}"))
-        .unwrap_or_else(|| "    ".to_string());
+        .unwrap_or_else(|| " ".repeat(spacing::NESTED));
     let colors = theme.colors();
     let (marker, background, emphasis_background, marker_color) = match kind {
         DiffLineKind::Add => (
@@ -1071,6 +1234,9 @@ fn render_preview(output: &mut RenderedEntry, preview: &PreviewEntry, width: usi
         ]));
         output.hits.push(None);
     }
+    if !preview.text.trim().is_empty() {
+        output.push_gap(Gap::Section);
+    }
     for row in wrap_block(&preview.text, width, MAX_BLOCK_ROWS) {
         output
             .lines
@@ -1142,8 +1308,7 @@ fn render_context_group(
     }
     for (index, entry) in entries.iter().enumerate() {
         if index > 0 {
-            output.lines.push(Line::default());
-            output.hits.push(hit.clone());
+            output.push_gap(Gap::Block);
         }
         let EntryKind::Context { text, .. } = &entry.kind else {
             continue;
@@ -1206,11 +1371,29 @@ fn render_labeled_context(
     }
     if shown < rows.len() {
         output.lines.push(Line::from(Span::styled(
-            format!("  … 还有 {} 行 · 点击展开", rows.len() - shown),
+            format!(
+                "{}… 还有 {} 行 · 点击展开",
+                " ".repeat(spacing::INDENT),
+                rows.len() - shown
+            ),
             muted(theme),
         )));
         output.hits.push(hit);
     }
+}
+
+/// Append one gap row unless the previous row is already blank.
+fn push_row_gap(rows: &mut Vec<Line<'static>>, gap: Gap) {
+    if rows.is_empty() || gap.rows() == 0 {
+        return;
+    }
+    if rows
+        .last()
+        .is_some_and(|line| line.spans.iter().all(|span| span.content.trim().is_empty()))
+    {
+        return;
+    }
+    rows.push(Line::default());
 }
 
 /// Minimal Markdown: headings lose their marker and turn bold, a leading
@@ -1235,7 +1418,7 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
     let mut rows = Vec::new();
     for (block_index, block) in blocks.iter().enumerate() {
         if block_index > 0 {
-            rows.push(Line::default());
+            push_row_gap(&mut rows, Gap::Block);
         }
         let mut lead = block_index == 0;
         let mut previous_kind: Option<MarkdownKind> = None;
@@ -1243,9 +1426,7 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
         while index < block.len() {
             if let Some(table) = parse_table(&block[index..], width) {
                 let consumed = 2 + table.body.len();
-                if rows.last().is_some_and(|line| !line.spans.is_empty()) {
-                    rows.push(Line::default());
-                }
+                push_row_gap(&mut rows, Gap::Block);
                 rows.extend(table_rows(
                     &table.header,
                     &table.aligns,
@@ -1257,7 +1438,7 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
                 previous_kind = None;
                 lead = false;
                 if index < block.len() {
-                    rows.push(Line::default());
+                    push_row_gap(&mut rows, Gap::Block);
                 }
                 continue;
             }
@@ -1271,7 +1452,7 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
                 MarkdownKind::Paragraph
             };
             if previous_kind.is_some_and(|previous| markdown_gap(previous, kind)) {
-                rows.push(Line::default());
+                push_row_gap(&mut rows, Gap::Block);
             }
             previous_kind = Some(kind);
             if let Some(heading) = heading_text(trimmed) {
@@ -1284,9 +1465,17 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
                 }
                 lead = false;
             } else if let Some(item) = list_item(trimmed) {
-                let item_rows = inline_rows(item, width.saturating_sub(2).max(1), Style::default());
+                let item_rows = inline_rows(
+                    item,
+                    width.saturating_sub(spacing::INDENT).max(1),
+                    Style::default(),
+                );
                 for (item_index, row) in item_rows.into_iter().enumerate() {
-                    let prefix = if item_index == 0 { "- " } else { "  " };
+                    let prefix = if item_index == 0 {
+                        "- ".to_string()
+                    } else {
+                        " ".repeat(spacing::INDENT)
+                    };
                     let mut spans = vec![Span::styled(prefix, muted(theme))];
                     spans.extend(row.spans);
                     rows.push(Line::from(spans));
@@ -1857,7 +2046,7 @@ fn answer_label(answer: &nano_decisions::contract::AnswerItem) -> String {
 mod tests {
     use super::*;
     use crate::diff::DiffState;
-    use crate::model::TranscriptSource;
+    use crate::model::{PreviewTool, TranscriptSource};
     use crate::tool::{QuestionRecord, ToolDisplay, ToolRecord};
     use nano_conversation::{PreviewOutcome, SessionAddress, ToolStatus};
     use nano_decisions::contract::parse_questions;
@@ -1892,6 +2081,75 @@ mod tests {
                 },
             }),
         }
+    }
+
+    fn assistant_entry(identity: &str, text: &str, reasoning: &str) -> Entry {
+        Entry {
+            identity: identity.into(),
+            fingerprint: identity.len() as u64 + 1,
+            kind: EntryKind::Assistant {
+                text: text.into(),
+                reasoning: reasoning.into(),
+                reasoning_ms: Some(2_800),
+                interrupted: false,
+            },
+        }
+    }
+
+    fn preview_entry_with_thinking(text: &str, reasoning: &str) -> Entry {
+        Entry {
+            identity: "preview-1".into(),
+            fingerprint: 99,
+            kind: EntryKind::Preview(crate::model::PreviewEntry {
+                attempt_id: "attempt-1".into(),
+                turn: 1,
+                step: 1,
+                text: text.into(),
+                reasoning: reasoning.into(),
+                reasoning_ms: Some(1_200),
+                tools: vec![PreviewTool {
+                    name: Some("bash".into()),
+                    complete: true,
+                }],
+                gap: false,
+                truncated: false,
+                finished: false,
+                outcome: None,
+            }),
+        }
+    }
+
+    fn bash_entry_named(identity: &str, call_id: &str, output: &str) -> Entry {
+        Entry {
+            identity: identity.into(),
+            fingerprint: identity.len() as u64,
+            kind: EntryKind::Tool(ToolRecord {
+                call_id: call_id.into(),
+                name: "bash".into(),
+                status: ToolStatus::Succeeded,
+                display_status: DisplayStatus::Succeeded,
+                turn: None,
+                step: None,
+                arguments: r#"{"command":"echo hi"}"#.into(),
+                result: Some(output.into()),
+                result_fact: None,
+                approval: None,
+                display: ToolDisplay::Bash {
+                    command: Some("echo hi".into()),
+                    description: None,
+                    output: output.into(),
+                    exit: ExitStatus::Unknown,
+                },
+            }),
+        }
+    }
+
+    fn render_model_lines(entries: Vec<Entry>, width: usize) -> Vec<String> {
+        let model = model(entries);
+        let mut cache = RenderCache::new();
+        let mut scroll = ScrollState::default();
+        let rendered = render(&model, &mut cache, &mut scroll, width, 40, Theme::Dark);
+        rendered.lines.iter().map(ToString::to_string).collect()
     }
 
     fn render_one(entry: Entry, expanded: bool, width: usize) -> RenderedEntry {
@@ -2519,6 +2777,147 @@ mod tests {
     }
 
     #[test]
+    fn adjacent_roles_collapse_process_and_separate_answers() {
+        assert_eq!(gap_between(Role::Process, Role::Process), Gap::None);
+        assert_eq!(gap_between(Role::Process, Role::Answer), Gap::Block);
+        assert_eq!(gap_between(Role::Answer, Role::Process), Gap::Block);
+        assert_eq!(gap_between(Role::Turn, Role::Process), Gap::Block);
+        assert_eq!(gap_between(Role::Answer, Role::Answer), Gap::Block);
+    }
+
+    #[test]
+    fn a_tool_then_thinking_keeps_the_process_group_tight_and_spaces_the_answer() {
+        let entries = vec![
+            bash_entry(ToolStatus::Succeeded, "ok", DisplayStatus::Succeeded),
+            assistant_entry("a-1", "一句话：回答", "先看看"),
+        ];
+        let rows = render_model_lines(entries, 100);
+        let thinking = rows
+            .iter()
+            .position(|row| row.contains("思考 已完成"))
+            .expect("thinking header");
+        let answer = rows
+            .iter()
+            .position(|row| row.contains("一句话：回答"))
+            .expect("answer");
+        assert_eq!(
+            thinking + 2,
+            answer,
+            "one blank row between thinking and answer: {rows:?}"
+        );
+        let tool_tail = rows
+            .iter()
+            .rposition(|row| row.contains("ok"))
+            .expect("tool output");
+        assert_eq!(
+            tool_tail + 1,
+            thinking,
+            "tool and thinking stay tight: {rows:?}"
+        );
+        assert_eq!(
+            rows.last().map(String::as_str),
+            Some(""),
+            "last unit keeps the bottom gap"
+        );
+    }
+
+    #[test]
+    fn consecutive_tools_stay_tight() {
+        let entries = vec![
+            bash_entry_named("call-c-1", "c-1", "one"),
+            bash_entry_named("call-c-2", "c-2", "two"),
+        ];
+        let rows = render_model_lines(entries, 100);
+        let first = rows
+            .iter()
+            .position(|row| row.contains("one"))
+            .expect("first output");
+        let second = rows
+            .iter()
+            .enumerate()
+            .skip(first + 1)
+            .find(|(_, row)| row.contains("▸ Bash"))
+            .map(|(index, _)| index)
+            .expect("second tool header");
+        assert_eq!(first + 1, second, "tools stay tight: {rows:?}");
+    }
+
+    #[test]
+    fn preview_spaces_the_answer_but_keeps_its_tail_compact() {
+        let entries = vec![preview_entry_with_thinking("流式正文", "先想想")];
+        let rows = render_model_lines(entries, 100);
+        let thinking = rows
+            .iter()
+            .position(|row| row.contains("思考 进行中"))
+            .expect("preview thinking");
+        let text = rows
+            .iter()
+            .position(|row| row.contains("流式正文"))
+            .expect("preview text");
+        assert_eq!(thinking + 2, text, "preview answer gets one gap: {rows:?}");
+        let tool = rows
+            .iter()
+            .position(|row| row.contains("参数完成"))
+            .expect("preview tool line");
+        assert_eq!(
+            text + 1,
+            tool,
+            "preview tool lines stay tight after the text: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn an_empty_assistant_leaves_no_unit_and_no_double_gap() {
+        let entries = vec![
+            bash_entry(ToolStatus::Succeeded, "ok", DisplayStatus::Succeeded),
+            assistant_entry("a-empty", "", ""),
+            assistant_entry("a-answer", "答案", ""),
+        ];
+        let rows = render_model_lines(entries, 100);
+        let tool_tail = rows
+            .iter()
+            .rposition(|row| row.contains("ok"))
+            .expect("tool output");
+        let answer = rows
+            .iter()
+            .position(|row| row.contains("答案"))
+            .expect("answer");
+        assert_eq!(tool_tail + 2, answer, "process to answer: {rows:?}");
+        assert!(
+            !rows
+                .windows(2)
+                .any(|pair| pair[0].is_empty() && pair[1].is_empty()),
+            "no boundary doubles the gap: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn the_cache_key_separates_gap_roles() {
+        let entry = bash_entry(ToolStatus::Succeeded, "ok", DisplayStatus::Succeeded);
+        let unit = Unit::Single(&entry);
+        let mut cache = RenderCache::new();
+        let tight = cache.height(
+            unit.identity(),
+            unit.fingerprint(),
+            80,
+            false,
+            Theme::Dark,
+            Gap::None,
+            || render_unit(&unit, 80, false, Theme::Dark, Gap::None),
+        );
+        let blocked = cache.height(
+            unit.identity(),
+            unit.fingerprint(),
+            80,
+            false,
+            Theme::Dark,
+            Gap::Block,
+            || render_unit(&unit, 80, false, Theme::Dark, Gap::Block),
+        );
+        assert_eq!(blocked, tight + 1);
+    }
+
+    #[test]
     fn a_pending_approval_is_not_labeled_as_unknown() {
         let entry = Entry {
             identity: "call-c".into(),
@@ -2789,7 +3188,10 @@ mod tests {
             rows[5].starts_with("- 第二项"),
             "list items stay tight: {rows:?}"
         );
-        assert_eq!(rows.last().map(|row| row.as_str()), Some(""), "{rows:?}");
+        assert!(
+            rows.last().is_some_and(|row| row.starts_with("- 第二项")),
+            "an entry no longer carries its own trailing gap: {rows:?}"
+        );
     }
 
     #[test]

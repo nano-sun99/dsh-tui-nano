@@ -1,10 +1,12 @@
-//! Shared semantic colors for Nano's own TUI surfaces.
+//! Shared semantic colors and spacing for Nano's own TUI surfaces.
 //!
 //! The terminal owns the window background, transparency, font, and palette.
 //! Nano owns only the colors it emits for its own text, rules, states, focus,
 //! and diffs. `NANO_THEME` selects one immutable palette once at startup.
 
 use ratatui::style::{Color, Style};
+
+pub mod spacing;
 
 /// Selected TUI theme. Parsed once at the application boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

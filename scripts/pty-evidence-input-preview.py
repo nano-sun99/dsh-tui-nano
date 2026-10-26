@@ -13,6 +13,7 @@ Run after `cargo build -p nano-app --tests`:
     python3 scripts/pty-evidence-input-preview.py                 # input/preview/table
     python3 scripts/pty-evidence-input-preview.py outcome-xhigh  # outcome/XHigh
     python3 scripts/pty-evidence-input-preview.py effort-sweep-binding  # real catalog
+    python3 scripts/pty-evidence-input-preview.py spacing-system  # spacing fixtures
 """
 import os
 import re
@@ -26,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "evidence" / "2026-10-26-nano-input-preview-rendering"
 NEW_OUT = ROOT / "docs" / "evidence" / "2026-10-26-nano-outcome-xhigh-correction"
 REAL_OUT = ROOT / "docs" / "evidence" / "2026-10-26-nano-effort-sweep-binding"
+SPACING_OUT = ROOT / "docs" / "evidence" / "2026-10-26-nano-spacing-system"
 
 SCENARIOS = [
     ("01-main-empty-pty-100-dark.txt", "main-empty", 100, 36, False),
@@ -177,6 +179,53 @@ NEW_SCENARIOS = [
         36,
         True,
     ),
+]
+
+SPACING_SCENARIOS = [
+    (
+        "01-process-answer-pty-100-dark.txt",
+        "spacing-tool-thinking-answer-100-dark",
+        100,
+        36,
+        False,
+    ),
+    (
+        "02-process-answer-pty-60-light.txt",
+        "spacing-tool-thinking-answer-60-light",
+        60,
+        30,
+        False,
+    ),
+    (
+        "03-process-answer-pty-100-light.txt",
+        "spacing-tool-thinking-answer-100-light",
+        100,
+        36,
+        False,
+    ),
+    (
+        "04-process-answer-pty-60-dark.txt",
+        "spacing-tool-thinking-answer-60-dark",
+        60,
+        30,
+        False,
+    ),
+    (
+        "05-preview-answer-pty-100-dark.txt",
+        "spacing-preview-answer-100-dark",
+        100,
+        36,
+        False,
+    ),
+    (
+        "06-preview-answer-pty-60-light.txt",
+        "spacing-preview-answer-60-light",
+        60,
+        30,
+        False,
+    ),
+    ("07-main-pty-100-dark.txt", "main-empty", 100, 36, False),
+    ("08-main-pty-60-light.txt", "main-60-light", 60, 30, False),
 ]
 
 STREAM_SCENARIOS = [
@@ -429,7 +478,10 @@ def main():
         real_binary()
         capture_real_catalog(out)
         return 0
-    if group == "outcome-xhigh":
+    if group == "spacing-system":
+        out = SPACING_OUT
+        scenarios = SPACING_SCENARIOS
+    elif group == "outcome-xhigh":
         out = NEW_OUT
         scenarios = NEW_SCENARIOS
     elif group == "input-preview":

@@ -1,0 +1,30 @@
+  nano  ~/code/dsh-tui-nano/.claude/worktrees/issue-75
+
+  ▸ Bash echo hi                                      完成
+    echo hi
+    ok
+  ▸ 思考 已完成                                       2.8s
+
+  一句话：这是 DeepSeek Harness 的终端界面。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ────────────────────────────────────────────────────────
+  >                                                      ↑
+  ────────────────────────────────────────────────────────
+
+  权限：未知  启动中 · 正… …ano/.claude/worktrees/issue-75
