@@ -2,7 +2,7 @@
 
 - 规格：`docs/specs/2026-10-26-nano-spacing-system/README.md`
 - 生成：`python3 scripts/pty-evidence-input-preview.py spacing-system`
-- 构建：worktree `issue-75`，基线 `75aba27`，`target/debug/nano` 测试二进制
+- 构建：worktree `fix/process-block-gap`，基线 `3523fcb`，`target/debug/nano` 测试二进制
 - 数据：确定性 `evidence_frame` fixture，不是账号真实会话，也不产生模型费用
 
 ## 过程组 → 回答
@@ -17,11 +17,11 @@
 实测行序（四份一致）：
 
 - `▸ Bash echo hi` 与命令 / 输出紧贴，0 空行；
-- `▸ 思考 已完成` 紧接 Bash 输出，0 空行；
+- Bash 输出与 `▸ 思考 已完成` 之间 1 空行；
 - 思考与 `一句话：……` 之间 1 空行；
 - 回答之后保留 1 行底部留白。
 
-这同时验证了截图中的缺口已补上，以及过程组内没有多余的空白。
+这验证了过程块之间各有 1 行呼吸，卡内命令 / 输出仍紧贴。
 
 ## Preview → 正文
 

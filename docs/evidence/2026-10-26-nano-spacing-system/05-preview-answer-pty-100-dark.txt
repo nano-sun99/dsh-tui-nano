@@ -1,4 +1,4 @@
-  nano  ~/code/dsh-tui-nano/.claude/worktrees/issue-75
+  nano  ~/code/dsh-tui-nano-fix-block-gap
 
   ▸ 生成中
   ▸ 思考 进行中… · 0ms
@@ -33,4 +33,4 @@
   >                                                                                              ↑
   ────────────────────────────────────────────────────────────────────────────────────────────────
 
-  权限：未知  启动中 · 正在启动 Nano 宿主…          ~/code/dsh-tui-nano/.claude/worktrees/issue-75
+  权限：未知  启动中 · 正在启动 Nano 宿主…                       ~/code/dsh-tui-nano-fix-block-gap
