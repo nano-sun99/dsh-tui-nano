@@ -789,9 +789,7 @@ fn render_tool(
             }
         }
     }
-    if record.display_status == DisplayStatus::Unknown
-        && !matches!(record.display, ToolDisplay::AskUser { .. })
-    {
+    if record.display_status == DisplayStatus::Unknown {
         output.lines.push(Line::from(Span::styled(
             "  工具未返回成功或失败结论",
             muted(theme),
@@ -1034,16 +1032,18 @@ enum DiffRow {
 }
 
 fn render_preview(output: &mut RenderedEntry, preview: &PreviewEntry, width: usize, theme: Theme) {
-    let (status, status_style) = if !preview.finished {
-        ("▸ 生成中", muted(theme))
-    } else {
-        match preview.outcome {
-            Some(PreviewOutcome::Committed) => ("▸ 回答已提交", muted(theme)),
-            Some(PreviewOutcome::Abandoned) => {
+    let (status, status_style) = if let Some(outcome) = preview.outcome {
+        match outcome {
+            PreviewOutcome::Committed => ("▸ 回答已提交", muted(theme)),
+            PreviewOutcome::Abandoned => {
                 ("▸ 生成已中断", Style::default().fg(theme.colors().warning))
             }
-            _ => ("▸ 未收到完整回答", muted(theme)),
+            PreviewOutcome::Unknown => ("▸ 未收到完整回答", muted(theme)),
         }
+    } else {
+        // A terminal `finish` chunk ends the stream but not the attempt; the
+        // official settlement arrives with the end frame.
+        ("▸ 生成中", muted(theme))
     };
     output
         .lines
@@ -1232,7 +1232,7 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
         if block_index > 0 {
             rows.push(Line::default());
         }
-        let lead = block_index == 0;
+        let mut lead = block_index == 0;
         let mut previous_kind: Option<MarkdownKind> = None;
         let mut index = 0;
         while index < block.len() {
@@ -1250,6 +1250,7 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
                 ));
                 index += consumed;
                 previous_kind = None;
+                lead = false;
                 if index < block.len() {
                     rows.push(Line::default());
                 }
@@ -1276,6 +1277,7 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
                 ) {
                     rows.push(row);
                 }
+                lead = false;
             } else if let Some(item) = list_item(trimmed) {
                 let item_rows = inline_rows(item, width.saturating_sub(2).max(1), Style::default());
                 for (item_index, row) in item_rows.into_iter().enumerate() {
@@ -1284,6 +1286,7 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
                     spans.extend(row.spans);
                     rows.push(Line::from(spans));
                 }
+                lead = false;
             } else {
                 let style = if lead {
                     Style::default().add_modifier(Modifier::BOLD)
@@ -1293,6 +1296,7 @@ fn markdown_rows(text: &str, width: usize, theme: Theme) -> Vec<Line<'static>> {
                 for row in inline_rows(line, width, style) {
                     rows.push(row);
                 }
+                lead = false;
             }
             index += 1;
         }
@@ -1338,6 +1342,10 @@ struct ParsedTable {
 /// Anything else stays ordinary Markdown text.
 fn parse_table(lines: &[&str], width: usize) -> Option<ParsedTable> {
     if lines.len() < 2 {
+        return None;
+    }
+    let header_line = lines[0].trim_start();
+    if heading_text(header_line).is_some() || list_item(header_line).is_some() {
         return None;
     }
     let header = split_table_cells(lines[0])?;
@@ -2662,6 +2670,42 @@ mod tests {
     }
 
     #[test]
+    fn a_table_keeps_empty_cells_wide_glyphs_and_column_alignment() {
+        let entry = table_entry(
+            "| left | center | right |\n| :--- | :---: | ---: |\n| a | bb | ccc |\n|  | 🚀 |  |",
+        );
+        let rendered = render_one(entry, false, 40);
+        let rows: Vec<String> = rendered.lines.iter().map(ToString::to_string).collect();
+        for row in &rows {
+            assert!(line_width(row) <= 40, "no overflow: {row:?}");
+        }
+        let rocket = rendered
+            .lines
+            .iter()
+            .find(|line| line.to_string().contains("🚀"))
+            .expect("emoji row");
+        assert_eq!(rocket.to_string().matches('│').count(), 2);
+        let body = rendered
+            .lines
+            .iter()
+            .find(|line| line.to_string().contains("bb"))
+            .expect("center row");
+        let text = body.to_string();
+        assert!(text.starts_with("a"), "{text:?}");
+        assert!(text.ends_with("ccc"), "right alignment: {text:?}");
+        let center = text.split('│').nth(1).expect("center cell");
+        let stripped = center.trim();
+        assert_eq!(stripped, "bb");
+        let start = center.find(stripped).expect("content offset");
+        let left = center[..start].chars().count();
+        let right = center[start + stripped.len()..].chars().count();
+        assert!(
+            left.abs_diff(right) <= 1,
+            "centered cell: {center:?} ({left}/{right})"
+        );
+    }
+
+    #[test]
     fn a_pipe_line_without_a_separator_stays_plain_text() {
         let rows = plain(&render_one(table_entry("a | b\njust text"), false, 40));
         assert!(rows.iter().any(|row| row.contains("a | b")), "{rows:?}");
@@ -2710,6 +2754,41 @@ mod tests {
             "list items stay tight: {rows:?}"
         );
         assert_eq!(rows.last().map(|row| row.as_str()), Some(""), "{rows:?}");
+    }
+
+    #[test]
+    fn a_heading_or_list_line_with_pipes_is_not_a_table_header() {
+        for text in [
+            "- 项 | 说明\n--- | ---\n- a | b",
+            "# 标题 | x\n--- | ---\n| 1 | 2 |",
+        ] {
+            let rows = plain(&render_one(table_entry(text), false, 40));
+            assert!(
+                !rows.iter().any(|row| row.contains('│')),
+                "no table for {text:?}: {rows:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_paragraph_after_a_lead_table_is_not_bold() {
+        let rendered = render_one(
+            table_entry("前言\n| A | B |\n| --- | --- |\n| 1 | 2 |\n结论段落"),
+            false,
+            40,
+        );
+        let paragraph = rendered
+            .lines
+            .iter()
+            .find(|line| line.to_string().contains("结论段落"))
+            .expect("paragraph");
+        assert!(
+            !paragraph
+                .spans
+                .iter()
+                .any(|span| span.style.add_modifier.contains(Modifier::BOLD)),
+            "{paragraph:?}"
+        );
     }
 
     #[test]
@@ -2925,6 +3004,19 @@ mod tests {
         assert!(!rows.iter().any(|row| row.contains("生成中")));
         assert!(!rows.iter().any(|row| row.contains("最终回答到达后会补全")));
         assert!(!rows.iter().any(|row| row.contains("preview")));
+    }
+
+    #[test]
+    fn a_finished_stream_without_an_outcome_still_reads_as_generating() {
+        let mut entry = preview_entry(false, false);
+        let EntryKind::Preview(preview) = &mut entry.kind else {
+            unreachable!("preview entry");
+        };
+        preview.finished = true;
+        preview.outcome = None;
+        let rows = plain(&render_one(entry, false, 60));
+        assert!(rows.iter().any(|row| row.contains("生成中")), "{rows:?}");
+        assert!(!rows.iter().any(|row| row.contains("未收到完整回答")));
     }
 
     #[test]

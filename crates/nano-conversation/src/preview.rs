@@ -179,6 +179,10 @@ impl PreviewAccumulator {
                 turn,
                 step,
             } => {
+                // A new attempt supersedes any finished preview still parked
+                // in the live set (notably an abandoned attempt with no
+                // durable settlement).
+                self.retire_finished();
                 self.remove(attempt_id);
                 let preview = Preview {
                     attempt_id: attempt_id.clone(),
@@ -466,6 +470,18 @@ impl PreviewAccumulator {
         Some(preview)
     }
 
+    fn retire_finished(&mut self) {
+        let ids: Vec<String> = self
+            .previews
+            .iter()
+            .filter(|(_, preview)| preview.finished)
+            .map(|(attempt_id, _)| attempt_id.clone())
+            .collect();
+        for attempt_id in ids {
+            self.remove(&attempt_id);
+        }
+    }
+
     /// Enforce the total bound globally; called after each applied chunk.
     fn enforce_bounds(&mut self) -> Option<PreviewRetirement> {
         // Per-attempt bounds are enforced while appending. The global bound is
@@ -572,6 +588,45 @@ mod tests {
         let retired = previews.retire_turn_step(1, 1);
         assert_eq!(retired.len(), 1);
         assert!(previews.is_empty());
+    }
+
+    #[test]
+    fn a_finish_chunk_stops_the_stream_without_settling() {
+        let mut previews = PreviewAccumulator::default();
+        previews.apply(&start("a", 1, 1));
+        previews.apply(&chunk(
+            "a",
+            0,
+            json!({"type": "text-delta", "index": 0, "text": "done"}),
+        ));
+        previews.apply(&chunk("a", 1, json!({"type": "finish"})));
+        let view = &previews.views()[0];
+        assert!(view.finished);
+        assert_eq!(view.outcome, None);
+        assert!(!previews.has_live());
+    }
+
+    #[test]
+    fn a_new_attempt_retires_an_abandoned_finished_preview() {
+        let mut previews = PreviewAccumulator::default();
+        previews.apply(&start("a", 1, 1));
+        previews.apply(&chunk(
+            "a",
+            0,
+            json!({"type": "text-delta", "index": 0, "text": "bye"}),
+        ));
+        previews.apply(&StreamFrame::End {
+            attempt_id: "a".into(),
+            revision: 1,
+            index: 1,
+            outcome: json!({"kind": "abandoned"}),
+        });
+        assert_eq!(previews.views().len(), 1);
+        assert!(previews.views()[0].finished);
+        previews.apply(&start("b", 2, 1));
+        let views = previews.views();
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].attempt_id, "b");
     }
 
     #[test]

@@ -107,10 +107,10 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
         u16::from(app.activity_kind().is_some())
     };
     // One blank row between the composer and the status bar keeps the bottom
-    // band readable; short terminals tighten this separator first.
-    let bottom_gap = u16::from(!models_panel && area.height >= 24);
-    let reserved =
-        header_height + 3 + bottom_gap + queue_height + completion_height + activity_height;
+    // band readable; short terminals tighten this separator first. The feed
+    // keeps its three-row minimum, so the separator appears only when the
+    // actual remaining height allows it.
+    let reserved = header_height + 3 + queue_height + completion_height + activity_height;
     let models_height = if models_panel {
         models_panel_height(app, area.height.saturating_sub(reserved))
     } else {
@@ -132,6 +132,19 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
     } else {
         (activity_height, bottom_height)
     };
+    let fixed = header_height
+        + queue_height
+        + completion_height
+        + activity_height
+        + bottom_height
+        + status_height
+        + dock_height;
+    let free = area.height.saturating_sub(fixed);
+    let (bottom_gap, dock_gap) = if models_panel {
+        (0, 0)
+    } else {
+        bottom_gaps(free, dock_height > 0)
+    };
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -143,6 +156,7 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
             Constraint::Length(bottom_slot),
             Constraint::Length(bottom_gap),
             Constraint::Length(status_height),
+            Constraint::Length(dock_gap),
             Constraint::Length(dock_height),
         ])
         .split(area);
@@ -188,11 +202,20 @@ fn draw_frame(frame: &mut Frame, app: &mut App) {
         draw_status(frame, app, layout[7], area.width);
     }
     if dock_height > 0 {
-        draw_subagent_dock(frame, app, layout[8]);
+        draw_subagent_dock(frame, app, layout[9]);
     }
     if app.panel.is_open() && !models_panel {
         draw_panel(frame, app, full);
     }
+}
+
+/// Separator rows for composer→status and status→dock, never taking the
+/// transcript below its three-row minimum.
+fn bottom_gaps(free: u16, dock: bool) -> (u16, u16) {
+    let bottom = u16::from(free > 3);
+    let remaining = free.saturating_sub(bottom);
+    let dock_gap = u16::from(dock && remaining > 3);
+    (bottom, dock_gap)
 }
 
 fn inset_horizontal(area: Rect, margin: u16) -> Rect {
@@ -4598,6 +4621,51 @@ mod tests {
     }
 
     #[test]
+    fn a_dock_keeps_one_blank_row_from_the_status() {
+        let mut app = app();
+        install_subagents(
+            &mut app,
+            serde_json::json!([subagent_row("child", "continuable")]),
+        );
+        let rows = screen(&mut app, 100, 30);
+        let compact = compact(&rows);
+        let status = compact
+            .iter()
+            .position(|row| row.contains("权限："))
+            .expect("status row");
+        assert!(compact[status + 1].is_empty(), "{:?}", &compact[status..]);
+        assert!(rows[status + 2].contains('─'), "{:?}", &rows[status..]);
+    }
+
+    #[test]
+    fn bottom_gaps_respect_the_feed_minimum() {
+        assert_eq!(bottom_gaps(3, false), (0, 0));
+        assert_eq!(bottom_gaps(4, false), (1, 0));
+        assert_eq!(bottom_gaps(4, true), (1, 0));
+        assert_eq!(bottom_gaps(8, true), (1, 1));
+    }
+
+    #[test]
+    fn a_tight_terminal_drops_bottom_gaps_before_the_status() {
+        let mut app = app();
+        let rows = screen(&mut app, 100, 9);
+        let compact = compact(&rows);
+        let border_y = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| {
+                row.chars()
+                    .skip(2)
+                    .take(96)
+                    .all(|character| character == '─')
+            })
+            .map(|(y, _)| y)
+            .last()
+            .expect("composer bottom border");
+        assert!(compact[border_y + 1].contains("权限："));
+    }
+
+    #[test]
     fn bottom_rows_keep_one_blank_separator_when_height_allows() {
         let mut app = app();
         let rows = screen(&mut app, 100, 30);
@@ -5993,14 +6061,46 @@ mod tests {
                 Some((app, 100, 36, true))
             }
             "main-60-light" => Some((light(), 60, 30, true)),
-            "table-100" => Some((evidence_table(), 100, 36, false)),
-            "table-60" => Some((evidence_table(), 60, 30, false)),
+            "main-dock-100-dark" => {
+                let mut app = app();
+                install_subagents(
+                    &mut app,
+                    serde_json::json!([subagent_row("child", "continuable")]),
+                );
+                Some((app, 100, 36, false))
+            }
+            "main-dock-60-light" => {
+                let mut app = light();
+                install_subagents(
+                    &mut app,
+                    serde_json::json!([subagent_row("child", "continuable")]),
+                );
+                Some((app, 60, 30, false))
+            }
+            "table-100" => Some((evidence_table(app()), 100, 36, false)),
+            "table-60" => Some((evidence_table(light()), 60, 30, false)),
             "tool-unknown" => Some((evidence_tool_unknown(), 100, 36, false)),
-            "preview-live-gap-100" => Some((evidence_preview_gap(), 100, 36, false)),
-            "preview-live-gap-60" => Some((evidence_preview_gap(), 60, 30, false)),
+            "preview-live-gap-100" => Some((evidence_preview_gap(app()), 100, 36, false)),
+            "preview-live-gap-60" => Some((evidence_preview_gap(light()), 60, 30, false)),
             "preview-live-truncated-100" => Some((evidence_preview_truncated(), 100, 36, false)),
-            "preview-finished-unknown-100" => Some((evidence_preview_finished(), 100, 36, false)),
-            "preview-finished-unknown-60" => Some((evidence_preview_finished(), 60, 30, false)),
+            "preview-finished-unknown-100" => {
+                Some((evidence_preview_finished(app(), "unknown"), 100, 36, false))
+            }
+            "preview-finished-unknown-60" => {
+                Some((evidence_preview_finished(light(), "unknown"), 60, 30, false))
+            }
+            "preview-finished-abandoned-100" => Some((
+                evidence_preview_finished(app(), "abandoned"),
+                100,
+                36,
+                false,
+            )),
+            "preview-finished-abandoned-60" => Some((
+                evidence_preview_finished(light(), "abandoned"),
+                60,
+                30,
+                false,
+            )),
             "model-default-100" => {
                 let mut app = app();
                 open_models(&mut app);
@@ -6008,18 +6108,21 @@ mod tests {
             }
             "model-xhigh-100-560" => Some((evidence_xhigh(app(), 560), 100, 36, false)),
             "model-xhigh-100-1050" => Some((evidence_xhigh(app(), 1050), 100, 36, false)),
+            "model-xhigh-100-light-560" => Some((evidence_xhigh(light(), 560), 100, 36, false)),
+            "model-xhigh-100-light-1050" => Some((evidence_xhigh(light(), 1050), 100, 36, false)),
             "model-xhigh-60-light-560" => Some((evidence_xhigh(light(), 560), 60, 30, false)),
             "model-xhigh-60-light-1050" => Some((evidence_xhigh(light(), 1050), 60, 30, false)),
+            "model-xhigh-60-dark-560" => Some((evidence_xhigh(app(), 560), 60, 30, false)),
+            "model-xhigh-60-dark-1050" => Some((evidence_xhigh(app(), 1050), 60, 30, false)),
             _ => None,
         }
     }
 
-    fn evidence_table() -> App {
-        let mut app = app();
+    fn evidence_table(mut app: App) -> App {
         assistant_event(
             &mut app,
             1,
-            "| 名称 | 状态 | 备注 |\n| :--- | :---: | ---: |\n| 中文内容较长较长 | 完成 | 无 |\n| short | 失败 | 需要关注 |",
+            "| 名称很长很长很长很长 | 状态说明文字 | 说明很长很长很长很长 | 备注很长很长很长很长 |\n| :--- | :---: | ---: | --- |\n| 内容很长很长很长很长 | 完成 | 更多说明很长很长很长很长 | 无 |\n| short | 失败 | 需要关注 | 中文长内容需要换行 |",
         );
         app
     }
@@ -6064,8 +6167,7 @@ mod tests {
         app
     }
 
-    fn evidence_preview_gap() -> App {
-        let mut app = app();
+    fn evidence_preview_gap(mut app: App) -> App {
         stream_event(
             &mut app,
             serde_json::json!({
@@ -6108,8 +6210,7 @@ mod tests {
         app
     }
 
-    fn evidence_preview_finished() -> App {
-        let mut app = app();
+    fn evidence_preview_finished(mut app: App, outcome: &str) -> App {
         stream_event(
             &mut app,
             serde_json::json!({
@@ -6127,7 +6228,7 @@ mod tests {
             &mut app,
             serde_json::json!({
                 "attemptId": "a-1", "revision": 1, "type": "end", "index": 1,
-                "outcome": {"kind": "unknown"}
+                "outcome": {"kind": outcome}
             }),
         );
         app

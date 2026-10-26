@@ -181,6 +181,7 @@ pub struct TranscriptModel {
     pub(crate) entries: Vec<Entry>,
     expansion: HashSet<String>,
     preview_started: HashMap<String, Instant>,
+    preview_finished_ms: HashMap<String, u64>,
     pub(crate) revision: u64,
     aliases: HashMap<String, String>,
     last_error: Option<String>,
@@ -196,6 +197,7 @@ impl TranscriptModel {
             entries: Vec::new(),
             expansion: HashSet::new(),
             preview_started: HashMap::new(),
+            preview_finished_ms: HashMap::new(),
             revision: 0,
             aliases: HashMap::new(),
             last_error: None,
@@ -292,14 +294,25 @@ impl TranscriptModel {
         }
         let live = model.live();
         for preview in live.previews {
-            let started = self
+            let started = *self
                 .preview_started
                 .entry(preview.attempt_id.clone())
                 .or_insert(now);
             let reasoning_ms = if preview.reasoning.trim().is_empty() {
                 None
+            } else if preview.finished {
+                // Freeze the elapsed time once the stream ends; later syncs
+                // must not make "已结束" keep counting.
+                Some(
+                    *self
+                        .preview_finished_ms
+                        .entry(preview.attempt_id.clone())
+                        .or_insert_with(|| {
+                            now.saturating_duration_since(started).as_millis() as u64
+                        }),
+                )
             } else {
-                Some(now.saturating_duration_since(*started).as_millis() as u64)
+                Some(now.saturating_duration_since(started).as_millis() as u64)
             };
             let tools = preview
                 .tools
@@ -336,6 +349,8 @@ impl TranscriptModel {
             })
             .collect();
         self.preview_started
+            .retain(|attempt, _| live_ids.contains(&format!("preview-{attempt}")));
+        self.preview_finished_ms
             .retain(|attempt, _| live_ids.contains(&format!("preview-{attempt}")));
         for echo in live.echoes {
             entries.push(Entry {
@@ -1119,7 +1134,18 @@ fn fingerprint(entry: &Entry) -> u64 {
             preview.reasoning_ms.hash(&mut hasher);
             preview.gap.hash(&mut hasher);
             preview.truncated.hash(&mut hasher);
+            preview.finished.hash(&mut hasher);
+            match preview.outcome {
+                Some(PreviewOutcome::Committed) => 1u8.hash(&mut hasher),
+                Some(PreviewOutcome::Abandoned) => 2u8.hash(&mut hasher),
+                Some(PreviewOutcome::Unknown) => 3u8.hash(&mut hasher),
+                None => 0u8.hash(&mut hasher),
+            }
             preview.tools.len().hash(&mut hasher);
+            for tool in &preview.tools {
+                tool.name.hash(&mut hasher);
+                tool.complete.hash(&mut hasher);
+            }
         }
         EntryKind::Echo { text, state } => {
             6u8.hash(&mut hasher);

@@ -77,6 +77,50 @@ SCENARIOS = [
         30,
         True,
     ),
+    (
+        "17-model-xhigh-phase560-ansi-100-light.txt",
+        "model-xhigh-100-light-560",
+        100,
+        36,
+        True,
+    ),
+    (
+        "18-model-xhigh-phase1050-ansi-100-light.txt",
+        "model-xhigh-100-light-1050",
+        100,
+        36,
+        True,
+    ),
+    (
+        "19-model-xhigh-phase560-ansi-60-dark.txt",
+        "model-xhigh-60-dark-560",
+        60,
+        30,
+        True,
+    ),
+    (
+        "20-model-xhigh-phase1050-ansi-60-dark.txt",
+        "model-xhigh-60-dark-1050",
+        60,
+        30,
+        True,
+    ),
+    (
+        "21-preview-finished-abandoned-pty-100-dark.txt",
+        "preview-finished-abandoned-100",
+        100,
+        36,
+        False,
+    ),
+    (
+        "22-preview-finished-abandoned-pty-60-light.txt",
+        "preview-finished-abandoned-60",
+        60,
+        30,
+        False,
+    ),
+    ("23-main-dock-pty-100-dark.txt", "main-dock-100-dark", 100, 36, False),
+    ("24-main-dock-pty-60-light.txt", "main-dock-60-light", 60, 30, False),
 ]
 
 CURSOR_SCENARIOS = {"01-main-empty-pty-100-dark.txt", "03-main-typed-pty-100-dark.txt"}
