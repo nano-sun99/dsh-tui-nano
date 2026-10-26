@@ -164,12 +164,10 @@ fn entry_roles(entry: &Entry) -> (Role, Role) {
     }
 }
 
-/// Adjacent process summaries stay joined; every other boundary is a block.
-fn gap_between(previous: Role, next: Role) -> Gap {
-    match (previous, next) {
-        (Role::Process, Role::Process) => Gap::None,
-        _ => Gap::Block,
-    }
+/// Every visible unit now gets a block gap. The roles stay part of the model
+/// so a future, denser rhythm can re-introduce `None` without changing callers.
+fn gap_between(_previous: Role, _next: Role) -> Gap {
+    Gap::Block
 }
 
 /// One display unit: single entries render one-to-one; adjacent ordinary
@@ -2820,16 +2818,20 @@ mod tests {
     }
 
     #[test]
-    fn adjacent_roles_collapse_process_and_separate_answers() {
-        assert_eq!(gap_between(Role::Process, Role::Process), Gap::None);
-        assert_eq!(gap_between(Role::Process, Role::Answer), Gap::Block);
-        assert_eq!(gap_between(Role::Answer, Role::Process), Gap::Block);
-        assert_eq!(gap_between(Role::Turn, Role::Process), Gap::Block);
-        assert_eq!(gap_between(Role::Answer, Role::Answer), Gap::Block);
+    fn every_visible_unit_gets_a_block_gap() {
+        for (previous, next) in [
+            (Role::Process, Role::Process),
+            (Role::Process, Role::Answer),
+            (Role::Answer, Role::Process),
+            (Role::Turn, Role::Process),
+            (Role::Answer, Role::Answer),
+        ] {
+            assert_eq!(gap_between(previous, next), Gap::Block);
+        }
     }
 
     #[test]
-    fn a_tool_then_thinking_keeps_the_process_group_tight_and_spaces_the_answer() {
+    fn a_tool_then_thinking_separates_each_block() {
         let entries = vec![
             bash_entry(ToolStatus::Succeeded, "ok", DisplayStatus::Succeeded),
             assistant_entry("a-1", "一句话：回答", "先看看"),
@@ -2853,9 +2855,9 @@ mod tests {
             .rposition(|row| row.contains("ok"))
             .expect("tool output");
         assert_eq!(
-            tool_tail + 1,
+            tool_tail + 2,
             thinking,
-            "tool and thinking stay tight: {rows:?}"
+            "one blank row between the tool and thinking: {rows:?}"
         );
         assert_eq!(
             rows.last().map(String::as_str),
@@ -2865,7 +2867,7 @@ mod tests {
     }
 
     #[test]
-    fn consecutive_tools_stay_tight() {
+    fn consecutive_tools_get_one_gap() {
         let entries = vec![
             bash_entry_named("call-c-1", "c-1", "one"),
             bash_entry_named("call-c-2", "c-2", "two"),
@@ -2882,7 +2884,7 @@ mod tests {
             .find(|(_, row)| row.contains("▸ Bash"))
             .map(|(index, _)| index)
             .expect("second tool header");
-        assert_eq!(first + 1, second, "tools stay tight: {rows:?}");
+        assert_eq!(first + 2, second, "one blank row between tools: {rows:?}");
     }
 
     #[test]
