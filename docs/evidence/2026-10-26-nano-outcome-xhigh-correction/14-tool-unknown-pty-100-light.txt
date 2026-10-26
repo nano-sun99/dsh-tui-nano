@@ -1,7 +1,10 @@
   nano  ~/code/dsh-tui-nano/.claude/worktrees/issue-68
 
-  输入消息后按 Enter 发送。
-
+  ▸ Bash echo hi                                                                        结果未确认
+    echo hi
+    hello
+    退出状态未返回
+    工具未返回成功或失败结论
 
 
 
@@ -27,10 +30,7 @@
 
 
   ────────────────────────────────────────────────────────────────────────────────────────────────
-  模型                                                         当前：Chat · 默认（模型默认：High）
-  ▶ Chat
-    Plain
-    Third Party（目录读取失败） · provider third-party 不可用：no credentials
+  >                                                                                              ↑
   ────────────────────────────────────────────────────────────────────────────────────────────────
 
-  Low                           High                           XHigh                           Max
+  权限：未知  启动中 · 正在启动 Nano 宿主…          ~/code/dsh-tui-nano/.claude/worktrees/issue-68
