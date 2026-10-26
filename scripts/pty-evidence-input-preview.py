@@ -140,40 +140,46 @@ NEW_SCENARIOS = [
         36,
         False,
     ),
-    ("04-tool-failure-pty-100-dark.txt", "tool-failure-100-dark", 100, 36, False),
-    ("05-tool-failure-pty-60-light.txt", "tool-failure-60-light", 60, 30, False),
+    ("04-tool-success-pty-100-light.txt", "tool-success-100-light", 100, 36, False),
+    ("05-tool-success-pty-60-dark.txt", "tool-success-60-dark", 60, 30, False),
+    ("06-tool-failure-pty-100-dark.txt", "tool-failure-100-dark", 100, 36, False),
+    ("07-tool-failure-pty-60-light.txt", "tool-failure-60-light", 60, 30, False),
     (
-        "06-tool-failure-expanded-pty-100-dark.txt",
+        "08-tool-failure-expanded-pty-100-dark.txt",
         "tool-failure-expanded-100-dark",
         100,
         36,
         False,
     ),
-    ("07-tool-unknown-pty-100-dark.txt", "tool-unknown", 100, 36, False),
-    ("08-tool-unknown-pty-60-light.txt", "tool-unknown-60-light", 60, 30, False),
+    ("09-tool-failure-pty-100-light.txt", "tool-failure-100-light", 100, 36, False),
+    ("10-tool-failure-pty-60-dark.txt", "tool-failure-60-dark", 60, 30, False),
+    ("11-tool-unknown-pty-100-dark.txt", "tool-unknown", 100, 36, False),
+    ("12-tool-unknown-pty-60-light.txt", "tool-unknown-60-light", 60, 30, False),
     (
-        "09-tool-unknown-expanded-pty-100-dark.txt",
+        "13-tool-unknown-expanded-pty-100-dark.txt",
         "tool-unknown-expanded-100-dark",
         100,
         36,
         False,
     ),
-    ("10-model-default-pty-100-dark.txt", "model-default-100-dark", 100, 36, False),
-    ("11-model-max-pty-100-dark.txt", "model-max-100-dark", 100, 36, False),
+    ("14-tool-unknown-pty-100-light.txt", "tool-unknown-100-light", 100, 36, False),
+    ("15-tool-unknown-pty-60-dark.txt", "tool-unknown-60-dark", 60, 30, False),
+    ("16-model-default-ansi-100-dark.txt", "model-default-100-dark", 100, 36, True),
+    ("17-model-max-ansi-100-dark.txt", "model-max-100-dark", 100, 36, True),
     (
-        "12-model-reduced-motion-pty-100-dark.txt",
+        "18-model-reduced-motion-ansi-100-dark.txt",
         "model-reduced-motion-100-dark",
         100,
         36,
-        False,
+        True,
     ),
 ]
 
 STREAM_SCENARIOS = [
-    ("13-xhigh-sweep-100-dark.txt", "xhigh-sweep-100-dark"),
-    ("14-xhigh-sweep-60-light.txt", "xhigh-sweep-60-light"),
-    ("15-xhigh-sweep-100-light.txt", "xhigh-sweep-100-light"),
-    ("16-xhigh-sweep-60-dark.txt", "xhigh-sweep-60-dark"),
+    ("19-xhigh-sweep-100-dark.txt", "xhigh-sweep-100-dark"),
+    ("20-xhigh-sweep-60-light.txt", "xhigh-sweep-60-light"),
+    ("21-xhigh-sweep-100-light.txt", "xhigh-sweep-100-light"),
+    ("22-xhigh-sweep-60-dark.txt", "xhigh-sweep-60-dark"),
 ]
 
 
@@ -247,7 +253,7 @@ def capture_stream(out, binary, name, scenario):
     lines = [
         line
         for line in captured.stdout.split("\n")
-        if line.startswith("# ") or line.startswith("frame ")
+        if line.startswith("# ") or line.startswith("frame ") or "\x1b" in line
     ]
     (out / name).write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"captured {name}")

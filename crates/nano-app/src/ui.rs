@@ -5872,6 +5872,14 @@ mod tests {
     }
 
     #[test]
+    fn the_xhigh_evidence_helper_sets_the_xhigh_clock() {
+        let phase_560 = effort_phase(&evidence_xhigh(app(), 560), Some("xhigh"));
+        let phase_1050 = effort_phase(&evidence_xhigh(app(), 1050), Some("xhigh"));
+        assert!((560..700).contains(&phase_560), "phase {phase_560}");
+        assert!((1050..1200).contains(&phase_1050), "phase {phase_1050}");
+    }
+
+    #[test]
     fn the_xhigh_clock_restarts_on_entry_and_reopen_but_not_on_repaint() {
         let mut app = app();
         open_models(&mut app);
@@ -5916,6 +5924,32 @@ mod tests {
             restarted.elapsed() < Duration::from_millis(200),
             "reopening restarts from the left"
         );
+    }
+
+    #[test]
+    fn the_drawn_xhigh_bar_follows_the_xhigh_clock() {
+        let mut app = app();
+        open_models(&mut app);
+        for _ in 0..3 {
+            app.panel.cycle_effort(&app.controls, 1);
+        }
+        let bar_row = |app: &mut App| -> Vec<Color> {
+            let frame = buffer(app, 100, 30);
+            let labels_y = (0..30)
+                .find(|y| {
+                    (0..100)
+                        .map(|x| frame[(x, *y)].symbol())
+                        .collect::<String>()
+                        .contains("XHigh")
+                })
+                .expect("labels row");
+            (2..98).map(|x| frame[(x, labels_y - 1)].bg).collect()
+        };
+        app.xhigh_anim_start = Some(Instant::now() - Duration::from_millis(350));
+        let left = bar_row(&mut app);
+        app.xhigh_anim_start = Some(Instant::now() - Duration::from_millis(700));
+        let middle = bar_row(&mut app);
+        assert_ne!(left, middle, "the drawn bar must follow the XHigh clock");
     }
 
     #[test]
@@ -6393,6 +6427,36 @@ mod tests {
             "tool-unknown-expanded-100-dark" => {
                 Some((evidence_tool(app(), "hello", None, true), 100, 36, false))
             }
+            "tool-success-100-light" => Some((
+                evidence_tool(light(), "hello", Some(false), false),
+                100,
+                36,
+                false,
+            )),
+            "tool-success-60-dark" => Some((
+                evidence_tool(app(), "hello", Some(false), false),
+                60,
+                30,
+                false,
+            )),
+            "tool-failure-100-light" => Some((
+                evidence_tool(light(), "bad", Some(true), false),
+                100,
+                36,
+                false,
+            )),
+            "tool-failure-60-dark" => Some((
+                evidence_tool(app(), "bad", Some(true), false),
+                60,
+                30,
+                false,
+            )),
+            "tool-unknown-100-light" => {
+                Some((evidence_tool(light(), "hello", None, false), 100, 36, false))
+            }
+            "tool-unknown-60-dark" => {
+                Some((evidence_tool(app(), "hello", None, false), 60, 30, false))
+            }
             "model-default-100-dark" => {
                 let mut app = app();
                 open_models(&mut app);
@@ -6579,7 +6643,7 @@ mod tests {
         app.panel.cycle_effort(&app.controls, 1);
         app.panel.cycle_effort(&app.controls, 1);
         app.panel.cycle_effort(&app.controls, 1);
-        app.effort_anim_start = Instant::now() - std::time::Duration::from_millis(phase_ms);
+        app.xhigh_anim_start = Some(Instant::now() - std::time::Duration::from_millis(phase_ms));
         app
     }
 
