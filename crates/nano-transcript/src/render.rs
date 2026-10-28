@@ -698,7 +698,18 @@ fn render_group(
         status.label(),
         process_status_style(status, theme),
     )];
-    push_expand_hint(&mut right, true, expanded, width, theme);
+    let expandable = entries.len() > 1
+        || entries.iter().any(|entry| {
+            matches!(
+                &entry.kind,
+                EntryKind::Tool(record)
+                    if record
+                        .result
+                        .as_deref()
+                        .is_some_and(|text| !text.trim().is_empty())
+            )
+        });
+    push_expand_hint(&mut right, expandable, expanded, width, theme);
     push_two_column(output, left, right, width, hit.clone());
     if !expanded {
         return;
@@ -710,10 +721,12 @@ fn render_group(
         let Some(group) = group_tool(record) else {
             continue;
         };
-        output
-            .lines
-            .push(Line::from(Span::styled(group.label(), Style::default())));
-        output.hits.push(hit.clone());
+        for row in wrap_block(&group.label(), width, MAX_BLOCK_ROWS) {
+            output
+                .lines
+                .push(Line::from(Span::styled(row, Style::default())));
+            output.hits.push(hit.clone());
+        }
         let Some(result) = record
             .result
             .as_deref()
@@ -771,7 +784,8 @@ fn group_title(entries: &[&Entry]) -> String {
 }
 
 /// Append ` · 点击展开` / ` · 点击收起` after the status when the row can open.
-/// The hint gives way before the status word at very narrow widths.
+/// The hint gives way before the status word at very narrow widths and always
+/// leaves a little room for the title instead of eating the whole row.
 fn push_expand_hint(
     right: &mut Vec<Span<'static>>,
     expandable: bool,
@@ -779,6 +793,8 @@ fn push_expand_hint(
     width: usize,
     theme: Theme,
 ) {
+    /// Narrowest title slice kept before the hint gives way.
+    const MIN_TITLE_ROOM: usize = 6;
     if !expandable {
         return;
     }
@@ -788,7 +804,7 @@ fn push_expand_hint(
         " · 点击展开"
     };
     let status_width: usize = right.iter().map(Span::width).sum();
-    if status_width + line_width(hint) <= width {
+    if status_width + line_width(hint) + MIN_TITLE_ROOM <= width {
         right.push(Span::styled(hint, muted(theme)));
     }
 }
@@ -1343,7 +1359,11 @@ fn render_preview(output: &mut RenderedEntry, preview: &PreviewEntry, width: usi
         .lines
         .push(Line::from(Span::styled(status, status_style)));
     output.hits.push(None);
-    if !preview.reasoning.trim().is_empty() {
+    // A committed attempt is a submitted answer even before its durable
+    // message retires the preview, so its thinking row is already gone.
+    let show_thinking =
+        !preview.reasoning.trim().is_empty() && preview.outcome != Some(PreviewOutcome::Committed);
+    if show_thinking {
         let timing = preview
             .reasoning_ms
             .map(format_duration)
@@ -2139,6 +2159,11 @@ fn wrap_block(text: &str, width: usize, cap: usize) -> Vec<String> {
             }
             rows.push(row);
         }
+    }
+    // An empty result and a trailing newline otherwise read as one hidden
+    // blank row and produce a phantom `+1 行` plus an empty expansion body.
+    while rows.last().is_some_and(|row| row.trim().is_empty()) {
+        rows.pop();
     }
     rows
 }
@@ -3837,6 +3862,13 @@ mod tests {
                 ),
                 group_entry(
                     "c4",
+                    "glob",
+                    r#"{"pattern":"**/*.rs"}"#,
+                    Some("src/a.rs"),
+                    DisplayStatus::Succeeded,
+                ),
+                group_entry(
+                    "c5",
                     "list",
                     r#"{"path":"src"}"#,
                     Some("a.rs"),
@@ -3852,7 +3884,7 @@ mod tests {
         assert_eq!(headers, 1, "{rows:?}");
         assert!(
             rows.iter()
-                .any(|row| row.contains("▸ Read 2 个文件 · Grep 1 次 · List 1 个目录")),
+                .any(|row| row.contains("▸ Read 2 个文件 · Grep 1 次 · Glob 1 次 · List 1 个目录")),
             "{rows:?}"
         );
         assert!(
@@ -4307,5 +4339,191 @@ mod tests {
             80,
         ));
         assert!(!empty.iter().any(|row| row.contains("思考")), "{empty:?}");
+    }
+
+    #[test]
+    fn a_committed_preview_has_no_thinking_row() {
+        let mut entry = finished_preview(PreviewOutcome::Committed);
+        let EntryKind::Preview(preview) = &mut entry.kind else {
+            unreachable!("preview entry");
+        };
+        preview.reasoning = "先想想".into();
+        preview.reasoning_ms = Some(1_200);
+        let rows = plain(&render_one(entry, false, 80));
+        assert!(
+            rows.iter().any(|row| row.contains("回答已提交")),
+            "{rows:?}"
+        );
+        assert!(!rows.iter().any(|row| row.contains("思考")), "{rows:?}");
+        assert!(!rows.iter().any(|row| row.contains("先想想")), "{rows:?}");
+    }
+
+    #[test]
+    fn an_expanded_group_wraps_a_long_target() {
+        let long = "crates/nano-transcript/src/a-very-long-directory-name/another/deep/module.rs";
+        let entries = vec![
+            read_entry("c1", long, "AAA"),
+            read_entry("c2", "src/b.rs", "BBB"),
+        ];
+        let mut model = model(entries);
+        model.reveal("call-c1");
+        let mut cache = RenderCache::new();
+        let mut scroll = ScrollState::default();
+        let rendered = render(&model, &mut cache, &mut scroll, 40, 40, Theme::Dark);
+        let rows = rendered
+            .lines
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        for row in &rows {
+            assert!(line_width(row) <= 40, "no overflow: {row:?}");
+        }
+        assert!(
+            rows.join("").contains("a-very-long-directory-name"),
+            "the wrapped path stays readable: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_single_pending_group_has_nothing_to_expand() {
+        let rows = lines_of(&render_model(
+            vec![group_entry(
+                "c1",
+                "read",
+                r#"{"file_path":"src/a.rs"}"#,
+                None,
+                DisplayStatus::Pending,
+            )],
+            100,
+        ));
+        assert!(rows[0].contains("等待结果"), "{rows:?}");
+        assert!(!rows[0].contains("点击展开"), "{rows:?}");
+    }
+
+    #[test]
+    fn a_narrow_group_row_keeps_the_title_and_status() {
+        let rows = lines_of(&render_model(
+            vec![
+                read_entry("c1", "src/a.rs", "AAA"),
+                read_entry("c2", "src/b.rs", "BBB"),
+            ],
+            20,
+        ));
+        let header = &rows[0];
+        assert!(header.contains("Read"), "title keeps a slice: {header:?}");
+        assert!(header.contains("完成"), "status stays: {header:?}");
+        assert!(
+            !header.contains("点击展开"),
+            "the hint yields at 20 columns: {header:?}"
+        );
+    }
+
+    #[test]
+    fn an_empty_result_has_no_ghost_rows() {
+        let bash = plain(&render_one(
+            bash_entry(ToolStatus::Succeeded, "", DisplayStatus::Succeeded),
+            false,
+            100,
+        ));
+        assert!(!bash.iter().any(|row| row.contains("+")), "{bash:?}");
+        assert!(!bash.iter().any(|row| row.contains("点击展开")), "{bash:?}");
+
+        let generic = plain(&render_one(
+            group_entry("c1", "toolsearch", "{}", Some(""), DisplayStatus::Succeeded),
+            false,
+            100,
+        ));
+        assert!(!generic.iter().any(|row| row.contains("+")), "{generic:?}");
+        assert!(
+            !generic.iter().any(|row| row.contains("点击展开")),
+            "{generic:?}"
+        );
+    }
+
+    #[test]
+    fn a_trailing_newline_does_not_add_a_hidden_row() {
+        let rows = plain(&render_one(
+            bash_entry(
+                ToolStatus::Succeeded,
+                "one\ntwo\n",
+                DisplayStatus::Succeeded,
+            ),
+            false,
+            100,
+        ));
+        assert!(rows.iter().any(|row| row.contains("+2 行")), "{rows:?}");
+    }
+
+    #[test]
+    fn the_hidden_count_uses_visual_rows() {
+        let rows = plain(&render_one(
+            group_entry(
+                "c1",
+                "mcp",
+                "{}",
+                Some(&"x".repeat(30)),
+                DisplayStatus::Succeeded,
+            ),
+            false,
+            20,
+        ));
+        assert!(rows.iter().any(|row| row.contains("+2 行")), "{rows:?}");
+    }
+
+    #[test]
+    fn a_pending_bash_with_output_shows_no_rows() {
+        let rows = plain(&render_one(
+            bash_entry(ToolStatus::Pending, "one\ntwo", DisplayStatus::Pending),
+            false,
+            100,
+        ));
+        assert!(!rows.iter().any(|row| row.contains("one")), "{rows:?}");
+        assert!(rows.iter().any(|row| row.contains("+2 行")), "{rows:?}");
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("等待结果；没有来源时不显示假输出")),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn interrupted_and_unknown_calls_split_the_group() {
+        for status in [DisplayStatus::Interrupted, DisplayStatus::Unknown] {
+            let rows = lines_of(&render_model(
+                vec![
+                    read_entry("c1", "src/a.rs", "AAA"),
+                    group_entry(
+                        "c2",
+                        "read",
+                        r#"{"file_path":"src/b.rs"}"#,
+                        Some("boom"),
+                        status,
+                    ),
+                    read_entry("c3", "src/c.rs", "CCC"),
+                ],
+                100,
+            ));
+            assert_eq!(
+                rows.iter().filter(|row| row.contains("▸ Read")).count(),
+                3,
+                "{status:?}: two groups plus the standalone card: {rows:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_restored_session_with_reasoning_shows_no_thinking() {
+        // Restored history is the same renderer over settled entries.
+        let rows = lines_of(&render_model(
+            vec![
+                assistant_entry("a-1", "", "只有思考"),
+                read_entry("c1", "src/a.rs", "AAA"),
+                assistant_entry("a-2", "答案", "先想想"),
+            ],
+            100,
+        ));
+        assert!(!rows.iter().any(|row| row.contains("思考")), "{rows:?}");
+        assert!(!rows.iter().any(|row| row.contains("只有思考")), "{rows:?}");
+        assert!(rows.iter().any(|row| row.contains("答案")), "{rows:?}");
     }
 }
