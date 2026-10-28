@@ -29,7 +29,23 @@
       "passed": true
     },
     {
-      "check": "clicking Bash output preview expands the whole card",
+      "check": "clicking a grouped process row expands its calls",
+      "passed": true
+    },
+    {
+      "check": "group expansion shows every call result",
+      "passed": true
+    },
+    {
+      "check": "group row has no fabricated duration",
+      "passed": true
+    },
+    {
+      "check": "clicking the grouped row again collapses it",
+      "passed": true
+    },
+    {
+      "check": "grouped row and Bash card open independently",
       "passed": true
     },
     {
@@ -45,7 +61,11 @@
       "passed": true
     },
     {
-      "check": "running tail occupies exactly two visual rows",
+      "check": "running state shows live thinking text without a completed thinking row",
+      "passed": true
+    },
+    {
+      "check": "running tool card hides raw output rows",
       "passed": true
     },
     {
@@ -69,11 +89,27 @@
       "passed": true
     },
     {
+      "check": "failure keeps three output rows plus exit status",
+      "passed": true
+    },
+    {
       "check": "approval includes full command before any decision",
       "passed": true
     },
     {
       "check": "refusal is explicit and does not run a command",
+      "passed": true
+    },
+    {
+      "check": "completed thinking row is gone",
+      "passed": true
+    },
+    {
+      "check": "done tool rows show no fabricated duration",
+      "passed": true
+    },
+    {
+      "check": "side copy matches the new output budget",
       "passed": true
     },
     {
