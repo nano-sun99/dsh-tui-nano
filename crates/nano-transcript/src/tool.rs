@@ -291,6 +291,106 @@ impl ToolRecord {
     }
 }
 
+/// The tool kinds that collapse into one read/search group row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupToolKind {
+    /// File reads.
+    Read,
+    /// Content searches.
+    Grep,
+    /// Path searches.
+    Glob,
+    /// Directory listings.
+    List,
+}
+
+impl GroupToolKind {
+    /// Official display name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Read => "Read",
+            Self::Grep => "Grep",
+            Self::Glob => "Glob",
+            Self::List => "List",
+        }
+    }
+
+    /// Count unit used in the merged group row.
+    pub fn measure(self) -> &'static str {
+        match self {
+            Self::Read => "个文件",
+            Self::Grep | Self::Glob => "次",
+            Self::List => "个目录",
+        }
+    }
+
+    /// Fixed summary order: Read, Grep, Glob, List.
+    pub fn order(self) -> usize {
+        match self {
+            Self::Read => 0,
+            Self::Grep => 1,
+            Self::Glob => 2,
+            Self::List => 3,
+        }
+    }
+}
+
+/// One read/search call that may join a display group.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupTool {
+    /// Which group kind the call belongs to.
+    pub kind: GroupToolKind,
+    /// Display target from the recorded arguments, when present.
+    pub target: Option<String>,
+}
+
+impl GroupTool {
+    /// One-call summary: `Read <path>`, `Grep "<pattern>"`, ...
+    pub fn label(&self) -> String {
+        match (&self.kind, &self.target) {
+            (GroupToolKind::Grep | GroupToolKind::Glob, Some(target)) => {
+                format!("{} \"{target}\"", self.kind.name())
+            }
+            (_, Some(target)) => format!("{} {target}", self.kind.name()),
+            (_, None) => self.kind.name().to_string(),
+        }
+    }
+}
+
+/// Classify one call for the read/search group.
+///
+/// Only Read / Grep / Glob / List rows join; failures, interrupts, unknown
+/// results and calls carrying approval facts stay standalone so their facts
+/// are never folded into a summary.
+pub fn group_tool(record: &ToolRecord) -> Option<GroupTool> {
+    if record.approval.is_some() {
+        return None;
+    }
+    if !matches!(
+        record.display_status,
+        DisplayStatus::Pending | DisplayStatus::Succeeded
+    ) {
+        return None;
+    }
+    let kind = match record.name.to_ascii_lowercase().as_str() {
+        "read" => GroupToolKind::Read,
+        "grep" => GroupToolKind::Grep,
+        "glob" => GroupToolKind::Glob,
+        "list" => GroupToolKind::List,
+        _ => return None,
+    };
+    let key = match kind {
+        GroupToolKind::Read => "file_path",
+        GroupToolKind::Grep | GroupToolKind::Glob => "pattern",
+        GroupToolKind::List => "path",
+    };
+    let target = serde_json::from_str::<Value>(&record.arguments)
+        .ok()
+        .and_then(|value| value.get(key).and_then(Value::as_str).map(str::to_string))
+        .filter(|target| !target.trim().is_empty());
+    Some(GroupTool { kind, target })
+}
+
 fn display_status(
     call: &ToolCallView,
     result_fact: Option<&ToolResultFact>,
