@@ -14,19 +14,21 @@
 
 ## 2. 运行时与组装
 
-- **应用自持 profile**：放在数据根（`~/.dsh-tui-nano/profile`）；用 `loadProfileDirectory` 读取，不写 `$DSH_HOME/profiles`。
+- **应用自持 profile**：放在数据根（`~/.dsh-tui-nano/profile`）；不写 `$DSH_HOME/profiles`。
+  - **首次初始化**：目录缺失或无 `package.json` 时写入 `{ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }`、空 `cordis.yml`、空 `cordis.patch.yml`；`loadProfileDirectory` 只读，不负责创建。
+  - **升级校验**：每次启动校验 bundle 是否可解析、版本是否被支持；保留用户 settings/patch，不覆盖。
 - **组装配方**（phase-0 实测）：
-  1. `loadProfileDirectory` + `readProfilePatches`；
-  2. 追加 `tool-ask-user`、`file-reference-local`、`terminal-controller` 三行；
-  3. 追加 `session-persistence-jsonl.root`、`storage-json.root` 的 storage 根 patch；
-  4. `createRuntimeResolution` → `boot()`，注入 `profileContext`、`cmdlineArgs`、`appExit`、`appReady`，挂 `PluginPackages`；
-  5. `appReady.commit()`。
-- **首帧**：pre-boot 先画最小骨架（标题/输入框轮廓）；核心就绪后接管并画正式首帧；首帧不等模型/会话列表。
-- **终端所有权**：nano 独占 fd 0/1；raw mode、resize、备用屏、鼠标、光标均由 nano 管理；官方日志走文件或受控 stderr，运行期也要守护，不只启动期。
-- **能力快照**：boot 之后逐项断言必需服务与工具（含 `ask_user_question`、`terminalController`、`fileReferences`、`approval`、`userQuestions`）；缺失即失败并点名。
-- **HMR**：关闭（沿用 v1）；profile/settings 写入应用自持 profile。
+  1. 确保应用 profile（上一节）；
+  2. `loadProfileDirectory` + `readProfilePatches`；
+  3. 追加 feature 行：`tool-ask-user`（含 timed 配置）、`file-reference-local`、`terminal-controller`、`session-controller`、`schedule`；
+  4. 追加 storage 根 patch：`session-persistence-jsonl.root = <数据根>/sessions`、`storage-json.root = <数据根>/runtime-data/<rootSessionId>/storage`；关 HMR；
+  5. `createRuntimeResolution` → `boot()`，注入 `profileContext`、`cmdlineArgs`、`appExit`、`appReady`，`provide('sessionController', rootOnlyAdapter)`，挂 `PluginPackages`；
+  6. `appReady.commit()`。
+- **启动顺序（硬性）**：确保 profile → pre-boot 骨架（**先进备用屏、接管 fd 0/1、raw mode**，此时还没 boot）→ 启动期 stdout/stderr 捕获 → `boot()` → 能力快照 → 挂 UI → 正式首帧 → 接受输入。画骨架必须先占终端。
+- **终端所有权**：nano 独占 fd 0/1；raw mode、resize、备用屏、鼠标、光标均由 nano 管理；官方日志走文件或受控 stderr，运行期也要守护，不只启动期；stderr 和 ESC/OSC 一同净化。
+- **能力快照**：boot 之后逐项断言必需服务与工具（含 `ask_user_question`、`terminalController`、`fileReferences`、`sessionController`、`schedule`、`approval`、`userQuestions`）；缺失即失败并点名。
 - **会话挂载账本**：沿用 v1 S01 §2.1，pid 改为本进程 pid；同机双窗口争同一根会话时第二窗口被拒且保留草稿。
-- **关停**：停输入 → 取消在飞请求/子代理 → 停监听 → 释放 PTY → 排空持久化 → 释放认领/租约 → 恢复终端（raw/光标/备用屏/鼠标/kitty/paste）→ 退出；10s 优雅 + 3s 强制，逐项报告；`uncaughtException`/`unhandledRejection` 同路径；SIGKILL 不承诺恢复，下次启动检测脏状态并提示 `reset`。
+- **关停**：停输入 → 调用 S02 注册的 lifecycle hooks（取消子代理、停 Monitor、释放 PTY/租约）→ 取消在飞请求 → 排空持久化 → 释放挂载认领 → 恢复终端（raw/光标/备用屏/鼠标/kitty/paste）→ 退出；10s 优雅 + 3s 强制，逐项报告；`uncaughtException`/`unhandledRejection` 同路径；SIGKILL 不承诺恢复，下次启动检测脏状态并提示 `reset`。hooks 的注册/顺序/错误隔离属 D01 契约，本份只调用。
 - **不做回退**：phase-0 已通过；若未来核心组装不可行，停止并重定方案，不切 `dsh --profile`（用户 2026-10-28 决定）。
 
 ## 3. 渲染与输入
@@ -52,7 +54,7 @@
 
 ### 3.4 主题与视觉
 
-- 沿用 `ADR-20261022-independent-tui-theme`、`ADR-20261022-nano-theme-scope`、`ADR-20261026-spacing-token-architecture`；深/浅、60/100 列、间距 token、4ch/2ch、diff 8 行预算都要有验收；不新增第二套视觉体系。
+- 沿用 `ADR-20261022-independent-tui-theme`（已取代 `nano-theme-scope`）、`ADR-20261026-spacing-token-architecture`；深/浅、60/100 列、间距 token、4ch/2ch、diff 8 行预算都要有验收；不新增第二套视觉体系。
 
 ## 4. 对话、阅读与决策
 
@@ -60,7 +62,7 @@
 - **流式**：预览不是历史；正式消息替换预览；允许丢中间帧，不允许丢字符；思考/过程沿用 `ADR-20261028-nano-process-display`（默认收起、点击展开、提交后整行消失）。
 - **阅读**：Markdown 子集、代码高亮、工具卡、diff（坐标/行号/8 行预算/无坐标不填）、阅读锚点、滚轮/粘底；超长内容裁剪并标注完整位置。
 - **决策**：审批只回四种官方结果；无有效回答即拒绝/取消；默认焦点在拒绝；无 `callId` 不猜命令；问卷走官方契约（每题 `{id,selected,custom?}`、blocking/timed、失败分类）；注册唯一 answerer；计划审阅与只读回看沿用 v1。
-- **场景**：导出可交互 transcript、焦点、场景注册给 S02；不复制渲染器。
+- **场景与 D01 契约**：导出可交互 transcript（含子代理地址）、场景/焦点注册、keymap 注册、有序输入段与附件段、草稿/光标/阅读锚点保存恢复、审批/问卷地址隔离、终端 cell 网格/VT、根会话身份、mount claim/release、lifecycle hooks；S02 只消费，不复制渲染器。
 
 ## 5. 验收
 
@@ -70,6 +72,7 @@
 
 ### 5.2 α
 
+- 干净机器（无数据根、无 profile）首次启动可用；profile 损坏/版本不支持有可见错误；升级保留 settings。
 - 真实对话/流式/工具/差异/审批/问卷可用；单进程、无 `nano.*` 协议、无第二宿主。
 - 1000 行滚动/流式/resize 达到 §3.1 的 p50/p95 目标；5000 行内存有界。
 - CJK/emoji/ZWJ/组合字符、中文输入法组合态、粘贴、鼠标拖选与复制各有测试或人工记录。
@@ -79,7 +82,7 @@
 
 ## 6. 本份机制与自定细节
 
-- 机制：自建根 + boot 组装、应用自持 profile、pre-boot 首帧、reconciler/Yoga、cell 双缓冲/diff/单写入器、终端独占与运行时守护、storage 根 patch；见总纲 §9。
+- 机制：自建根 + boot 组装、应用自持 profile（首次初始化/升级）、pre-boot 首帧、启动顺序、reconciler/Yoga、cell 双缓冲/diff/单写入器、终端独占与运行时守护、storage 根 patch、lifecycle hooks；见总纲 §9。
 - 目录按总纲 §6；组件 API（`<Box>`/`<Text>`/`<Overlay>`）实施时冻结并写入 README 由 S03 承接。
 - React/react-reconciler/Yoga/官方包版本实施时锁定；未知官方版本拒绝启动。
 - 备用屏由本份决定并写入 README；图片协议不在本次范围。
@@ -87,3 +90,4 @@
 ## 7. 审核修订记录
 
 - 2026-10-28 重审 8 份后按发现重写：组装 API、storage 根、v1 承接、终端运行时守护、转义净化、性能阈值、owner；完整清单位于 PR #84 评论。
+- 2026-10-28 轻审修订：补 profile 首次初始化/升级、启动顺序（先占终端再 boot）、能力快照后置、feature 行补齐（session-controller/schedule）、关停改 lifecycle hooks、D01 契约展开、theme ADR 去掉已取代项。
