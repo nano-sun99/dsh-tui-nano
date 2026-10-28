@@ -6945,14 +6945,14 @@ mod tests {
         stream_event(
             &mut app,
             serde_json::json!({
-                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 0,
+                "attemptId": "a-1", "revision": 2, "type": "chunk", "index": 0,
                 "chunk": {"type": "reasoning-delta", "index": 0, "text": "先核对读取入口和两次检查结果。"}
             }),
         );
         stream_event(
             &mut app,
             serde_json::json!({
-                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 1,
+                "attemptId": "a-1", "revision": 3, "type": "chunk", "index": 1,
                 "chunk": {"type": "text-delta", "index": 0, "text": "我会先核对读取入口，再检查空配置和解析失败两条路径。"}
             }),
         );
@@ -7049,21 +7049,21 @@ mod tests {
         stream_event(
             &mut app,
             serde_json::json!({
-                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 0,
+                "attemptId": "a-1", "revision": 2, "type": "chunk", "index": 0,
                 "chunk": {"type": "reasoning-delta", "index": 0, "text": "先想想。"}
             }),
         );
         stream_event(
             &mut app,
             serde_json::json!({
-                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 1,
+                "attemptId": "a-1", "revision": 3, "type": "chunk", "index": 1,
                 "chunk": {"type": "text-delta", "index": 0, "text": "流式正文。"}
             }),
         );
         stream_event(
             &mut app,
             serde_json::json!({
-                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 2,
+                "attemptId": "a-1", "revision": 4, "type": "chunk", "index": 2,
                 "chunk": {
                     "type": "tool-call-delta", "index": 0, "id": "c-1",
                     "name": "bash", "argumentsDelta": "{}"
@@ -7083,14 +7083,14 @@ mod tests {
         stream_event(
             &mut app,
             serde_json::json!({
-                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 0,
+                "attemptId": "a-1", "revision": 2, "type": "chunk", "index": 0,
                 "chunk": {"type": "text-delta", "index": 0, "text": "第一段已经到达。\n"}
             }),
         );
         stream_event(
             &mut app,
             serde_json::json!({
-                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 2,
+                "attemptId": "a-1", "revision": 3, "type": "chunk", "index": 2,
                 "chunk": {"type": "text-delta", "index": 1, "text": "这段被缺口跳过。"}
             }),
         );
@@ -7109,7 +7109,7 @@ mod tests {
         stream_event(
             &mut app,
             serde_json::json!({
-                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 0,
+                "attemptId": "a-1", "revision": 2, "type": "chunk", "index": 0,
                 "chunk": {"type": "text-delta", "index": 0, "text": huge}
             }),
         );
@@ -7126,14 +7126,14 @@ mod tests {
         stream_event(
             &mut app,
             serde_json::json!({
-                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 0,
+                "attemptId": "a-1", "revision": 2, "type": "chunk", "index": 0,
                 "chunk": {"type": "text-delta", "index": 0, "text": "已经收到的片段。"}
             }),
         );
         stream_event(
             &mut app,
             serde_json::json!({
-                "attemptId": "a-1", "revision": 1, "type": "end", "index": 1,
+                "attemptId": "a-1", "revision": 3, "type": "end", "index": 1,
                 "outcome": {"kind": outcome}
             }),
         );

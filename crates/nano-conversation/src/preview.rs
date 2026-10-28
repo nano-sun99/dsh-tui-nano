@@ -31,8 +31,6 @@ pub struct ToolPreview {
 pub struct Preview {
     /// Attempt identity.
     pub attempt_id: String,
-    /// Revision within the Agent lifecycle.
-    pub revision: u64,
     /// Owning turn.
     pub turn: u64,
     /// Owning step.
@@ -185,6 +183,28 @@ impl PreviewAccumulator {
     /// the live assembler waits for the next attempt start (or a durable
     /// settlement). Unknown attempts and unknown chunk types are ignored.
     pub fn apply(&mut self, frame: &StreamFrame) -> Option<PreviewRetirement> {
+        // A fresh Agent lifecycle restarts the frame counter at 1. Do this
+        // before the duplicate check so a new lifecycle is never mistaken for
+        // a repeated frame.
+        if let StreamFrame::Start { revision: 1, .. } = frame {
+            if self.revision != 0 {
+                self.previews.clear();
+                self.total_bytes = 0;
+                self.revision = 0;
+                self.active_attempt = None;
+            }
+        }
+        // The same frame can arrive twice: a root subscription receives child
+        // frames in addition to the child's own subscription. Revisions are
+        // unique per frame, so an equal revision is an exact duplicate.
+        let revision = match frame {
+            StreamFrame::Start { revision, .. }
+            | StreamFrame::Chunk { revision, .. }
+            | StreamFrame::End { revision, .. } => *revision,
+        };
+        if self.revision != 0 && revision == self.revision {
+            return None;
+        }
         match frame {
             StreamFrame::Start {
                 attempt_id,
@@ -192,13 +212,6 @@ impl PreviewAccumulator {
                 turn,
                 step,
             } => {
-                // A fresh Agent lifecycle restarts the frame counter at 1.
-                if *revision == 1 && self.revision != 0 {
-                    self.previews.clear();
-                    self.total_bytes = 0;
-                    self.revision = 0;
-                    self.active_attempt = None;
-                }
                 if *revision != self.revision + 1 {
                     self.mark_gap();
                     self.revision = *revision;
@@ -214,7 +227,6 @@ impl PreviewAccumulator {
                 self.active_attempt = Some(attempt_id.clone());
                 let preview = Preview {
                     attempt_id: attempt_id.clone(),
-                    revision: *revision,
                     turn: *turn,
                     step: *step,
                     text: String::new(),
@@ -253,19 +265,14 @@ impl PreviewAccumulator {
                     self.active_attempt = None;
                     return None;
                 };
-                preview.revision = *revision;
-                if *index < preview.expected_index {
-                    return None;
-                }
-                if *index > preview.expected_index {
+                if *index != preview.expected_index {
+                    // A stale, repeated, or skipped index ends this attempt;
+                    // only the next start (or the durable settlement) recovers.
                     preview.gap = true;
                     self.active_attempt = None;
                     return None;
                 }
                 preview.expected_index = index + 1;
-                if preview.gap {
-                    return None;
-                }
                 let max_bytes = self.max_bytes;
                 let max_total_bytes = self.max_total_bytes;
                 Self::apply_chunk(
@@ -287,21 +294,23 @@ impl PreviewAccumulator {
                     self.mark_gap();
                     self.revision = *revision;
                     self.active_attempt = None;
-                    return None;
+                } else {
+                    self.revision = *revision;
+                    if self.active_attempt.as_deref() == Some(attempt_id.as_str()) {
+                        self.active_attempt = None;
+                    }
                 }
-                self.revision = *revision;
-                if self.active_attempt.as_deref() != Some(attempt_id.as_str()) {
+                // The end settles the attempt even when frames were lost: a
+                // committed preview is retired by durable history, and an
+                // abandoned preview must finish so the next start can retire it.
+                let Some(preview) = self.previews.get_mut(attempt_id) else {
                     return None;
+                };
+                if *index != preview.expected_index {
+                    preview.gap = true;
                 }
-                // Keep the last visible fragments in the live set, marked with
-                // the official settlement. They retire when durable history
-                // arrives (or when the next attempt replaces them).
-                let preview = self.previews.get_mut(attempt_id)?;
-                preview.revision = *revision;
-                let _ = index;
                 preview.finished = true;
                 preview.outcome = Some(outcome_of(outcome));
-                self.active_attempt = None;
                 None
             }
         }
@@ -799,7 +808,35 @@ mod tests {
     }
 
     #[test]
-    fn a_duplicate_chunk_index_is_ignored() {
+    fn a_repeated_frame_is_ignored_as_a_duplicate() {
+        let mut previews = PreviewAccumulator::default();
+        previews.apply(&start("a", 1, 1, 1));
+        previews.apply(&chunk(
+            "a",
+            2,
+            0,
+            json!({"type": "text-delta", "text": "a"}),
+        ));
+        // The same frame arrives through a second subscription.
+        previews.apply(&chunk(
+            "a",
+            2,
+            0,
+            json!({"type": "text-delta", "text": "a"}),
+        ));
+        previews.apply(&chunk(
+            "a",
+            3,
+            1,
+            json!({"type": "text-delta", "text": "b"}),
+        ));
+        let view = &previews.views()[0];
+        assert_eq!(view.text, "ab");
+        assert!(!view.gap);
+    }
+
+    #[test]
+    fn a_mismatched_chunk_index_stops_the_attempt() {
         let mut previews = PreviewAccumulator::default();
         previews.apply(&start("a", 1, 1, 1));
         previews.apply(&chunk(
@@ -821,12 +858,12 @@ mod tests {
             json!({"type": "text-delta", "text": "c"}),
         ));
         let view = &previews.views()[0];
-        assert_eq!(view.text, "ac");
-        assert!(!view.gap);
+        assert!(view.gap);
+        assert_eq!(view.text, "a");
     }
 
     #[test]
-    fn end_with_a_revision_jump_marks_the_preview_incomplete() {
+    fn end_with_a_revision_jump_settles_the_preview() {
         let mut previews = PreviewAccumulator::default();
         previews.apply(&start("a", 1, 1, 1));
         previews.apply(&chunk(
@@ -843,8 +880,58 @@ mod tests {
         ));
         let view = &previews.views()[0];
         assert!(view.gap);
-        assert!(!view.finished);
-        assert_eq!(view.outcome, None);
+        assert!(view.finished);
+        assert_eq!(view.outcome, Some(PreviewOutcome::Committed));
+    }
+
+    #[test]
+    fn an_abandoned_end_after_a_gap_finishes_the_preview() {
+        let mut previews = PreviewAccumulator::default();
+        previews.apply(&start("a", 1, 1, 1));
+        previews.apply(&chunk(
+            "a",
+            2,
+            0,
+            json!({"type": "text-delta", "text": "x"}),
+        ));
+        // Frame revision 3 is missing.
+        previews.apply(&chunk(
+            "a",
+            4,
+            1,
+            json!({"type": "text-delta", "text": "y"}),
+        ));
+        assert!(previews.views()[0].gap);
+        previews.apply(&end("a", 5, 2, json!({"kind": "abandoned"})));
+        let view = &previews.views()[0];
+        assert!(view.finished);
+        assert_eq!(view.outcome, Some(PreviewOutcome::Abandoned));
+        // The next start retires the abandoned preview.
+        previews.apply(&start("b", 6, 2, 1));
+        let views = previews.views();
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].attempt_id, "b");
+    }
+
+    #[test]
+    fn an_end_index_mismatch_marks_the_preview_incomplete() {
+        let mut previews = PreviewAccumulator::default();
+        previews.apply(&start("a", 1, 1, 1));
+        previews.apply(&chunk(
+            "a",
+            2,
+            0,
+            json!({"type": "text-delta", "text": "only"}),
+        ));
+        previews.apply(&end(
+            "a",
+            3,
+            5,
+            json!({"kind": "committed", "eventType": "assistant/message", "seq": 9}),
+        ));
+        let view = &previews.views()[0];
+        assert!(view.finished);
+        assert!(view.gap);
     }
 
     #[test]
