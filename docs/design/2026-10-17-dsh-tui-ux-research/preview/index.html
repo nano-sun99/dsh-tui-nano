@@ -129,7 +129,6 @@
     #agent-composer { display:flex; align-items:flex-start; gap:1ch; min-width:0; }
     #agent-prompt { display:block; flex:1; min-width:0; height:22px; min-height:22px; max-height:88px; padding:0; border:0; border-radius:0; outline:none; resize:none; background:transparent; color:var(--fg); caret-color:var(--fg); font:inherit; scrollbar-width:thin; scrollbar-color:var(--rule) var(--bg); }
     #agent-prompt::placeholder { color:var(--muted); }
-    .composer:focus-within { border-color:var(--accent); }
     @keyframes subagent-blink { 0%,45% { opacity:1; } 46%,100% { opacity:.25; } }
     @media (prefers-reduced-motion:reduce) { .subagent-light.running { animation:none; } }
     .composer { position:relative; flex:none; margin:0 2ch; border-top:1px solid var(--rule); border-bottom:1px solid var(--rule); padding:11px 0; }
@@ -586,12 +585,9 @@
       ${!state.expanded.has('bash') ? `<pre>${cells(output.split('\n').slice(0, 3).join('\n'))}</pre>` : ''}
       <div class="error-line">${cells('退出码 1')}</div>
     </div>` : ''
-    // 思考只在流式时显示正文；完成后整行消失，不保留可点入口。
-    const liveThinking = running ? `<div class="thinking-live" data-key="thinking-live">
-      <div>${cells('▸ 思考 进行中… · 3s')}</div>
-      <div class="thinking-body">${cells('核对空配置与 JSON 解析失败的返回方式。')}</div>
-      <div class="thinking-body">${cells('确认检查命令覆盖这两个边界。')}</div>
-    </div>` : ''
+    // 思考在流式时默认收起，点击展开；完成后整行消失，不保留可点入口。
+    const liveThinking = running ? `<div class="thinking-live">${detail('thinking-live', '思考', '进行中… · 3s', '', `<div class="thinking-body">${cells('核对空配置与 JSON 解析失败的返回方式。')}</div>
+      <div class="thinking-body">${cells('确认检查命令覆盖这两个边界。')}</div>`)}</div>` : ''
     transcript.innerHTML = state.scene==='subagents' ? history() + subagentPreview.mainTranscriptHtml() : history() + (state.scene==='questions' ? `<section class="turn"><div class="term-row user">${cells('> 请先确认验证方式和需要覆盖的终端场景。')}</div><p>${cells('我会按你选择的范围准备验证。')}</p></section>` : `<section class="turn" data-key="current-turn">
       <div class="term-row user" data-key="prompt">${cells('> 检查配置读取，修复空配置报错，再跑验证。')}</div>
       <p class="narration" data-key="narration">${cells('我会先核对读取入口，再检查空配置和解析失败两条路径。')}</p>
@@ -708,6 +704,12 @@
         selection.removeAllRanges(); selection.addRange(range)
         feedback.textContent = '已选中完整脚本，可使用系统复制快捷键。'
       }
+      return
+    }
+    const thinkingSummary = event.target.closest('[data-detail="thinking-live"] summary')
+    if (thinkingSummary) {
+      const selection=window.getSelection()
+      if (dragged || (selection && !selection.isCollapsed)) event.preventDefault()
       return
     }
     const card = event.target.closest('[data-card]')

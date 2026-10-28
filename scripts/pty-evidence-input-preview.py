@@ -287,6 +287,34 @@ PROCESS_SCENARIOS = [
         30,
         False,
     ),
+    (
+        "09-thinking-expanded-pty-100-dark.txt",
+        "process-thinking-expanded-100-dark",
+        100,
+        36,
+        False,
+    ),
+    (
+        "10-thinking-expanded-pty-60-light.txt",
+        "process-thinking-expanded-60-light",
+        60,
+        30,
+        False,
+    ),
+    (
+        "11-thinking-expanded-pty-100-light.txt",
+        "process-thinking-expanded-100-light",
+        100,
+        36,
+        False,
+    ),
+    (
+        "12-thinking-expanded-pty-60-dark.txt",
+        "process-thinking-expanded-60-dark",
+        60,
+        30,
+        False,
+    ),
 ]
 
 STREAM_SCENARIOS = [

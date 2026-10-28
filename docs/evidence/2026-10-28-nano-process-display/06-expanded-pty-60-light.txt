@@ -1,4 +1,4 @@
-  nano  ~/code/dsh-tui-nano/.claude/worktrees/issue-79
+  nano  ~/code/dsh-tui-nano/.claude/worktrees/ctx-think
 
   > 检查配置读取，修复空配置报错。
 
@@ -27,4 +27,4 @@
   >                                                      ↑
   ────────────────────────────────────────────────────────
 
-  权限：未知  启动中 · 正… …ano/.claude/worktrees/issue-79
+  权限：未知  启动中 · 正… …no/.claude/worktrees/ctx-think
