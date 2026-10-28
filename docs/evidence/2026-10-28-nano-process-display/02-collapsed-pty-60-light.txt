@@ -1,4 +1,4 @@
-  nano  ~/code/dsh-tui-nano/.claude/worktrees/issue-79
+  nano  ~/code/dsh-tui-nano/.claude/worktrees/ctx-think
 
   > 检查配置读取，修复空配置报错，再跑验证。
 
@@ -18,13 +18,13 @@
 
   ▸ 生成中
   ▸ 思考 进行中… · 0ms
-    先核对读取入口和两次检查结果。
 
   我会先核对读取入口，再检查空配置和解析失败两条路径。
+
 
 
   ────────────────────────────────────────────────────────
   >                                                      ↑
   ────────────────────────────────────────────────────────
 
-  权限：未知  启动中 · 正… …ano/.claude/worktrees/issue-79
+  权限：未知  启动中 · 正… …no/.claude/worktrees/ctx-think

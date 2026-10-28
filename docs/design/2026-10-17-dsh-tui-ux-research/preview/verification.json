@@ -61,7 +61,23 @@
       "passed": true
     },
     {
-      "check": "running state shows live thinking text without a completed thinking row",
+      "check": "running thinking starts collapsed",
+      "passed": true
+    },
+    {
+      "check": "mouse drag on the thinking row does not expand it",
+      "passed": true
+    },
+    {
+      "check": "clicking the thinking row with a text selection does not expand it",
+      "passed": true
+    },
+    {
+      "check": "clicking the thinking row expands its body",
+      "passed": true
+    },
+    {
+      "check": "clicking the thinking row again collapses its body",
       "passed": true
     },
     {
@@ -234,6 +250,10 @@
     },
     {
       "check": "the shared prompt is addressed to the viewed subagent",
+      "passed": true
+    },
+    {
+      "check": "focused subagent composer keeps the context fill visible",
       "passed": true
     },
     {

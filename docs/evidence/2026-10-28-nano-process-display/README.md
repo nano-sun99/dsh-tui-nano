@@ -2,7 +2,7 @@
 
 - 规格：`docs/specs/2026-10-28-nano-process-display/README.md`
 - 生成：`python3 scripts/pty-evidence-input-preview.py process-display`
-- 构建：worktree `.claude/worktrees/issue-79`（`issue-79`），基线 `aeb343a`，`target/debug/nano` 测试二进制
+- 构建：worktree `.claude/worktrees/ctx-think`（`fix/context-thinking`），基线 `be58b4c`，`target/debug/nano` 测试二进制
 - 终端：tmux PTY（`TERM=xterm-256color`），100×36 与 60×30；Dark 默认主题，Light 用 `NANO_THEME=light`
 - 数据：确定性 `evidence_frame` fixture，不是账号真实会话，也不产生模型费用
 
@@ -22,7 +22,7 @@
 - 中间失败的 Read 独占失败卡，露出 3 行摘要与 `+1 行`，前后调用各自成组。
 - 失败之后的组只有一次调用，直接显示目标 `Read src/after-failure.ts`。
 - 通用工具成功结果 0 行，左端 `+2 行`。
-- 流式思考显示标题、用时与正文（缩进 2ch），正文与后续正文之间 1 行；未提交前不出现「已完成」行。
+- 流式思考默认只显示标题与用时一行；点击标题行展开正文（缩进 2ch），正文与后续正文之间 1 行；未提交前不出现「已完成」行。
 - 100 列左侧标题完整；60 列按可用宽度硬截断左侧标题（实现不追加省略号），状态词与「点击展开」始终完整可见；`+N 行` 在 60 列可能只剩 `+N`。
 
 ## 组展开
@@ -35,6 +35,17 @@
 | 08-expanded-pty-60-dark.txt | 60 列 dark，同一形状 |
 
 实测：组行变为 `▾`，右端改为 `完成 · 点击收起`；展开体按调用顺序列出 `Read <path>` / `Grep "<pattern>"` 与各自结果，结果 muted、缩进 2ch；60 列下结果按视觉行换行，不溢出。
+
+## 思考展开
+
+| 文件 | 场景 |
+|---|---|
+| 09-thinking-expanded-pty-100-dark.txt | 100 列 dark：流式思考标题 + 展开正文 |
+| 10-thinking-expanded-pty-60-light.txt | 60 列 light，同一形状 |
+| 11-thinking-expanded-pty-100-light.txt | 100 列 light，同一形状 |
+| 12-thinking-expanded-pty-60-dark.txt | 60 列 dark，同一形状 |
+
+实测：默认只有 `▸ 思考 进行中… · 用时` 一行；展开后标题变 `▾`，正文 muted、缩进 2ch，下方仍保留与正文之间的 1 行间距。
 
 ## 方法
 
