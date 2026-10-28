@@ -2,7 +2,7 @@
 
 - 组标识：`2026-10-28-nano-process-display`；角色：单份 spec，总纲与执行规格合一。
 - 结构选择：不拆（2026-10-28 用户选择）。1 份 spec + 1 张执行 issue + 1 个实现 PR；四条规则共用 `crates/nano-transcript/src/render.rs` 的 unit 构建与行预算，无多阶段交付。
-- 状态：已合入（方案 PR #78）；执行 issue：#79；代码 PR #80 待审。
+- 状态：已合入（方案 PR #78）；执行 issue：#79；代码 PR #80 已合；2026-10-28 思考折叠修订见 PR #82。
 - 视觉权威：[现有系统交互稿](../../design/2026-10-17-dsh-tui-ux-research/preview/index.html)；本轮修订说明见其 [README](../../design/2026-10-17-dsh-tui-ux-research/preview/README.md) 的「2026-10-28 过程块修订」。
 - 上游：`2026-10-20-nano-v1/S03`（阅读与决策）、`2026-10-25-nano-visual-interaction-alignment`（过程行视觉）、[`ADR-20261026-spacing-token-architecture`](../../decisions/2026-10-26-spacing-token-architecture.md)（现行间距）。
 - ADR 关系：新增 [`ADR-20261028-nano-process-display`](../../decisions/2026-10-28-nano-process-display.md)；与间距 ADR 正交，不取代。
