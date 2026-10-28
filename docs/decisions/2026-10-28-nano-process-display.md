@@ -20,7 +20,10 @@ Nano 的默认屏幕只留「结论 + 一行过程摘要 + 可点开的入口」
 
 ## 依据
 
-- 2026-10-28 对照 Claude Code 2.1.88 源码：默认屏幕不渲染已完成思考；连续读取 / 搜索折成一行；工具结果由工具自己决定，默认只留标题与状态。
+- 2026-10-28 对照本机归档的 Claude Code 2.1.88 源码（`/Users/sunchongsheng/Downloads/归档/06-软件与安装包/ClaudeCode/`）：
+  - `src/components/Message.tsx` 的 `thinking` 分支在非 transcript、非 verbose 时直接返回 null；`src/components/messages/AssistantThinkingMessage.tsx` 只在流式渲染时被调用。
+  - `src/utils/collapseReadSearch.ts` 与 `src/components/messages/CollapsedReadSearchContent.tsx` 把连续读取 / 搜索折成一行计数，默认不显示结果正文。
+  - `src/components/messages/AssistantToolUseMessage.tsx` 与各工具的 `renderToolResultMessage` 决定结果展示；默认只留一行工具标题与状态。
 - 用户先看交互稿（100 / 60 列、深浅主题、完成 / 执行中 / 失败场景），确认后明确「完全采纳」。
 - 交互稿浏览器验证 131 项全绿，覆盖分组展开、默认不露结果、流式思考、60 列不溢出。
 
@@ -35,6 +38,8 @@ Nano 的默认屏幕只留「结论 + 一行过程摘要 + 可点开的入口」
 - 完成后思考正文不可回看；没有全局入口，也没有点击入口。
 - 想确认工具结果需要多一次点击。
 - 组行只显示整体状态，单次调用的细节要展开才看得到。
+- 「点击展开 / 点击收起」占用行尾宽度；60 列可完整显示，更窄宽度会省略提示。
+- 流式思考正文在生成期间占用屏幕。
 
 ## 允许重开的条件
 

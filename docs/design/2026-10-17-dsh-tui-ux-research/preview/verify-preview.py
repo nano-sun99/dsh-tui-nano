@@ -130,6 +130,8 @@ with tempfile.TemporaryDirectory(prefix='dsh-ui-browser-') as browser_dir:
             check('clicking Bash script body collapses the whole card', devtools.js('!document.querySelector("[data-detail=bash]").open'))
             devtools.click('[data-detail="group"] summary')
             check('clicking a grouped process row expands its calls', devtools.js('document.querySelector("[data-detail=group]").open'))
+            check('group expansion shows every call result', devtools.js('document.querySelector("[data-detail=group] .detail").textContent.includes("export function readValues") && document.querySelector("[data-detail=group] .detail").textContent.includes("src/tuiSettingsFile.ts:42")'))
+            check('group row has no fabricated duration', devtools.js('!/\\d+(\\.\\d+)?s/.test(document.querySelector("[data-detail=group] .summary-meta").textContent)'))
             devtools.click('[data-detail="group"] summary')
             check('clicking the grouped row again collapses it', devtools.js('!document.querySelector("[data-detail=group]").open'))
             devtools.click('[data-detail="bash"] summary')
@@ -173,6 +175,7 @@ with tempfile.TemporaryDirectory(prefix='dsh-ui-browser-') as browser_dir:
 
             devtools.click('[data-scene="failed"]')
             check('failure visible with details collapsed', devtools.js('document.querySelectorAll("details[open]").length===0 && document.querySelector("[data-key=failure]").textContent.includes("退出码 1")'))
+            check('failure keeps three output rows plus exit status', devtools.js('document.querySelector(".failure-tail pre").textContent.split("\\n").length===3 && document.querySelector(".failure-tail .error-line").textContent.includes("退出码 1")'))
             devtools.capture('failed-100-dark.png')
             devtools.click('[data-scene="approval"]')
             check('approval includes full command before any decision', devtools.js('document.querySelector(".approval-command").textContent.split("\\n").length===11'))
@@ -181,6 +184,9 @@ with tempfile.TemporaryDirectory(prefix='dsh-ui-browser-') as browser_dir:
             check('refusal is explicit and does not run a command', devtools.js('document.querySelector(".approval-result").textContent.includes("命令未执行")'))
 
             devtools.click('[data-scene="done"]')
+            check('completed thinking row is gone', devtools.js('!document.querySelector("[data-detail=thinking]") && !document.querySelector(".thinking-live")'))
+            check('done tool rows show no fabricated duration', devtools.js('!/\\d+(\\.\\d+)?s/.test(document.querySelector("[data-detail=bash] .summary-meta").textContent)'))
+            check('side copy matches the new output budget', devtools.js('document.body.textContent.includes("成功与运行中输出 0 行")'))
             devtools.capture('completed-100-dark.png')
             devtools.js('document.querySelector("#width").value="60";document.querySelector("#width").dispatchEvent(new Event("change"))')
             devtools.settle()
