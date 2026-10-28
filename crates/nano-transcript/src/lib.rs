@@ -24,7 +24,7 @@ pub use model::{
 pub use nano_theme::Theme;
 pub use render::{
     render, Hit, HitKind, RenderCache, TranscriptRender, COMMAND_BUDGET, DIFF_BUDGET,
-    FAILURE_BUDGET, MAX_MOUNTED_ROWS, OUTPUT_BUDGET, OVERSCAN_ROWS, THINKING_BUDGET,
+    FAILURE_BUDGET, MAX_MOUNTED_ROWS, OUTPUT_BUDGET, OVERSCAN_ROWS,
 };
 pub use scroll::{Anchor, EntryOffset, ScrollState, WheelProfile};
 pub use tool::{

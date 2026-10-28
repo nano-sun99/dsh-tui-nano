@@ -1,0 +1,30 @@
+  nano  ~/code/dsh-tui-nano/.claude/worktrees/issue-79
+
+  > 检查配置读取，修复空配置报错。
+
+  ▾ Read 2 个文件 · Grep 1 次              完成 · 点击收起
+  Read src/tuiSettingsFile.ts
+    export function readValues(raw) {
+      const doc = JSON.parse(raw)
+      return doc?.values ?? {}
+    }
+  Read src/config-reader.ts
+    export function readValues(raw) {
+      return JSON.parse(raw)?.values ?? {}
+    }
+  Grep "values ?? {}"
+    src/tuiSettingsFile.ts:3: return doc?.values ?? {}
+    src/config-reader.ts:2: return JSON.parse(raw)?.values
+     ?? {}
+
+
+
+
+
+
+
+  ────────────────────────────────────────────────────────
+  >                                                      ↑
+  ────────────────────────────────────────────────────────
+
+  权限：未知  启动中 · 正… …ano/.claude/worktrees/issue-79

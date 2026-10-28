@@ -14,6 +14,7 @@ Run after `cargo build -p nano-app --tests`:
     python3 scripts/pty-evidence-input-preview.py outcome-xhigh  # outcome/XHigh
     python3 scripts/pty-evidence-input-preview.py effort-sweep-binding  # real catalog
     python3 scripts/pty-evidence-input-preview.py spacing-system  # spacing fixtures
+    python3 scripts/pty-evidence-input-preview.py process-display  # process display fixtures
 """
 import os
 import re
@@ -28,6 +29,7 @@ OUT = ROOT / "docs" / "evidence" / "2026-10-26-nano-input-preview-rendering"
 NEW_OUT = ROOT / "docs" / "evidence" / "2026-10-26-nano-outcome-xhigh-correction"
 REAL_OUT = ROOT / "docs" / "evidence" / "2026-10-26-nano-effort-sweep-binding"
 SPACING_OUT = ROOT / "docs" / "evidence" / "2026-10-26-nano-spacing-system"
+PROCESS_OUT = ROOT / "docs" / "evidence" / "2026-10-28-nano-process-display"
 
 SCENARIOS = [
     ("01-main-empty-pty-100-dark.txt", "main-empty", 100, 36, False),
@@ -226,6 +228,65 @@ SPACING_SCENARIOS = [
     ),
     ("07-main-pty-100-dark.txt", "main-empty", 100, 36, False),
     ("08-main-pty-60-light.txt", "main-60-light", 60, 30, False),
+]
+
+PROCESS_SCENARIOS = [
+    (
+        "01-collapsed-pty-100-dark.txt",
+        "process-collapsed-100-dark",
+        100,
+        36,
+        False,
+    ),
+    (
+        "02-collapsed-pty-60-light.txt",
+        "process-collapsed-60-light",
+        60,
+        30,
+        False,
+    ),
+    (
+        "03-collapsed-pty-100-light.txt",
+        "process-collapsed-100-light",
+        100,
+        36,
+        False,
+    ),
+    (
+        "04-collapsed-pty-60-dark.txt",
+        "process-collapsed-60-dark",
+        60,
+        30,
+        False,
+    ),
+    (
+        "05-expanded-pty-100-dark.txt",
+        "process-expanded-100-dark",
+        100,
+        36,
+        False,
+    ),
+    (
+        "06-expanded-pty-60-light.txt",
+        "process-expanded-60-light",
+        60,
+        30,
+        False,
+    ),
+    (
+        "07-expanded-pty-100-light.txt",
+        "process-expanded-100-light",
+        100,
+        36,
+        False,
+    ),
+    (
+        "08-expanded-pty-60-dark.txt",
+        "process-expanded-60-dark",
+        60,
+        30,
+        False,
+    ),
 ]
 
 STREAM_SCENARIOS = [
@@ -481,6 +542,9 @@ def main():
     if group == "spacing-system":
         out = SPACING_OUT
         scenarios = SPACING_SCENARIOS
+    elif group == "process-display":
+        out = PROCESS_OUT
+        scenarios = PROCESS_SCENARIOS
     elif group == "outcome-xhigh":
         out = NEW_OUT
         scenarios = NEW_SCENARIOS

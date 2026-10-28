@@ -18,19 +18,18 @@ use crate::display::{char_width, display_text, elide, line_width, wrap_line, wra
 use crate::model::{Entry, EntryKind, PreviewEntry, TranscriptModel};
 use crate::scroll::{EntryOffset, ScrollState};
 use crate::tool::{
-    ApprovalView, DisplayStatus, ExitStatus, RecordedQuestionState, ToolDisplay, ToolRecord,
+    group_tool, ApprovalView, DisplayStatus, ExitStatus, GroupToolKind, RecordedQuestionState,
+    ToolDisplay, ToolRecord,
 };
 
 /// Default visible rows for a long diff.
 pub const DIFF_BUDGET: usize = 8;
 /// Default visible rows for a command title.
 pub const COMMAND_BUDGET: usize = 1;
-/// Default visible rows for running/completed output.
-pub const OUTPUT_BUDGET: usize = 2;
+/// Default visible rows for successful or running output.
+pub const OUTPUT_BUDGET: usize = 0;
 /// Default visible rows for a failure summary. Failures are never hidden.
 pub const FAILURE_BUDGET: usize = 3;
-/// Default visible rows for a thinking summary.
-pub const THINKING_BUDGET: usize = 1;
 /// Overscan rows mounted above and below the viewport.
 pub const OVERSCAN_ROWS: usize = 80;
 /// Hard cap on mounted rows in one render pass.
@@ -133,6 +132,22 @@ enum Role {
     Turn,
 }
 
+/// Whether one entry renders no content at all.
+///
+/// Settled reasoning is never drawn, so an assistant step without text is a
+/// zero-height barrier: it still separates context groups, but it must not
+/// split a read/search run that renders around it.
+fn entry_is_blank(entry: &Entry) -> bool {
+    matches!(
+        &entry.kind,
+        EntryKind::Assistant {
+            text,
+            interrupted: false,
+            ..
+        } if text.trim().is_empty()
+    )
+}
+
 /// The leading and trailing roles one entry contributes to the rhythm.
 fn entry_roles(entry: &Entry) -> (Role, Role) {
     match &entry.kind {
@@ -140,18 +155,13 @@ fn entry_roles(entry: &Entry) -> (Role, Role) {
         | EntryKind::Notice { .. }
         | EntryKind::Context { .. }
         | EntryKind::Echo { .. } => (Role::Turn, Role::Turn),
-        EntryKind::Assistant {
-            text, reasoning, ..
-        } => {
-            if text.trim().is_empty() && reasoning.trim().is_empty() {
-                // `render_entry` returns before drawing anything.
+        EntryKind::Assistant { text, .. } => {
+            if text.trim().is_empty() {
+                // A blank step renders nothing; an interrupted step without
+                // text only renders its interrupted note.
                 (Role::Turn, Role::Turn)
-            } else if text.trim().is_empty() {
-                (Role::Process, Role::Process)
-            } else if reasoning.trim().is_empty() {
-                (Role::Answer, Role::Answer)
             } else {
-                (Role::Process, Role::Answer)
+                (Role::Answer, Role::Answer)
             }
         }
         EntryKind::Tool(_) => (Role::Process, Role::Process),
@@ -171,11 +181,13 @@ fn gap_between(_previous: Role, _next: Role) -> Gap {
     Gap::Block
 }
 
-/// One display unit: single entries render one-to-one; adjacent ordinary
-/// context injections merge into a single disclosure.
+/// One display unit: single entries render one-to-one, adjacent ordinary
+/// context injections merge into a single disclosure, and consecutive
+/// Read / Grep / Glob / List calls collapse into one row.
 enum Unit<'a> {
     Single(&'a Entry),
     Context(Vec<&'a Entry>),
+    Group(Vec<&'a Entry>),
 }
 
 impl<'a> Unit<'a> {
@@ -183,16 +195,19 @@ impl<'a> Unit<'a> {
         match self {
             Self::Single(entry) => &entry.identity,
             Self::Context(entries) => &entries[0].identity,
+            Self::Group(entries) => &entries[0].identity,
         }
     }
 
     fn fingerprint(&self) -> u64 {
         match self {
             Self::Single(entry) => entry.fingerprint,
-            Self::Context(entries) => entries.iter().fold(entries.len() as u64, |hash, entry| {
-                hash.wrapping_mul(1_099_511_628_211)
-                    .wrapping_add(entry.fingerprint)
-            }),
+            Self::Context(entries) | Self::Group(entries) => {
+                entries.iter().fold(entries.len() as u64, |hash, entry| {
+                    hash.wrapping_mul(1_099_511_628_211)
+                        .wrapping_add(entry.fingerprint)
+                })
+            }
         }
     }
 
@@ -200,6 +215,7 @@ impl<'a> Unit<'a> {
         match self {
             Self::Single(entry) => entry_roles(entry),
             Self::Context(_) => (Role::Turn, Role::Turn),
+            Self::Group(_) => (Role::Process, Role::Process),
         }
     }
 
@@ -207,38 +223,54 @@ impl<'a> Unit<'a> {
     /// stays as a zero-height barrier so it still separates context groups.
     fn is_empty(&self) -> bool {
         match self {
-            Self::Single(entry) => matches!(
-                &entry.kind,
-                EntryKind::Assistant { text, reasoning, .. }
-                    if text.trim().is_empty() && reasoning.trim().is_empty()
-            ),
-            Self::Context(_) => false,
+            Self::Single(entry) => entry_is_blank(entry),
+            Self::Context(_) | Self::Group(_) => false,
         }
     }
 }
 
-/// Group consecutive ordinary injected context into one display unit.
-/// Bash and monitor context keep their own labels and never join a group.
+/// Group consecutive ordinary injected context into one display unit, and
+/// consecutive Read / Grep / Glob / List calls into one summary row. Bash and
+/// monitor context keep their own labels and never join a group.
 fn units(model: &TranscriptModel) -> Vec<Unit<'_>> {
     let mut units: Vec<Unit<'_>> = Vec::new();
+    // A blank assistant step is a zero-height barrier, so a later groupable
+    // call may still join the group it does not visibly split.
+    let mut open_group: Option<usize> = None;
     for entry in model.entries() {
-        let ordinary = matches!(
-            &entry.kind,
-            EntryKind::Context {
-                bash: false,
-                monitor: false,
-                ..
-            }
-        );
-        if ordinary {
+        if entry_is_blank(entry) {
+            units.push(Unit::Single(entry));
+            continue;
+        }
+        if let EntryKind::Context {
+            bash: false,
+            monitor: false,
+            ..
+        } = &entry.kind
+        {
+            open_group = None;
             if let Some(Unit::Context(entries)) = units.last_mut() {
                 entries.push(entry);
                 continue;
             }
             units.push(Unit::Context(vec![entry]));
-        } else {
-            units.push(Unit::Single(entry));
+            continue;
         }
+        if let EntryKind::Tool(record) = &entry.kind {
+            if group_tool(record).is_some() {
+                if let Some(index) = open_group {
+                    if let Some(Unit::Group(entries)) = units.get_mut(index) {
+                        entries.push(entry);
+                        continue;
+                    }
+                }
+                open_group = Some(units.len());
+                units.push(Unit::Group(vec![entry]));
+                continue;
+            }
+        }
+        open_group = None;
+        units.push(Unit::Single(entry));
     }
     units
 }
@@ -255,6 +287,18 @@ fn render_unit(
         Unit::Context(entries) => {
             let mut output = RenderedEntry::default();
             render_context_group(
+                &mut output,
+                unit.identity(),
+                entries,
+                width,
+                expanded,
+                theme,
+            );
+            output
+        }
+        Unit::Group(entries) => {
+            let mut output = RenderedEntry::default();
+            render_group(
                 &mut output,
                 unit.identity(),
                 entries,
@@ -475,38 +519,20 @@ pub fn render(
 fn render_entry(entry: &Entry, width: usize, expanded: bool, theme: Theme) -> RenderedEntry {
     let mut output = RenderedEntry::default();
     if let EntryKind::Assistant {
-        text, reasoning, ..
+        text, interrupted, ..
     } = &entry.kind
     {
-        if text.trim().is_empty() && reasoning.trim().is_empty() {
-            // The assistant settled a step that only requested tool calls; the
-            // tool cards below carry the visible content.
+        if text.trim().is_empty() && !interrupted {
+            // Settled reasoning is not drawn: a step that only thought or
+            // only requested tool calls leaves no visible row.
             return output;
         }
     }
     match &entry.kind {
         EntryKind::User { text } => render_user(&mut output, width, text, theme),
         EntryKind::Assistant {
-            text,
-            reasoning,
-            reasoning_ms,
-            interrupted,
+            text, interrupted, ..
         } => {
-            let has_thinking = !reasoning.trim().is_empty();
-            if has_thinking {
-                render_thinking(
-                    &mut output,
-                    &entry.identity,
-                    reasoning,
-                    *reasoning_ms,
-                    width,
-                    expanded,
-                    theme,
-                );
-            }
-            if has_thinking && (!text.trim().is_empty() || *interrupted) {
-                output.push_gap(Gap::Section);
-            }
             if !text.trim().is_empty() {
                 for row in markdown_rows(text, width, theme) {
                     output.lines.push(row);
@@ -636,33 +662,80 @@ fn render_echo(output: &mut RenderedEntry, width: usize, text: &str, state: &str
     }
 }
 
-fn render_thinking(
+/// One summary row for consecutive Read / Grep / Glob / List calls.
+///
+/// The group opens into each call's target and recorded result. Its identity
+/// is the first call's identity, so a later call joining the run keeps the
+/// existing expansion state.
+fn render_group(
     output: &mut RenderedEntry,
     identity: &str,
-    reasoning: &str,
-    reasoning_ms: Option<u64>,
+    entries: &[&Entry],
     width: usize,
     expanded: bool,
     theme: Theme,
 ) {
-    let marker = if expanded { "▾" } else { "▸" };
-    let meta = reasoning_ms
-        .map(format_duration)
-        .unwrap_or_else(|| "用时未知".to_string());
     let hit = Some(Hit {
         identity: identity.to_string(),
         kind: HitKind::Toggle,
     });
-    push_two_column(
-        output,
-        vec![Span::styled(format!("{marker} 思考 已完成"), muted(theme))],
-        vec![Span::styled(meta, muted(theme))],
-        width,
-        hit.clone(),
-    );
-    if expanded {
+    let status = if entries.iter().any(|entry| {
+        matches!(
+            &entry.kind,
+            EntryKind::Tool(record) if record.display_status == DisplayStatus::Pending
+        )
+    }) {
+        DisplayStatus::Pending
+    } else {
+        DisplayStatus::Succeeded
+    };
+    let marker = if expanded { "▾" } else { "▸" };
+    let left = vec![
+        Span::styled(format!("{marker} "), muted(theme)),
+        Span::styled(group_title(entries), muted(theme)),
+    ];
+    let mut right = vec![Span::styled(
+        status.label(),
+        process_status_style(status, theme),
+    )];
+    let expandable = entries.len() > 1
+        || entries.iter().any(|entry| {
+            matches!(
+                &entry.kind,
+                EntryKind::Tool(record)
+                    if record
+                        .result
+                        .as_deref()
+                        .is_some_and(|text| !text.trim().is_empty())
+            )
+        });
+    push_expand_hint(&mut right, expandable, expanded, width, theme);
+    push_two_column(output, left, right, width, hit.clone());
+    if !expanded {
+        return;
+    }
+    for entry in entries {
+        let EntryKind::Tool(record) = &entry.kind else {
+            continue;
+        };
+        let Some(group) = group_tool(record) else {
+            continue;
+        };
+        for row in wrap_block(&group.label(), width, MAX_BLOCK_ROWS) {
+            output
+                .lines
+                .push(Line::from(Span::styled(row, Style::default())));
+            output.hits.push(hit.clone());
+        }
+        let Some(result) = record
+            .result
+            .as_deref()
+            .filter(|text| !text.trim().is_empty())
+        else {
+            continue;
+        };
         for row in wrap_block(
-            reasoning,
+            result,
             width.saturating_sub(spacing::INDENT).max(1),
             MAX_BLOCK_ROWS,
         ) {
@@ -672,6 +745,67 @@ fn render_thinking(
             )));
             output.hits.push(hit.clone());
         }
+    }
+}
+
+/// `Read 3 个文件 · Grep 2 次 · …` in a fixed kind order; a single call keeps
+/// its own target instead of a count.
+fn group_title(entries: &[&Entry]) -> String {
+    if entries.len() == 1 {
+        return entries
+            .first()
+            .and_then(|entry| match &entry.kind {
+                EntryKind::Tool(record) => group_tool(record).map(|group| group.label()),
+                _ => None,
+            })
+            .unwrap_or_else(|| "过程".to_string());
+    }
+    let mut counts = [0usize; 4];
+    for entry in entries {
+        if let EntryKind::Tool(record) = &entry.kind {
+            if let Some(group) = group_tool(record) {
+                counts[group.kind.order()] += 1;
+            }
+        }
+    }
+    let parts = [
+        GroupToolKind::Read,
+        GroupToolKind::Grep,
+        GroupToolKind::Glob,
+        GroupToolKind::List,
+    ]
+    .into_iter()
+    .filter_map(|kind| {
+        let count = counts[kind.order()];
+        (count > 0).then(|| format!("{} {count} {}", kind.name(), kind.measure()))
+    })
+    .collect::<Vec<_>>();
+    parts.join(" · ")
+}
+
+/// Append ` · 点击展开` / ` · 点击收起` after the status when the row can open.
+/// The hint gives way before the status word at very narrow widths and always
+/// leaves a little room for the title instead of eating the whole row.
+fn push_expand_hint(
+    right: &mut Vec<Span<'static>>,
+    expandable: bool,
+    expanded: bool,
+    width: usize,
+    theme: Theme,
+) {
+    /// Narrowest title slice kept before the hint gives way.
+    const MIN_TITLE_ROOM: usize = 6;
+    if !expandable {
+        return;
+    }
+    let hint = if expanded {
+        " · 点击收起"
+    } else {
+        " · 点击展开"
+    };
+    let status_width: usize = right.iter().map(Span::width).sum();
+    if status_width + line_width(hint) + MIN_TITLE_ROOM <= width {
+        right.push(Span::styled(hint, muted(theme)));
     }
 }
 
@@ -706,25 +840,22 @@ fn render_tool(
                 width.saturating_sub(spacing::INDENT).max(1),
                 MAX_BLOCK_ROWS,
             );
+            let collapsed_output = match status {
+                DisplayStatus::Pending | DisplayStatus::Succeeded => OUTPUT_BUDGET,
+                DisplayStatus::Failed | DisplayStatus::Interrupted | DisplayStatus::Unknown => {
+                    FAILURE_BUDGET
+                }
+            };
             let (shown_command, shown_output): (Vec<String>, Vec<String>) = if expanded {
                 (command_rows.clone(), output_rows.clone())
             } else {
-                let command = command_rows.iter().take(COMMAND_BUDGET).cloned().collect();
-                let output = match status {
-                    DisplayStatus::Pending => Vec::new(),
-                    DisplayStatus::Failed | DisplayStatus::Interrupted => {
-                        output_rows.iter().take(FAILURE_BUDGET).cloned().collect()
-                    }
-                    _ => output_rows
-                        .iter()
-                        .rev()
-                        .take(OUTPUT_BUDGET)
-                        .rev()
-                        .cloned()
-                        .collect(),
-                };
-                (command, output)
+                (
+                    command_rows.iter().take(COMMAND_BUDGET).cloned().collect(),
+                    output_rows.iter().take(collapsed_output).cloned().collect(),
+                )
             };
+            let expandable =
+                command_rows.len() > COMMAND_BUDGET || output_rows.len() > collapsed_output;
             let hidden = command_rows
                 .len()
                 .saturating_sub(shown_command.len())
@@ -750,16 +881,12 @@ fn render_tool(
             if hidden > 0 {
                 left.push(Span::styled(format!(" +{hidden} 行"), muted(theme)));
             }
-            push_two_column(
-                output,
-                left,
-                vec![Span::styled(
-                    status.label(),
-                    process_status_style(status, theme),
-                )],
-                width,
-                toggle_hit(record),
-            );
+            let mut right = vec![Span::styled(
+                status.label(),
+                process_status_style(status, theme),
+            )];
+            push_expand_hint(&mut right, expandable, expanded, width, theme);
+            push_two_column(output, left, right, width, toggle_hit(record));
             for row in &shown_command {
                 output.lines.push(Line::from(Span::styled(
                     format!("{}{row}", " ".repeat(spacing::INDENT)),
@@ -929,12 +1056,19 @@ fn render_tool(
                 width.saturating_sub(spacing::INDENT).max(1),
                 MAX_BLOCK_ROWS,
             );
+            let collapsed = match record.display_status {
+                DisplayStatus::Pending | DisplayStatus::Succeeded => OUTPUT_BUDGET,
+                DisplayStatus::Failed | DisplayStatus::Interrupted | DisplayStatus::Unknown => {
+                    FAILURE_BUDGET
+                }
+            };
             let shown = if expanded {
                 rows.len()
             } else {
-                rows.len().min(FAILURE_BUDGET.max(OUTPUT_BUDGET))
+                rows.len().min(collapsed)
             };
             let hidden = rows.len().saturating_sub(shown);
+            let expandable = rows.len() > collapsed;
             let marker = if expanded { "▾" } else { "▸" };
             let mut left = vec![
                 Span::styled(format!("{marker} "), muted(theme)),
@@ -946,16 +1080,12 @@ fn render_tool(
             if hidden > 0 {
                 left.push(Span::styled(format!(" +{hidden} 行"), muted(theme)));
             }
-            push_two_column(
-                output,
-                left,
-                vec![Span::styled(
-                    record.display_status.label(),
-                    process_status_style(record.display_status, theme),
-                )],
-                width,
-                toggle_hit(record),
-            );
+            let mut right = vec![Span::styled(
+                record.display_status.label(),
+                process_status_style(record.display_status, theme),
+            )];
+            push_expand_hint(&mut right, expandable, expanded, width, theme);
+            push_two_column(output, left, right, width, toggle_hit(record));
             for row in rows.iter().take(shown) {
                 output.lines.push(Line::from(Span::styled(
                     format!("{}{row}", " ".repeat(spacing::INDENT)),
@@ -1229,7 +1359,11 @@ fn render_preview(output: &mut RenderedEntry, preview: &PreviewEntry, width: usi
         .lines
         .push(Line::from(Span::styled(status, status_style)));
     output.hits.push(None);
-    if !preview.reasoning.trim().is_empty() {
+    // A committed attempt is a submitted answer even before its durable
+    // message retires the preview, so its thinking row is already gone.
+    let show_thinking =
+        !preview.reasoning.trim().is_empty() && preview.outcome != Some(PreviewOutcome::Committed);
+    if show_thinking {
         let timing = preview
             .reasoning_ms
             .map(format_duration)
@@ -1245,6 +1379,17 @@ fn render_preview(output: &mut RenderedEntry, preview: &PreviewEntry, width: usi
             Span::styled(timing, muted(theme)),
         ]));
         output.hits.push(None);
+        for row in wrap_block(
+            &preview.reasoning,
+            width.saturating_sub(spacing::INDENT).max(1),
+            MAX_BLOCK_ROWS,
+        ) {
+            output.lines.push(Line::from(Span::styled(
+                format!("{}{row}", " ".repeat(spacing::INDENT)),
+                muted(theme),
+            )));
+            output.hits.push(None);
+        }
     }
     let text_rows = wrap_block(&preview.text, width, MAX_BLOCK_ROWS);
     let first = first_visible_row(&text_rows);
@@ -2015,6 +2160,11 @@ fn wrap_block(text: &str, width: usize, cap: usize) -> Vec<String> {
             rows.push(row);
         }
     }
+    // An empty result and a trailing newline otherwise read as one hidden
+    // blank row and produce a phantom `+1 行` plus an empty expansion body.
+    while rows.last().is_some_and(|row| row.trim().is_empty()) {
+        rows.pop();
+    }
     rows
 }
 
@@ -2672,7 +2822,7 @@ mod tests {
         let entry = bash_entry(
             ToolStatus::Succeeded,
             "one\ntwo\nthree",
-            DisplayStatus::Unknown,
+            DisplayStatus::Succeeded,
         );
         let collapsed = render_one(entry.clone(), false, 80);
         let expanded = render_one(entry, true, 80);
@@ -2832,33 +2982,32 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_then_thinking_separates_each_block() {
+    fn a_tool_then_answer_separates_each_block() {
         let entries = vec![
-            bash_entry(ToolStatus::Succeeded, "ok", DisplayStatus::Succeeded),
+            bash_entry(
+                ToolStatus::Failed,
+                "bad\nworse\nthe end",
+                DisplayStatus::Failed,
+            ),
             assistant_entry("a-1", "一句话：回答", "先看看"),
         ];
         let rows = render_model_lines(entries, 100);
-        let thinking = rows
-            .iter()
-            .position(|row| row.contains("思考 已完成"))
-            .expect("thinking header");
+        assert!(
+            !rows.iter().any(|row| row.contains("思考")),
+            "settled thinking leaves no row: {rows:?}"
+        );
         let answer = rows
             .iter()
             .position(|row| row.contains("一句话：回答"))
             .expect("answer");
-        assert_eq!(
-            thinking + 2,
-            answer,
-            "one blank row between thinking and answer: {rows:?}"
-        );
         let tool_tail = rows
             .iter()
-            .rposition(|row| row.contains("ok"))
+            .rposition(|row| row.contains("the end"))
             .expect("tool output");
         assert_eq!(
             tool_tail + 2,
-            thinking,
-            "one blank row between the tool and thinking: {rows:?}"
+            answer,
+            "one blank row between the tool and answer: {rows:?}"
         );
         assert_eq!(
             rows.last().map(String::as_str),
@@ -2874,33 +3023,41 @@ mod tests {
             bash_entry_named("call-c-2", "c-2", "two"),
         ];
         let rows = render_model_lines(entries, 100);
-        let first = rows
-            .iter()
-            .position(|row| row.contains("one"))
-            .expect("first output");
-        let second = rows
+        let hits = rows
             .iter()
             .enumerate()
-            .skip(first + 1)
-            .find(|(_, row)| row.contains("▸ Bash"))
+            .filter(|(_, row)| row.contains("▸ Bash"))
             .map(|(index, _)| index)
-            .expect("second tool header");
-        assert_eq!(first + 2, second, "one blank row between tools: {rows:?}");
+            .collect::<Vec<_>>();
+        assert_eq!(hits.len(), 2, "{rows:?}");
+        assert_eq!(
+            hits[0] + 3,
+            hits[1],
+            "one blank row between tools: {rows:?}"
+        );
     }
 
     #[test]
-    fn preview_spaces_the_answer_but_keeps_its_tail_compact() {
+    fn preview_shows_thinking_body_then_one_gap_before_the_answer() {
         let entries = vec![preview_entry_with_thinking("流式正文", "先想想")];
         let rows = render_model_lines(entries, 100);
         let thinking = rows
             .iter()
             .position(|row| row.contains("思考 进行中"))
             .expect("preview thinking");
+        assert!(
+            rows[thinking + 1].starts_with("  先想想"),
+            "thinking body follows its header: {rows:?}"
+        );
         let text = rows
             .iter()
             .position(|row| row.contains("流式正文"))
             .expect("preview text");
-        assert_eq!(thinking + 2, text, "preview answer gets one gap: {rows:?}");
+        assert_eq!(
+            thinking + 3,
+            text,
+            "one gap between the thinking body and the answer: {rows:?}"
+        );
         let tool = rows
             .iter()
             .position(|row| row.contains("参数完成"))
@@ -2922,8 +3079,8 @@ mod tests {
         let rows = render_model_lines(entries, 100);
         let tool_tail = rows
             .iter()
-            .rposition(|row| row.contains("ok"))
-            .expect("tool output");
+            .rposition(|row| row.contains("echo hi"))
+            .expect("tool command");
         let answer = rows
             .iter()
             .position(|row| row.contains("答案"))
@@ -2976,9 +3133,9 @@ mod tests {
     fn a_bash_card_keeps_its_header_command_and_output_tight() {
         let rows = render_model_lines(
             vec![bash_entry(
-                ToolStatus::Succeeded,
-                "ok",
-                DisplayStatus::Succeeded,
+                ToolStatus::Failed,
+                "bad\nworse",
+                DisplayStatus::Failed,
             )],
             80,
         );
@@ -2987,7 +3144,8 @@ mod tests {
             .position(|row| row.contains("▸ Bash"))
             .expect("tool header");
         assert_eq!(rows[header + 1].trim(), "echo hi");
-        assert_eq!(rows[header + 2].trim(), "ok");
+        assert_eq!(rows[header + 2].trim(), "bad");
+        assert_eq!(rows[header + 3].trim(), "worse");
     }
 
     #[test]
@@ -3425,7 +3583,7 @@ mod tests {
         let rendered = render_one(entry, false, 40);
         let header = rendered.lines[0].to_string();
         assert!(header.starts_with("▸ Bash "));
-        assert!(header.ends_with("完成"));
+        assert!(header.ends_with("完成 · 点击展开"), "{header:?}");
         assert_eq!(crate::display::line_width(&header), 40);
     }
 
@@ -3636,5 +3794,736 @@ mod tests {
             );
             assert!(rows.iter().any(|row| row.contains("hello")));
         }
+    }
+
+    fn group_entry(
+        call_id: &str,
+        name: &str,
+        arguments: &str,
+        result: Option<&str>,
+        display: DisplayStatus,
+    ) -> Entry {
+        Entry {
+            identity: format!("call-{call_id}"),
+            fingerprint: (call_id.len() + name.len() + result.map_or(0, str::len)) as u64,
+            kind: EntryKind::Tool(ToolRecord {
+                call_id: call_id.into(),
+                name: name.into(),
+                status: match display {
+                    DisplayStatus::Pending => ToolStatus::Pending,
+                    DisplayStatus::Failed => ToolStatus::Failed,
+                    _ => ToolStatus::Succeeded,
+                },
+                display_status: display,
+                turn: None,
+                step: None,
+                arguments: arguments.into(),
+                result: result.map(str::to_string),
+                result_fact: None,
+                approval: None,
+                display: ToolDisplay::Generic,
+            }),
+        }
+    }
+
+    fn read_entry(call_id: &str, path: &str, result: &str) -> Entry {
+        group_entry(
+            call_id,
+            "read",
+            &format!(r#"{{"file_path":"{path}"}}"#),
+            Some(result),
+            DisplayStatus::Succeeded,
+        )
+    }
+
+    fn render_model(entries: Vec<Entry>, width: usize) -> TranscriptRender {
+        let model = model(entries);
+        let mut cache = RenderCache::new();
+        let mut scroll = ScrollState::default();
+        render(&model, &mut cache, &mut scroll, width, 40, Theme::Dark)
+    }
+
+    fn lines_of(rendered: &TranscriptRender) -> Vec<String> {
+        rendered.lines.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn consecutive_read_search_calls_merge_into_one_group_row() {
+        let rows = lines_of(&render_model(
+            vec![
+                read_entry("c1", "src/a.rs", "AAA"),
+                read_entry("c2", "src/b.rs", "BBB"),
+                group_entry(
+                    "c3",
+                    "grep",
+                    r#"{"pattern":"foo"}"#,
+                    Some("src/x:1:foo"),
+                    DisplayStatus::Succeeded,
+                ),
+                group_entry(
+                    "c4",
+                    "glob",
+                    r#"{"pattern":"**/*.rs"}"#,
+                    Some("src/a.rs"),
+                    DisplayStatus::Succeeded,
+                ),
+                group_entry(
+                    "c5",
+                    "list",
+                    r#"{"path":"src"}"#,
+                    Some("a.rs"),
+                    DisplayStatus::Succeeded,
+                ),
+            ],
+            100,
+        ));
+        let headers = rows
+            .iter()
+            .filter(|row| row.contains("Read 2 个文件"))
+            .count();
+        assert_eq!(headers, 1, "{rows:?}");
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("▸ Read 2 个文件 · Grep 1 次 · Glob 1 次 · List 1 个目录")),
+            "{rows:?}"
+        );
+        assert!(
+            !rows
+                .iter()
+                .any(|row| row.contains("AAA") || row.contains("BBB")),
+            "successful results stay collapsed: {rows:?}"
+        );
+        assert!(rows.iter().any(|row| row.contains("完成 · 点击展开")));
+    }
+
+    #[test]
+    fn a_single_group_call_shows_its_target() {
+        let rows = plain(&render_one(read_entry("c1", "src/a.rs", "AAA"), false, 100));
+        assert!(rows
+            .first()
+            .is_some_and(|row| row.contains("▸ Read src/a.rs")));
+        assert!(!rows.iter().any(|row| row.contains("AAA")), "{rows:?}");
+        assert!(rows.iter().any(|row| row.contains("完成 · 点击展开")));
+    }
+
+    #[test]
+    fn another_entry_breaks_the_group() {
+        let rows = lines_of(&render_model(
+            vec![
+                read_entry("c1", "src/a.rs", "AAA"),
+                bash_entry(ToolStatus::Failed, "bad", DisplayStatus::Failed),
+                read_entry("c2", "src/b.rs", "BBB"),
+            ],
+            100,
+        ));
+        assert_eq!(
+            rows.iter().filter(|row| row.contains("▸ Read")).count(),
+            2,
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn an_assistant_text_breaks_the_group() {
+        let rows = lines_of(&render_model(
+            vec![
+                read_entry("c1", "src/a.rs", "AAA"),
+                assistant_entry("a-1", "说明", ""),
+                read_entry("c2", "src/b.rs", "BBB"),
+            ],
+            100,
+        ));
+        assert_eq!(
+            rows.iter().filter(|row| row.contains("▸ Read")).count(),
+            2,
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn an_empty_assistant_between_reads_does_not_split_the_group() {
+        let rows = lines_of(&render_model(
+            vec![
+                read_entry("c1", "src/a.rs", "AAA"),
+                assistant_entry("a-empty", "", ""),
+                read_entry("c2", "src/b.rs", "BBB"),
+            ],
+            100,
+        ));
+        assert!(
+            rows.iter().any(|row| row.contains("▸ Read 2 个文件")),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_failed_call_breaks_the_group_and_keeps_its_summary() {
+        let rows = lines_of(&render_model(
+            vec![
+                read_entry("c1", "src/a.rs", "AAA"),
+                group_entry(
+                    "c2",
+                    "read",
+                    r#"{"file_path":"src/b.rs"}"#,
+                    Some("boom\nworse\nworst\nextra"),
+                    DisplayStatus::Failed,
+                ),
+                read_entry("c3", "src/c.rs", "CCC"),
+            ],
+            100,
+        ));
+        assert_eq!(
+            rows.iter().filter(|row| row.contains("▸ Read")).count(),
+            3,
+            "two single-call groups plus the standalone failure card: {rows:?}"
+        );
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("▸ Read src/b.rs") && row.contains("失败")),
+            "{rows:?}"
+        );
+        assert!(rows.iter().any(|row| row.contains("boom")), "{rows:?}");
+        assert!(rows.iter().any(|row| row.contains("worst")), "{rows:?}");
+        assert!(
+            !rows.iter().any(|row| row.contains("extra")),
+            "failure keeps three rows: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_pending_call_that_fails_splits_the_group_at_that_call() {
+        let entries = vec![
+            read_entry("c1", "src/a.rs", "AAA"),
+            group_entry(
+                "c2",
+                "read",
+                r#"{"file_path":"src/b.rs"}"#,
+                None,
+                DisplayStatus::Pending,
+            ),
+            read_entry("c3", "src/c.rs", "CCC"),
+        ];
+        let pending_model = model(entries.clone());
+        let before = units(&pending_model);
+        assert_eq!(before.len(), 1, "pending calls stay in the group");
+        assert_eq!(before[0].identity(), "call-c1");
+        match &before[0] {
+            Unit::Group(entries) => assert_eq!(entries.len(), 3),
+            _ => panic!("expected one group"),
+        }
+
+        let mut failed = entries;
+        failed[1] = group_entry(
+            "c2",
+            "read",
+            r#"{"file_path":"src/b.rs"}"#,
+            Some("boom\nworse\nworst"),
+            DisplayStatus::Failed,
+        );
+        let failed_model = model(failed);
+        let after = units(&failed_model);
+        assert_eq!(after.len(), 3, "the failure splits the run");
+        assert_eq!(after[0].identity(), "call-c1");
+        assert_eq!(after[1].identity(), "call-c2");
+        assert_eq!(after[2].identity(), "call-c3");
+        match (&after[0], &after[2]) {
+            (Unit::Group(first), Unit::Group(last)) => {
+                assert_eq!(first.len(), 1);
+                assert_eq!(last.len(), 1);
+            }
+            _ => panic!("both sides form their own group"),
+        }
+    }
+
+    #[test]
+    fn a_group_keeps_its_identity_and_expansion_when_a_call_joins() {
+        let mut model = model(vec![read_entry("c1", "src/a.rs", "AAA")]);
+        model.reveal("call-c1");
+        model.entries.push(read_entry("c2", "src/b.rs", "BBB"));
+        let mut cache = RenderCache::new();
+        let mut scroll = ScrollState::default();
+        let rendered = render(&model, &mut cache, &mut scroll, 100, 40, Theme::Dark);
+        let rows = rendered
+            .lines
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        assert!(
+            rows.iter().any(|row| row.contains("Read src/a.rs")),
+            "{rows:?}"
+        );
+        assert!(
+            rows.iter().any(|row| row.contains("Read src/b.rs")),
+            "{rows:?}"
+        );
+        assert!(
+            rendered
+                .hits
+                .iter()
+                .flatten()
+                .all(|hit| hit.identity == "call-c1"),
+            "the group keeps the first call identity"
+        );
+    }
+
+    #[test]
+    fn group_status_switches_from_pending_to_complete() {
+        let pending = lines_of(&render_model(
+            vec![group_entry(
+                "c1",
+                "read",
+                r#"{"file_path":"src/a.rs"}"#,
+                None,
+                DisplayStatus::Pending,
+            )],
+            100,
+        ));
+        assert!(
+            pending
+                .iter()
+                .any(|row| row.contains("Read src/a.rs") && row.contains("等待结果")),
+            "{pending:?}"
+        );
+        let complete = lines_of(&render_model(
+            vec![read_entry("c1", "src/a.rs", "AAA")],
+            100,
+        ));
+        assert!(
+            complete
+                .iter()
+                .any(|row| row.contains("Read src/a.rs") && row.contains("完成")),
+            "{complete:?}"
+        );
+    }
+
+    #[test]
+    fn an_expanded_group_lists_each_target_and_result_in_order() {
+        let entries = vec![
+            read_entry("c1", "src/a.rs", "AAA"),
+            read_entry("c2", "src/b.rs", "BBB"),
+        ];
+        let mut model = model(entries);
+        model.reveal("call-c1");
+        let mut cache = RenderCache::new();
+        let mut scroll = ScrollState::default();
+        let rendered = render(&model, &mut cache, &mut scroll, 100, 40, Theme::Dark);
+        let rows = rendered
+            .lines
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let position = |needle: &str| {
+            rows.iter()
+                .position(|row| row.contains(needle))
+                .unwrap_or_else(|| panic!("{needle} in {rows:?}"))
+        };
+        assert!(position("Read src/a.rs") < position("AAA"));
+        assert!(position("AAA") < position("Read src/b.rs"));
+        assert!(position("Read src/b.rs") < position("BBB"));
+        assert!(rows[position("AAA")].starts_with("  "));
+        let result = rendered.lines[position("AAA")]
+            .spans
+            .first()
+            .expect("result span");
+        assert_eq!(result.style.fg, Some(Theme::Dark.colors().muted));
+        assert!(rendered
+            .hits
+            .iter()
+            .flatten()
+            .all(|hit| hit.identity == "call-c1"));
+    }
+
+    #[test]
+    fn group_rows_advertise_expand_and_collapse_at_sixty_columns() {
+        let collapsed = lines_of(&render_model(
+            vec![
+                read_entry("c1", "src/a.rs", "AAA"),
+                read_entry("c2", "src/b.rs", "BBB"),
+            ],
+            60,
+        ));
+        let header = collapsed[0].clone();
+        assert!(header.contains("完成 · 点击展开"), "{header:?}");
+        assert!(line_width(&header) <= 60, "{header:?}");
+
+        let entries = vec![
+            read_entry("c1", "src/a.rs", "AAA"),
+            read_entry("c2", "src/b.rs", "BBB"),
+        ];
+        let mut model = model(entries);
+        model.reveal("call-c1");
+        let mut cache = RenderCache::new();
+        let mut scroll = ScrollState::default();
+        let expanded = render(&model, &mut cache, &mut scroll, 60, 40, Theme::Dark);
+        let header = expanded.lines[0].to_string();
+        assert!(header.contains("完成 · 点击收起"), "{header:?}");
+        assert!(line_width(&header) <= 60, "{header:?}");
+    }
+
+    #[test]
+    fn bash_success_output_starts_collapsed() {
+        let rows = plain(&render_one(
+            bash_entry(
+                ToolStatus::Succeeded,
+                "one\ntwo\nthree",
+                DisplayStatus::Succeeded,
+            ),
+            false,
+            100,
+        ));
+        for hidden in ["one", "two", "three"] {
+            assert!(!rows.iter().any(|row| row.contains(hidden)), "{rows:?}");
+        }
+        assert!(rows.iter().any(|row| row.contains("+3 行")), "{rows:?}");
+        assert!(
+            rows.iter().any(|row| row.contains("完成 · 点击展开")),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn bash_pending_keeps_its_fact_hint_without_output() {
+        let rows = plain(&render_one(
+            bash_entry(ToolStatus::Pending, "", DisplayStatus::Pending),
+            false,
+            100,
+        ));
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("等待结果；没有来源时不显示假输出")),
+            "{rows:?}"
+        );
+        assert!(rows.iter().any(|row| row.contains("等待结果")), "{rows:?}");
+    }
+
+    #[test]
+    fn bash_failure_keeps_three_rows_and_the_exit_status() {
+        let mut entry = bash_entry(
+            ToolStatus::Failed,
+            "one\ntwo\nthree\nfour",
+            DisplayStatus::Failed,
+        );
+        let EntryKind::Tool(record) = &mut entry.kind else {
+            unreachable!("bash tool");
+        };
+        record.display = ToolDisplay::Bash {
+            command: Some("echo hi".into()),
+            description: None,
+            output: "one\ntwo\nthree\nfour".into(),
+            exit: ExitStatus::Code(1),
+        };
+        let rows = plain(&render_one(entry, false, 100));
+        for shown in ["one", "two", "three"] {
+            assert!(rows.iter().any(|row| row.contains(shown)), "{rows:?}");
+        }
+        assert!(!rows.iter().any(|row| row.contains("four")), "{rows:?}");
+        assert!(rows.iter().any(|row| row.contains("退出码 1")), "{rows:?}");
+        assert!(
+            rows.iter().any(|row| row.contains("失败 · 点击展开")),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_narrow_row_drops_the_hint_but_keeps_the_status() {
+        let rows = lines_of(&render_model(
+            vec![group_entry(
+                "c1",
+                "read",
+                r#"{"file_path":"src/a.rs"}"#,
+                Some("AAA"),
+                DisplayStatus::Succeeded,
+            )],
+            14,
+        ));
+        let header = rows[0].clone();
+        assert!(header.contains("完成"), "{header:?}");
+        assert!(!header.contains("点击展开"), "{header:?}");
+        assert!(line_width(&header) <= 14, "{header:?}");
+    }
+
+    #[test]
+    fn a_single_grep_shows_its_quoted_pattern() {
+        let rows = lines_of(&render_model(
+            vec![group_entry(
+                "c1",
+                "grep",
+                r#"{"pattern":"values"}"#,
+                None,
+                DisplayStatus::Pending,
+            )],
+            100,
+        ));
+        assert!(
+            rows.first()
+                .is_some_and(|row| row.contains("▸ Grep \"values\"")),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn generic_success_output_starts_collapsed_and_failure_stays_visible() {
+        let success = plain(&render_one(
+            group_entry(
+                "c1",
+                "mcp_search",
+                "{}",
+                Some("one\ntwo\nthree\nfour"),
+                DisplayStatus::Succeeded,
+            ),
+            false,
+            100,
+        ));
+        for hidden in ["one", "two", "three", "four"] {
+            assert!(
+                !success.iter().any(|row| row.contains(hidden)),
+                "{success:?}"
+            );
+        }
+        assert!(
+            success.iter().any(|row| row.contains("+4 行")),
+            "{success:?}"
+        );
+        assert!(
+            success.iter().any(|row| row.contains("完成 · 点击展开")),
+            "{success:?}"
+        );
+
+        let failure = plain(&render_one(
+            group_entry(
+                "c1",
+                "mcp_search",
+                "{}",
+                Some("one\ntwo\nthree\nfour"),
+                DisplayStatus::Failed,
+            ),
+            false,
+            100,
+        ));
+        for shown in ["one", "two", "three"] {
+            assert!(failure.iter().any(|row| row.contains(shown)), "{failure:?}");
+        }
+        assert!(
+            !failure.iter().any(|row| row.contains("four")),
+            "{failure:?}"
+        );
+        assert!(
+            failure.iter().any(|row| row.contains("失败")),
+            "{failure:?}"
+        );
+    }
+
+    #[test]
+    fn settled_thinking_never_renders_and_live_thinking_shows_its_body() {
+        let answered = render_one(assistant_entry("a-1", "答案", "先想想"), false, 80);
+        assert!(!plain(&answered).iter().any(|row| row.contains("思考")));
+
+        let only_thinking = render_one(assistant_entry("a-2", "", "先想想"), false, 80);
+        assert!(
+            only_thinking.lines.is_empty(),
+            "{:?}",
+            plain(&only_thinking)
+        );
+
+        let live = plain(&render_one(
+            preview_entry_with_thinking("", "先想想"),
+            false,
+            80,
+        ));
+        assert!(live.iter().any(|row| row.contains("思考 进行中")));
+        assert!(live.iter().any(|row| row.starts_with("  先想想")));
+
+        let empty = plain(&render_one(
+            preview_entry_with_thinking("正文", ""),
+            false,
+            80,
+        ));
+        assert!(!empty.iter().any(|row| row.contains("思考")), "{empty:?}");
+    }
+
+    #[test]
+    fn a_committed_preview_has_no_thinking_row() {
+        let mut entry = finished_preview(PreviewOutcome::Committed);
+        let EntryKind::Preview(preview) = &mut entry.kind else {
+            unreachable!("preview entry");
+        };
+        preview.reasoning = "先想想".into();
+        preview.reasoning_ms = Some(1_200);
+        let rows = plain(&render_one(entry, false, 80));
+        assert!(
+            rows.iter().any(|row| row.contains("回答已提交")),
+            "{rows:?}"
+        );
+        assert!(!rows.iter().any(|row| row.contains("思考")), "{rows:?}");
+        assert!(!rows.iter().any(|row| row.contains("先想想")), "{rows:?}");
+    }
+
+    #[test]
+    fn an_expanded_group_wraps_a_long_target() {
+        let long = "crates/nano-transcript/src/a-very-long-directory-name/another/deep/module.rs";
+        let entries = vec![
+            read_entry("c1", long, "AAA"),
+            read_entry("c2", "src/b.rs", "BBB"),
+        ];
+        let mut model = model(entries);
+        model.reveal("call-c1");
+        let mut cache = RenderCache::new();
+        let mut scroll = ScrollState::default();
+        let rendered = render(&model, &mut cache, &mut scroll, 40, 40, Theme::Dark);
+        let rows = rendered
+            .lines
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        for row in &rows {
+            assert!(line_width(row) <= 40, "no overflow: {row:?}");
+        }
+        assert!(
+            rows.join("").contains("a-very-long-directory-name"),
+            "the wrapped path stays readable: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_single_pending_group_has_nothing_to_expand() {
+        let rows = lines_of(&render_model(
+            vec![group_entry(
+                "c1",
+                "read",
+                r#"{"file_path":"src/a.rs"}"#,
+                None,
+                DisplayStatus::Pending,
+            )],
+            100,
+        ));
+        assert!(rows[0].contains("等待结果"), "{rows:?}");
+        assert!(!rows[0].contains("点击展开"), "{rows:?}");
+    }
+
+    #[test]
+    fn a_narrow_group_row_keeps_the_title_and_status() {
+        let rows = lines_of(&render_model(
+            vec![
+                read_entry("c1", "src/a.rs", "AAA"),
+                read_entry("c2", "src/b.rs", "BBB"),
+            ],
+            20,
+        ));
+        let header = &rows[0];
+        assert!(header.contains("Read"), "title keeps a slice: {header:?}");
+        assert!(header.contains("完成"), "status stays: {header:?}");
+        assert!(
+            !header.contains("点击展开"),
+            "the hint yields at 20 columns: {header:?}"
+        );
+    }
+
+    #[test]
+    fn an_empty_result_has_no_ghost_rows() {
+        let bash = plain(&render_one(
+            bash_entry(ToolStatus::Succeeded, "", DisplayStatus::Succeeded),
+            false,
+            100,
+        ));
+        assert!(!bash.iter().any(|row| row.contains("+")), "{bash:?}");
+        assert!(!bash.iter().any(|row| row.contains("点击展开")), "{bash:?}");
+
+        let generic = plain(&render_one(
+            group_entry("c1", "toolsearch", "{}", Some(""), DisplayStatus::Succeeded),
+            false,
+            100,
+        ));
+        assert!(!generic.iter().any(|row| row.contains("+")), "{generic:?}");
+        assert!(
+            !generic.iter().any(|row| row.contains("点击展开")),
+            "{generic:?}"
+        );
+    }
+
+    #[test]
+    fn a_trailing_newline_does_not_add_a_hidden_row() {
+        let rows = plain(&render_one(
+            bash_entry(
+                ToolStatus::Succeeded,
+                "one\ntwo\n",
+                DisplayStatus::Succeeded,
+            ),
+            false,
+            100,
+        ));
+        assert!(rows.iter().any(|row| row.contains("+2 行")), "{rows:?}");
+    }
+
+    #[test]
+    fn the_hidden_count_uses_visual_rows() {
+        let rows = plain(&render_one(
+            group_entry(
+                "c1",
+                "mcp",
+                "{}",
+                Some(&"x".repeat(30)),
+                DisplayStatus::Succeeded,
+            ),
+            false,
+            20,
+        ));
+        assert!(rows.iter().any(|row| row.contains("+2 行")), "{rows:?}");
+    }
+
+    #[test]
+    fn a_pending_bash_with_output_shows_no_rows() {
+        let rows = plain(&render_one(
+            bash_entry(ToolStatus::Pending, "one\ntwo", DisplayStatus::Pending),
+            false,
+            100,
+        ));
+        assert!(!rows.iter().any(|row| row.contains("one")), "{rows:?}");
+        assert!(rows.iter().any(|row| row.contains("+2 行")), "{rows:?}");
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("等待结果；没有来源时不显示假输出")),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn interrupted_and_unknown_calls_split_the_group() {
+        for status in [DisplayStatus::Interrupted, DisplayStatus::Unknown] {
+            let rows = lines_of(&render_model(
+                vec![
+                    read_entry("c1", "src/a.rs", "AAA"),
+                    group_entry(
+                        "c2",
+                        "read",
+                        r#"{"file_path":"src/b.rs"}"#,
+                        Some("boom"),
+                        status,
+                    ),
+                    read_entry("c3", "src/c.rs", "CCC"),
+                ],
+                100,
+            ));
+            assert_eq!(
+                rows.iter().filter(|row| row.contains("▸ Read")).count(),
+                3,
+                "{status:?}: two groups plus the standalone card: {rows:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_restored_session_with_reasoning_shows_no_thinking() {
+        // Restored history is the same renderer over settled entries.
+        let rows = lines_of(&render_model(
+            vec![
+                assistant_entry("a-1", "", "只有思考"),
+                read_entry("c1", "src/a.rs", "AAA"),
+                assistant_entry("a-2", "答案", "先想想"),
+            ],
+            100,
+        ));
+        assert!(!rows.iter().any(|row| row.contains("思考")), "{rows:?}");
+        assert!(!rows.iter().any(|row| row.contains("只有思考")), "{rows:?}");
+        assert!(rows.iter().any(|row| row.contains("答案")), "{rows:?}");
     }
 }

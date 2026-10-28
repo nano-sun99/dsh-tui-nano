@@ -6693,8 +6693,270 @@ mod tests {
             "model-xhigh-60-dark-1050" => {
                 Some((evidence_sweep_fixture(app(), 1050), 60, 30, false))
             }
+            "process-collapsed-100-dark" => {
+                Some((evidence_process_display(app(), false), 100, 36, false))
+            }
+            "process-collapsed-60-light" => {
+                Some((evidence_process_display(light(), false), 60, 30, false))
+            }
+            "process-collapsed-100-light" => {
+                Some((evidence_process_display(light(), false), 100, 36, false))
+            }
+            "process-collapsed-60-dark" => {
+                Some((evidence_process_display(app(), false), 60, 30, false))
+            }
+            "process-expanded-100-dark" => {
+                Some((evidence_process_group_expanded(app()), 100, 36, false))
+            }
+            "process-expanded-60-light" => {
+                Some((evidence_process_group_expanded(light()), 60, 30, false))
+            }
+            "process-expanded-100-light" => {
+                Some((evidence_process_group_expanded(light()), 100, 36, false))
+            }
+            "process-expanded-60-dark" => {
+                Some((evidence_process_group_expanded(app()), 60, 30, false))
+            }
             _ => None,
         }
+    }
+
+    /// A compact expanded group so the summary row and its body fit one frame.
+    fn evidence_process_group_expanded(mut app: App) -> App {
+        app.model.apply_event(
+            "session.event",
+            &serde_json::json!({
+                "address": {"rootSessionId": "root"},
+                "seq": 1,
+                "type": "user/message",
+                "data": {
+                    "id": "u-1",
+                    "role": "user",
+                    "content": [{"type": "text", "text": "检查配置读取，修复空配置报错。"}],
+                    "source": {"kind": "user"}
+                }
+            }),
+        );
+        for (seq, call_id, name, arguments, result) in [
+            (
+                2,
+                "c-1",
+                "read",
+                r#"{"file_path":"src/tuiSettingsFile.ts"}"#,
+                "export function readValues(raw) {\n  const doc = JSON.parse(raw)\n  return doc?.values ?? {}\n}",
+            ),
+            (
+                4,
+                "c-2",
+                "read",
+                r#"{"file_path":"src/config-reader.ts"}"#,
+                "export function readValues(raw) {\n  return JSON.parse(raw)?.values ?? {}\n}",
+            ),
+            (
+                6,
+                "c-3",
+                "grep",
+                r#"{"pattern":"values ?? {}"}"#,
+                "src/tuiSettingsFile.ts:3: return doc?.values ?? {}\nsrc/config-reader.ts:2: return JSON.parse(raw)?.values ?? {}",
+            ),
+        ] {
+            app.model.apply_event(
+                "session.event",
+                &serde_json::json!({
+                    "address": {"rootSessionId": "root"},
+                    "seq": seq,
+                    "type": "tool/call",
+                    "data": {
+                        "turn": 1,
+                        "step": 1,
+                        "callId": call_id,
+                        "name": name,
+                        "arguments": arguments
+                    }
+                }),
+            );
+            app.model.apply_event(
+                "session.event",
+                &serde_json::json!({
+                    "address": {"rootSessionId": "root"},
+                    "seq": seq + 1,
+                    "type": "tool/result",
+                    "data": {
+                        "turn": 1,
+                        "step": 1,
+                        "message": {
+                            "id": format!("t-{call_id}"),
+                            "role": "tool",
+                            "toolCallId": call_id,
+                            "isError": false,
+                            "content": [{"type": "text", "text": result}]
+                        }
+                    }
+                }),
+            );
+        }
+        app.view.reveal("call-c-1");
+        app.transcript_dirty = true;
+        app
+    }
+
+    /// Deterministic process-display scene: grouped reads/searches, one
+    /// successful Bash card, one failed read that splits the run, and a live
+    /// thinking stream with its body.
+    fn evidence_process_display(mut app: App, expanded: bool) -> App {
+        app.model.apply_event(
+            "session.event",
+            &serde_json::json!({
+                "address": {"rootSessionId": "root"},
+                "seq": 1,
+                "type": "user/message",
+                "data": {
+                    "id": "u-1",
+                    "role": "user",
+                    "content": [{"type": "text", "text": "检查配置读取，修复空配置报错，再跑验证。"}],
+                    "source": {"kind": "user"}
+                }
+            }),
+        );
+        let mut seq = 2;
+        let mut call = |app: &mut App,
+                        seq: &mut u64,
+                        call_id: &str,
+                        name: &str,
+                        arguments: &str,
+                        result: &str,
+                        is_error: bool| {
+            app.model.apply_event(
+                "session.event",
+                &serde_json::json!({
+                    "address": {"rootSessionId": "root"},
+                    "seq": *seq,
+                    "type": "tool/call",
+                    "data": {
+                        "turn": 1,
+                        "step": 1,
+                        "callId": call_id,
+                        "name": name,
+                        "arguments": arguments
+                    }
+                }),
+            );
+            *seq += 1;
+            let mut message = serde_json::json!({
+                "id": format!("t-{call_id}"),
+                "role": "tool",
+                "toolCallId": call_id,
+                "content": [{"type": "text", "text": result}]
+            });
+            message["isError"] = serde_json::json!(is_error);
+            app.model.apply_event(
+                "session.event",
+                &serde_json::json!({
+                    "address": {"rootSessionId": "root"},
+                    "seq": *seq,
+                    "type": "tool/result",
+                    "data": {"turn": 1, "step": 1, "message": message}
+                }),
+            );
+            *seq += 1;
+        };
+        call(
+            &mut app,
+            &mut seq,
+            "c-1",
+            "read",
+            r#"{"file_path":"src/tuiSettingsFile.ts"}"#,
+            "export function readValues(raw) {\n  const doc = JSON.parse(raw)\n  return doc?.values ?? {}\n}",
+            false,
+        );
+        call(
+            &mut app,
+            &mut seq,
+            "c-2",
+            "read",
+            r#"{"file_path":"src/config-reader.ts"}"#,
+            "export function readValues(raw) {\n  return JSON.parse(raw)?.values ?? {}\n}",
+            false,
+        );
+        call(
+            &mut app,
+            &mut seq,
+            "c-3",
+            "grep",
+            r#"{"pattern":"values ?? {}"}"#,
+            "src/tuiSettingsFile.ts:3: return doc?.values ?? {}\nsrc/config-reader.ts:2: return JSON.parse(raw)?.values ?? {}",
+            false,
+        );
+        call(
+            &mut app,
+            &mut seq,
+            "c-4",
+            "list",
+            r#"{"path":"src"}"#,
+            "config-reader.ts\ntuiSettingsFile.ts\nmain.ts",
+            false,
+        );
+        call(
+            &mut app,
+            &mut seq,
+            "c-5",
+            "bash",
+            r#"{"command":"node scripts/check-config.mjs"}"#,
+            "PASS 空配置使用默认值\nPASS 无效 JSON 返回明确错误\n2 项检查通过",
+            false,
+        );
+        call(
+            &mut app,
+            &mut seq,
+            "c-6",
+            "read",
+            r#"{"file_path":"src/missing.ts"}"#,
+            "Error: fixture file was not found\nThe requested test input could not be read.\nProcess exited with code 1.\nExtra detail stays hidden.",
+            true,
+        );
+        call(
+            &mut app,
+            &mut seq,
+            "c-7",
+            "read",
+            r#"{"file_path":"src/after-failure.ts"}"#,
+            "export const afterFailure = true",
+            false,
+        );
+        call(
+            &mut app,
+            &mut seq,
+            "c-8",
+            "toolsearch",
+            "{}",
+            "matched 2 tools\ntool schema loaded",
+            false,
+        );
+        if expanded {
+            app.view.reveal("call-c-1");
+            app.transcript_dirty = true;
+        }
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "start", "turn": 2, "step": 1
+            }),
+        );
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 0,
+                "chunk": {"type": "reasoning-delta", "index": 0, "text": "先核对读取入口和两次检查结果。"}
+            }),
+        );
+        stream_event(
+            &mut app,
+            serde_json::json!({
+                "attemptId": "a-1", "revision": 1, "type": "chunk", "index": 1,
+                "chunk": {"type": "text-delta", "index": 0, "text": "我会先核对读取入口，再检查空配置和解析失败两条路径。"}
+            }),
+        );
+        app
     }
 
     fn evidence_table(mut app: App) -> App {
