@@ -41,14 +41,15 @@ Ghostty
        └─ 官方 DSH：Agent / 模型 / 工具 / 会话 / 权限 / 持久化
 ```
 
-### 3.1 组装配方（phase-0 实测）
+### 3.1 组装配方（核心已实测；β 行另测）
 
-1. **确保应用 profile**：目录缺失/无 manifest 时写入 `package.json`（`dsh.profile.bundles=['@deepseek-ai/dsh-base']`）、空 `cordis.yml`、空 `cordis.patch.yml`；升级时校验 bundle/版本，保留 settings。`loadProfileDirectory` 只读取，不负责初始化。
-2. `loadProfileDirectory` + `readProfilePatches`。
-3. 追加运行时 patch：`tool-ask-user`（含 timed 配置）、`file-reference-local`、`terminal-controller`、`session-controller`、`schedule`；base 不含这些行时问卷/终端/`@`/会话恢复/调度缺服务。
-4. 追加 storage 根 patch：`session-persistence-jsonl.root = <数据根>/sessions`、`storage-json.root = <数据根>/runtime-data/<rootSessionId>/storage`；关闭 HMR（`hmr disabled`）。
-5. `createRuntimeResolution` → `boot()`，注入 `profileContext`、`cmdlineArgs`、`appExit`、`appReady`，`provide('sessionController', rootOnlyAdapter)`，挂 `PluginPackages`；`appReady.commit()`。
+1. **确保应用 profile**：`initProfile(dir, ['@deepseek-ai/dsh-base'])` 写 manifest/patch/workspace，但它**不写 `cordis.yml`**，随后补 `[]`；三份文件逐项检查，缺失才补，禁止 0 字节；损坏先备份再报错，不覆盖 settings。`loadProfileDirectory` 不是纯只读（可能重写 manifest、`skippedBundles` 不抛错），启动后必须检查。
+2. **解析根身份**：`--root` → `last-root` → 生成；同一 ID 用于 storage 根、schedule 根、认领、handoff、`sessions.create`；不一致硬失败。进备用屏前先取挂载认领。
+3. 追加 patch 行：`tool-ask-user`（默认 blocking；timed 配置落 active preset config）、`file-reference-local { maxResults: 20 }`；β 再加 `@deepseek-ai/dsh-api-terminal-controller`。
+4. 追加 storage patch：`session-persistence-jsonl.root = <数据根>/sessions`、`storage-json.root = <数据根>/runtime-data/<root>/storage`；`storage-domain` 沿用 base `{ backend: 'json' }`；关 HMR。
+5. `createRuntimeResolution` → `boot()`，注入 `profileContext`、`cmdlineArgs`、`appExit`、`appReady`，挂 `PluginPackages`；`appReady.commit()`。不加载官方 `dsh-api-session-controller`（12 个注入服务 + `nativeOpen`，base 缺两项），也不 `provide('storageDomain')`。
 6. 核心就绪后再做能力快照（boot 前无服务可查）；`boot` 期间 stdout 0 写入（实测）；`.anonymous-user-id` 仍写 `$DSH_HOME`，是 nano 唯一写入项。
+7. β 的 schedule：boot 后注册命名后端 `nano-schedule-json` 并提供 `storageBackendServiceKey`，`storage-domain` 路由 `{ schedule, nano_probe }` 指向它；探针通过后再手动挂官方 `ScheduleService`。`sessionController` 适配器只提供 `resolveAgent`。
 
 ### 3.2 官方交互
 
@@ -59,10 +60,11 @@ Ghostty
 
 ### 3.3 生命周期
 
-- 启动顺序：确保 profile → pre-boot 骨架（进备用屏、接管 fd 0/1、raw mode）→ 启动期 stdout/stderr 捕获 → boot 核心 → 能力快照 → 挂 UI → 正式首帧 → 接受输入。画骨架必须先占终端，不能等 boot。
-- 根切换/冷改名：单进程不做在线 storage 路由替换；采用受控进程重启（exec self + 新 rootSessionId + handoff 文件保存草稿/光标/阅读锚点）；旧进程先停 schedule/monitor/PTY、flush、释放 claim。冷改名即切换到该会话（保持单主会话），改名后留在该根。
-- 关停：S01 按顺序调用 S02 注册的 lifecycle hooks（取消子代理、停 Monitor、释放 PTY/租约）→ 释放 claim → 恢复终端；hooks API 属 D01。
-- 运行时守护 stdout/stderr；`uncaughtException`/`unhandledRejection` 必须恢复终端并报告；SIGINT/SIGTERM/SIGHUP 有界关停（10s 优雅 + 3s 强制，逐项报告）。
+- 启动顺序：确保 profile → 解析根身份 → 获取挂载认领 → pre-boot 骨架（进备用屏、接管 fd 0/1、raw mode）→ fd 级 stdout/stderr 捕获 → boot 核心 → 能力快照 → 挂 UI → 正式首帧 → 接受输入。认领失败发生在进备用屏之前；画骨架必须先占终端。
+- 启动失败两段：骨架前（profile/版本/认领）写 stderr 退出；骨架后（boot/快照）恢复终端、写 fd 2、非零退出。
+- 根切换/冷改名：单进程不做在线 storage 路由替换；受控进程重启 = 冻结输入 → 原子写 handoff（tmp+fsync+rename、0600、版本、读后删）→ 停 schedule/Monitor/PTY、取消在飞 → flush → 杀死并核验 PTY 进程组 → 释放 claim → exec self `--root <id>`。新进程提交成功后才删 handoff；认领/boot/handoff/rename 任一失败都恢复终端、保留 handoff、不建替代会话。冷改名即切到该会话（保持单主会话），改名后留在该根。
+- 关停阶段：冻结输入 → 排空生产者（S02 hooks）→ 排空持久化 → 释放 schedule 租约 → 释放挂载认领 → 恢复终端（finally，预留预算）→ 退出；每阶段独立截止，总优雅 10s；「3s 强制」= 恢复终端并非零退出；清理失败保留认领并报告。
+- `uncaughtException`/`unhandledRejection` 走同一关停路径；SIGINT/SIGTERM/SIGHUP 有界关停并逐项报告；SIGKILL 后下次启动检测脏状态提示 `reset`。
 - 官方 HMR 关闭（`hmr disabled`）；profile/settings 写入由应用自持 profile 承担。
 
 ## 4. 技术栈与依赖
@@ -70,7 +72,7 @@ Ghostty
 | 层 | 选型 |
 |---|---|
 | 语言/运行时 | TypeScript + Node ≥22.19（当前官方依赖树最严 `engines`；实施时冻结） |
-| 官方集成 | `@deepseek-ai/dsh-base`、`dsh-app-boot`、session-controller、schedule 等官方行；harness 包精确锁定 0.2.1-rc.2，其余 `@deepseek-ai/*` 跟随官方树（如 cordis 4.0.5、cordis-plugin-* 1.x）；Cordis/React 单实例校验，未知 harness 版本拒绝 |
+| 官方集成 | `@deepseek-ai/dsh-base`、`dsh-app-boot`、`dsh-api-terminal-controller`、`dsh-schedule`、`dsh-tool-ask-user`、`dsh-file-reference-local`；harness 包精确 0.2.1-rc.2，其余 `@deepseek-ai/*` 用 `overrides` 锁官方树版本；不加载官方 session-controller，nano 自提供最小 `resolveAgent` 适配器；Cordis/React 单实例校验，未知 harness 版本拒绝 |
 | UI | `react` + `react-reconciler`（React 19） |
 | 布局 | `yoga-layout`（WASM，无平台二进制）；只用 S01 §3.2 子集 |
 | 文本 | `string-width` 或等价显示宽度；CJK/emoji/ZWJ/组合字符自测 |
@@ -93,8 +95,8 @@ Ghostty
 
 | 行为 | v1 | v2（用户拍板保留） | 代价/缓解 |
 |---|---|---|---|
-| Monitor 默认 | `notify`（唤醒模型并计费） | 默认 `quiet`；切 `notify` 需明确开关与告知 | 默认不唤醒；必须显示「notify 会计费」 |
-| 冷会话改名 | 一律拒绝，先打开 | 允许先取写权限再改名 | 会 resume 冷会话、拿写锁、产生 live Agent；UI 必须显示 writer-held 与单主会话状态 |
+| Monitor 默认 | `notify` | 默认 `quiet`；切 `notify` 需明确开关与告知 | `quiet` = 官方 inject：不唤醒、不新建 turn，内容进入下一个被接受的步骤，随下一次请求计费；必须显示「notify 会计费」 |
+| 冷会话改名 | 一律拒绝，先打开 | 允许先取写权限再改名 | 走受控重启；任一时刻只有一个 live 根；UI 显示 writer-held 与单主会话状态 |
 | 权限切换失败 | 重读官方投影，显示实际值（可能 custom/半切换） | 保留原值并显示失败原因 | 可能显示与官方实际权限不一致；必须提示「可能已部分生效，请重开 /permission 核对」 |
 
 这三处是用户本轮明确变更；现行 ADR（input-history / subagent-dock / independent-tui-theme / spacing / process-display）的扩展/取代同样生效。除此之外不允许偏离 v1 + 现行 ADR；任何进一步变化必须显式记录。
@@ -105,7 +107,7 @@ Ghostty
 |---|---|---|---|---|---|---|
 | [S01 α](S01-runtime-render-conversation.md) | 自建根/核心组装、pre-boot 首帧、终端独占、渲染/输入、真实对话与阅读决策 | 官方公开导出 | `package.json`、`src/boot`、`src/runtime`、`src/render`、`src/input`、`src/theme`、`src/conversation`、`src/transcript`、`src/decisions`、`tests/unit`、`docs/evidence/2026-10-28-nano-ts/alpha` | S02/S03 文件、官方存储 | spec 合并后 / phase-0+α / 由 S03 发布 | A |
 | [S02 β](S02-input-sessions-terminal.md) | 输入/会话/控制/附件/技能、终端/任务/Monitor/调度/子代理 | S01 render/input/transcript/keymap/scene 契约 | `src/attachments`、`src/sessions`、`src/controls`、`src/skills`、`src/terminal`、`src/jobs`、`src/monitor`、`src/schedule`、`src/subagents`、`tests/feature`、`docs/evidence/2026-10-28-nano-ts/beta` | `src/render`、`package.json`、S01/S03 文件 | S01 契约冻结后 / β / 由 S03 发布 | B |
-| [S03 γ](S03-release.md) | npm 包、发布验收、证据、Rust 与 bridge 退场 | 全部成果 | `packaging/`、`packaging/manifest.json`、`tests/e2e/`、`scripts/`（Rust 期证据脚本）、`docs/release/`、`README.md`、`README.en.md`、键位文档 | 代其他子件补写功能 | S01 包入口 + S02 键位冻结 / γ / 本份发布 | C |
+| [S03 γ](S03-release.md) | npm 包、发布验收、证据、Rust 与 bridge 退场 | 全部成果 | `packaging/`、`tests/e2e/`、`scripts/`（Rust 期证据脚本）、`docs/release/`、`README.md`、`README.en.md`、键位文档；仅删除 `crates/`、`Cargo.*`、`rust-toolchain.toml`、`protocol/`、`bridge/` | 代其他子件补写功能 | S01 包入口 + S02 键位冻结 / γ / 本份发布 | C |
 
 - `package.json` 由 S01 独占；S03 提供 npm manifest 清单（`private` 处置、`version`、`dependencies`、`scripts`、`bin`、`files`、`engines`、`publishConfig`、`prepack`），由 S01 合入。S02/S03 的依赖变更同样经 S01。
 - 键位单一源：S01 拥有 `src/input/keymap.ts`；S02 只注册功能键；S03 从该源生成 README/`--help` 并加 diff 检查。
@@ -116,11 +118,11 @@ Ghostty
 
 | ID | 提供方 → 消费方 | 类型 / 产物 | 就绪条件、证据、owner、波次 |
 |---|---|---|---|
-| D01 | S01 → S02 | 契约：render/input API、可交互 transcript（含子地址）、场景/焦点、keymap 注册、有序输入段与附件段、草稿/光标/锚点保存恢复、审批/问卷地址隔离、终端 cell 网格/VT、根会话身份、mount claim/release、lifecycle hooks | S01 夹具稳定帧 + 组件/API 冻结 + 单测 + 接口文件；owner S01；B |
-| D02 | S01 → S03 | 运行时/发布：包入口、pre-boot 首帧、关停、npm manifest 清单、证据 harness | phase-0+α 通过；owner S01；C |
+| D01 | S01 → S02 | 契约：render/input API、可交互 transcript（含子地址）、场景/焦点、keymap 注册 API、有序输入段与附件段、草稿/光标/锚点保存恢复、审批/问卷地址隔离、终端 cell 网格/VT、根会话身份、mount claim/release、lifecycle hooks（阶段/截止/隔离）、补全 provider、补全打开输入模式、历史读写（项目过滤/100 条/子代理投影）、合成 transcript 条目、boot 后服务/挂载扩展点、handoff 读写 | S01 夹具稳定帧 + 组件/API 冻结 + 单测 + 接口文件；owner S01；B |
+| D02 | S01 → S03 | 运行时/发布：包入口、pre-boot 首帧、关停、证据 harness | phase-0+α 通过；owner S01；C |
 | D03 | S02 → S03 | 验收：功能面证据、键位注册、真实服务结果 | β 通过；owner S02；C |
 | D04 | S01+S02 → S03 | 发布：同批验收、发布矩阵、release conclusion | α/β 齐备；owner S03；C |
-| D05 | S01+S02 → S03 | 迁移：bridge 逐模块处置表；S01/S02 负责吸收，S03 只删除 | 处置表逐项勾 + 吸收验收；owner S01/S02（吸收）、S03（删除）；C |
+| D05 | S01+S02 → S03 | 迁移：bridge 逐模块处置表；S01/S02 吸收业务，S03 承接安装/卸载、e2e 重写与删除 | 处置表逐项勾 + 吸收验收；owner S01/S02（吸收）、S03（安装/卸载、e2e、删除）；C |
 
 ## 8. 迁移与资产
 
@@ -133,14 +135,15 @@ Ghostty
 
 | bridge 模块 | v2 owner | 落点 / 验收 |
 |---|---|---|
-| profile/install | S01/S03 | S01 应用 profile 初始化/升级；S03 安装/卸载 |
+| profile/install | S01/S03 | S01 只承接应用 profile 初始化/升级；`dsh plugin --profile` 路径不承接；S03 安装/卸载 |
 | runtime/host、frames、writer、events | S01 | boot/关停/事件接线；协议帧与 fd 传输不承接 |
 | conversation、decisions | S01 | `src/conversation`、`src/decisions` |
 | controls、sessions、skills、attachments、jobs、monitor、schedule、subagents、shell、terminal | S02 | 对应 `src/*` 与 v1 验收 |
+| cordis.patch.yml | S01 | 行集（终端/问卷/文件引用/HMR）重写为应用自持 profile 的 patch，不照搬 `dsh plugin` 路径 |
 | protocol/、node_modules/、test/ | S03 | 删除 / 重写 e2e |
 | 未列模块 | — | 必须标注「不承接」及原因，不得静默丢弃 |
 
-- 删除后检查限定源码：`git grep 'cargo\|Cargo\|@dsh-tui-nano/bridge\|nano-protocol' -- src package.json packaging tests scripts` 为空；docs 中历史规格不算。
+- 删除后检查：`git ls-files -z -- src package.json packaging tests scripts README.md README.en.md AGENTS.md .github .gitignore | xargs -0 grep -nE 'cargo|Cargo|nano-protocol|@dsh-tui-nano/bridge|--bridge-package|target/release|nano-bridge'` 为空；`docs/specs/` 历史规格与 `docs/release/0.1.0/`（标 HISTORICAL）豁免。
 - 根 `package.json` 的 cargo/bridge scripts 与 `packaging/` 旧脚本由 S01/S03 重写或删除。
 
 ### 8.3 数据
@@ -154,23 +157,24 @@ Ghostty
 |---|---|---|
 | 自建根 + boot/PluginPackages/profileContext/appReady | 自有入口、首帧与终端所有权；没有则回到官方 CLI 客人形态 | 用户 2026-10-28 选择；phase-0 实测 505–826ms、87 服务 |
 | 应用自持 profile + 首次初始化/升级 | 干净机器首启可用、不写 `$DSH_HOME/profiles`；卸载默认保留、purge 删除 | 用户 2026-10-28 选择；profile/settings 自管 |
-| 官方 feature 行 + sessionController 适配器 | base 不含 session-controller/schedule 时恢复/调度不可用 | 本次新增；S01 boot 提供，S02 验收 |
+| 最小 sessionController 适配器 | 官方 session-controller 要 12 个服务 + `nativeOpen`，base 缺两项；schedule 只需 `resolveAgent` | 本次新增；S02 经 D01 的 boot 后扩展提供，capability 快照断言 |
+| schedule 命名后端 + 探针后挂载 | 保证 per-root 隔离且探针不过不打开表 | 本次新增；S02 验收 |
 | 单进程切根 = 受控重启 + handoff | 不替换 storage 路由、不产生第二个 live root | 本次新增；代价是切根会重启进程 |
 | lifecycle hooks | S01 关停能清理 S02 资源且不越界 | 本次新增；D01 契约 |
 | bridge 处置表 | 不并存第二套实现、不静默丢逻辑 | 本次新增；S01/S02 吸收、S03 删除 |
 | pre-boot 最小首帧 | 避免核心加载空白 | 用户 2026-10-28 选择；代价是两套渲染状态 |
 | `react-reconciler` + Yoga 子集 | React 树 + 成熟 flexbox；没有则自造协调器/布局 | 用户已批准；代价是版本耦合 |
 | cell 双缓冲 + diff + 单写入器 | 全屏、长会话、无撕裂 | 本次新增；终端层自写 |
-| 终端独占 + 运行时 stdout/stderr 守护 | 官方日志污染会毁屏 | phase-0 启动实测 0；运行时仍须守护 |
-| storage 根 patch | 多窗口/多根隔离；默认会写 `$DSH_HOME` | 本次新增；spike 实测写入数据根 |
+| 终端独占 + fd 级 stdout/stderr 守护 | 官方日志污染会毁屏；只包 `process.stdout.write` 抓不到原生直写 | phase-0 启动实测 0；运行时仍须守护 |
+| storage 根 patch + 根身份认领 | 多窗口/多根隔离；默认会写 `$DSH_HOME` | 本次新增；spike 实测写入数据根；认领先于备用屏 |
 | 三处行为变更 | 用户明确保留 | §5.2；代价见该表 |
 | Rust 归档 + bridge 处置表 | 不并存第二套实现 | 用户 2026-10-28 拍板 |
 
 ## 10. 自定细节
 
-- 包名/bin 名沿用 `dsh-tui-nano` / `nano`；数据根 `~/.dsh-tui-nano`；应用 profile 放数据根（`profile/`），首次启动自动创建。
+- 包名/bin 名沿用 `dsh-tui-nano` / `nano`；v2 版本 `0.2.0`，发布目录 `docs/release/0.2.0/`，首次发布 dist-tag `next`；数据根 `~/.dsh-tui-nano`；应用 profile 放数据根（`profile/`），首次启动自动创建。
 - 目录结构按 §6 owner；新增目录先改总纲地图。
-- 版本：harness 包精确锁定 0.2.1-rc.2；其余 `@deepseek-ai/*` 跟随官方树（cordis 4.0.5 等），Cordis/React 单实例校验；未知 harness 版本拒绝启动。
+- 版本：harness 包精确 0.2.1-rc.2；其余 `@deepseek-ai/*` 用 `overrides` 锁官方树版本，Cordis/React 单实例校验；未知 harness 版本拒绝启动。
 - 首帧骨架的最小内容由 S01 定；备用屏由 S01 决定，S03 写入 README。根切换 handoff 文件位置由 S01 定，S02 负责写入/读取。
 - 图片协议（Kitty/Sixel）不在本次范围；图片消息仍走官方附件协议。
 
@@ -179,7 +183,7 @@ Ghostty
 | v1 | v2 owner | 承接方式 |
 |---|---|---|
 | S01 宿主与通信 | S01 | 重写：自建根 + boot；协议/进程管理消失 |
-| S02 对话与输入 | S01（对话）、S02（输入） | 沿用：requestId、回显、attempt、queue/steer/stop/clear、草稿按地址、单次 32 KiB 上限 |
+| S02 对话与输入 | S01（输入基础设施与对话）、S02（输入增强） | 沿用：requestId、回显、attempt、queue/steer/stop/clear、草稿按地址、单次 32 KiB 上限 |
 | S03 阅读与决策 | S01 | 沿用：锚点、滚轮、diff 坐标/预算、审批默认拒绝焦点、问卷契约、计划审阅 |
 | S04 模型与权限 | S02 | 沿用 + §5.2 权限失败变更 |
 | S05 技能与规矩 | S02 | 沿用：命令优先、complete=false、加载顺序/预算 |
@@ -187,7 +191,7 @@ Ghostty
 | S07 会话与上下文 | S02 | 沿用 + §5.2 冷改名变更；切根走受控进程重启（§3.3） |
 | S08 Shell 与任务 | S02 | 沿用：`!` 单次 danger-full-access、不进 job 表、`!!` inject:false |
 | S09 交互终端 | S02 | 沿用：retain/attach/sequence/inputFull/背压/权限边界 |
-| S10 Monitor | S02 | §5.2 默认 quiet；其余沿用（初始偏移、settled readAt、预算耗尽、真实收件） |
+| S10 Monitor | S02 | §5.2 默认 quiet（官方 inject：不唤醒、不新建 turn、随下一次请求计费）；其余沿用（初始偏移、settled readAt、预算耗尽、真实收件） |
 | S11 调度 | S02 | 沿用：per-root 后端、租约、无暂停、非严格一次 |
 | S12 子代理 | S02 | 沿用 v1 + `ADR-20261022-subagent-dock-lifecycle`（取代 v1 dock 条款）：one-shot/external、exact-parent-live、审批 never、interruptByParent、fork seed |
 | S13 发布验收 | S03 | 沿用：阻断定义、版本矩阵、证据脱敏、首启来源；按新架构重写步骤 |
@@ -209,7 +213,12 @@ Ghostty
 | 11 | 高 | bridge 处置表缺失/owner 对不上 | 已改：§8.2 逐模块表；D05 owner 改为 S01/S02 吸收、S03 删除 |
 | 12 | 高 | 现行 ADR（dock/theme）扩展/取代 v1；§5.2「唯一」不成立 | 已改：头部/§5.2/§11 纳入现行 ADR；S01 去掉已取代的 theme-scope |
 | 13 | 高 | 单进程切根/冷改名无生命周期 | 已改：§3.3 受控进程重启 + handoff；冷改名即切换并保留单主会话 |
-| 14 | 高 | S02 缺 session-controller/schedule 行与适配器 | 已改：§3.1 第 3/5 步补行与 rootOnlyAdapter |
+| 14 | 高 | S02 缺 session-controller/schedule 行与适配器 | 已由第 18 条取代：官方 row 不加载，改最小 `resolveAgent` 适配器 |
 | 15 | 高 | S01 关停含 S02 资源的反向依赖 | 已改：§3.3 lifecycle hooks（D01） |
 | 16 | 高 | D01 契约不足 | 已改：D01 补有序输入/子地址/草稿锚点/审批问卷地址/终端网格/lifecycle |
 | 17 | 高 | 卸载定义、Rust 退场 grep、npm manifest | 已改：§8.2/§8.3 与 S03 修订 |
+| 18 | 高 | 官方 session-controller 直接挂载会冲突；storageDomain 重复 provide | 已改：§3.1 不加载官方 row、不 provide storageDomain；S02 改为最小 `resolveAgent` 适配器 + 官方 storage-domain 路由 |
+| 19 | 高 | 根身份/认领晚于 boot，第二窗口拦不住；profile 空 YAML 必失败 | 已改：§3.1/§3.3 根身份 + 认领先于备用屏；`initProfile` 后补 `cordis.yml=[]`、逐文件修复 |
+| 20 | 高 | handoff 草稿与 input-history ADR 冲突；exec/PTY/claim 失败未定义 | 已改：§3.3 原子写/读后删/失败矩阵，标为受控切根显式例外 |
+| 21 | 高 | 首启来源无人负责；`--purge` 无入口；manifest 落不了盘 | 已改：首启来源（B8）归 S01 验收；`nano purge` 先于 npm 卸载；S03 给完整 manifest |
+| 22 | 高 | 子代理成本是未登记的第四处变更；20 MiB 无依据；`!`/quiet 语义漂移 | 已改：删除成本字段与 20 MiB；`!` 回 step boundary、quiet 回官方 inject |
