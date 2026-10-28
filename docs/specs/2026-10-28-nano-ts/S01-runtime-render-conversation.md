@@ -2,84 +2,88 @@
 
 - 组标识：`2026-10-28-nano-ts`；角色与编号：子件 S01；目标是一个能在真实终端里启动、独占终端、完成真实对话与阅读决策的完整可验收成果。
 - 总纲：[共享约定与依据](README.md)。上游依赖：官方公开导出；下游影响：S02、S03。
-- 合入前提：phase-0 通过；α 验收通过。发布由 S03 承担。
+- 合入前提：phase-0 已通过（见总纲 §3.1 与 [spike-phase0.md](spike-phase0.md)）；α 验收通过。发布由 S03 承担。
 
 ## 1. 边界与文件 owner
 
-拥有：`package.json`、`src/boot/`、`src/runtime/`、`src/render/`、`src/input/`、`src/theme/`、`src/conversation/`、`src/transcript/`、`src/decisions/`。
+拥有：`package.json`、`src/boot/`、`src/runtime/`、`src/render/`、`src/input/`、`src/theme/`、`src/conversation/`、`src/transcript/`、`src/decisions/`、`tests/unit/`、`docs/evidence/2026-10-28-nano-ts/alpha/`。
 
 不碰：S02 的 `src/attachments`、`src/sessions`、`src/controls`、`src/skills`、`src/terminal`、`src/jobs`、`src/monitor`、`src/schedule`、`src/subagents`；S03 的 `packaging/`、`tests/e2e/`、`docs/release/`、README；官方存储与凭据。
 
-`package.json` 由本份独占；S02/S03 的依赖变更通过 S01 合入，不各自维护第二份。
+`package.json` 由本份独占；S02/S03 的依赖变更与 npm manifest 清单经 S01 合入。
 
 ## 2. 运行时与组装
 
-- 自建 Cordis 根：解析安装的官方包与 `$DSH_HOME`，用 `dsh-app-boot` 的 `composeEntries` / `loadProfile` 组装官方核心；随后挂载 nano 插件，不启动第二进程。
-- 启动顺序：解析路径 → 能力快照 → 建根/组装核心 → 接管终端（raw mode、resize、fd 0/1）→ 挂载 UI → 首帧 → 接受输入。
-- 首帧优先：首帧不等模型、网络或会话列表；核心加载失败时给出可见错误，不留空白。
-- 终端所有权：nano 是 fd 0/1 的唯一写入者；官方日志走 stderr 或文件；启动全程捕获 stdout，任何非 nano 写入记为失败。
-- 能力快照：覆盖会话 / 审批 / 问卷 / 附件 / 调度 / 终端 / 任务 / 子代理 / 模型 / 权限；缺失必需能力即启动失败并点名。
-- 会话挂载账本：沿用 v1 S01 §2.1，pid 改为本进程 pid；同机双窗口争同一根会话时第二窗口被拒且保留草稿。
-- 关停：停输入 → 取消在飞请求 / 子代理 → 停监听 → 释放 PTY → 排空持久化 → 释放认领 / 租约 → 恢复终端（raw mode / 光标 / 备用屏 / 鼠标）→ 退出；SIGINT/SIGTERM/SIGHUP 同路径；强杀不承诺恢复，给 `reset` 提示。
-- 回退：phase-0 若证明 `dsh-app-boot` 组装不可行，改用官方 `dsh --profile dsh-tui-nano` 入口；其余决定不变，并在 ADR 记录。
+- **应用自持 profile**：放在数据根（`~/.dsh-tui-nano/profile`）；用 `loadProfileDirectory` 读取，不写 `$DSH_HOME/profiles`。
+- **组装配方**（phase-0 实测）：
+  1. `loadProfileDirectory` + `readProfilePatches`；
+  2. 追加 `tool-ask-user`、`file-reference-local`、`terminal-controller` 三行；
+  3. 追加 `session-persistence-jsonl.root`、`storage-json.root` 的 storage 根 patch；
+  4. `createRuntimeResolution` → `boot()`，注入 `profileContext`、`cmdlineArgs`、`appExit`、`appReady`，挂 `PluginPackages`；
+  5. `appReady.commit()`。
+- **首帧**：pre-boot 先画最小骨架（标题/输入框轮廓）；核心就绪后接管并画正式首帧；首帧不等模型/会话列表。
+- **终端所有权**：nano 独占 fd 0/1；raw mode、resize、备用屏、鼠标、光标均由 nano 管理；官方日志走文件或受控 stderr，运行期也要守护，不只启动期。
+- **能力快照**：boot 之后逐项断言必需服务与工具（含 `ask_user_question`、`terminalController`、`fileReferences`、`approval`、`userQuestions`）；缺失即失败并点名。
+- **HMR**：关闭（沿用 v1）；profile/settings 写入应用自持 profile。
+- **会话挂载账本**：沿用 v1 S01 §2.1，pid 改为本进程 pid；同机双窗口争同一根会话时第二窗口被拒且保留草稿。
+- **关停**：停输入 → 取消在飞请求/子代理 → 停监听 → 释放 PTY → 排空持久化 → 释放认领/租约 → 恢复终端（raw/光标/备用屏/鼠标/kitty/paste）→ 退出；10s 优雅 + 3s 强制，逐项报告；`uncaughtException`/`unhandledRejection` 同路径；SIGKILL 不承诺恢复，下次启动检测脏状态并提示 `reset`。
+- **不做回退**：phase-0 已通过；若未来核心组装不可行，停止并重定方案，不切 `dsh --profile`（用户 2026-10-28 决定）。
 
 ## 3. 渲染与输入
 
 ### 3.1 渲染宿主
 
-- 一帧 = 计算 → diff → 生成字节 → 单次写 fd 1；禁止边算边写。
-- cell 二维缓冲；宽字符占两格，第二格占位；样式稀疏变更；帧输出可重放。
-- 双缓冲 + 最小 diff；整屏滚动用区域滚动序列；虚拟化：视窗外不构建组件树，缓存有界（LRU）。
-- 不承诺消除 GC 停顿或脱离 Node 事件循环；承诺渲染自身不无界增长、在实测基线内不掉帧。
+- 一帧 = 计算 → diff → 生成字节 → 单次写 fd 1；禁止边算边写；输出可重放。
+- cell 二维缓冲；宽字符占两格；样式稀疏变更；**所有用户/工具/模型文本先做控制字符与 ESC/OSC 净化**，原始转义序列不得进入写往 fd 1 的字节。
+- 双缓冲 + 最小 diff；整屏滚动用区域滚动序列；虚拟化含行高估算、overscan、挂载上限、滚动锚点与粘底；缓存有界（LRU）。
+- 性能目标：1000 行 transcript 下滚动 p95 ≤ 33ms、流式追加 p95 ≤ 50ms、resize p95 ≤ 80ms；5000 行内存增长有界（记录曲线）；实测基线写入证据。
 
 ### 3.2 布局子集（写死）
 
-固定高度、内容高度、按比例分配、最小 / 最大、水平 / 垂直堆叠、溢出裁剪、粘底滚动。Yoga 只使用这一子集；不做浏览器级完整 flex；各功能不自行发明布局规则。
+固定高度、内容高度、按比例分配、最小/最大、水平/垂直堆叠、溢出裁剪、粘底滚动；Yoga 只用这一子集；不做浏览器级完整 flex。
 
 ### 3.3 输入
 
-- 键盘：普通键、修饰键、多字节序列；kitty keyboard enhancement 可用时启用并降级。
-- 鼠标：点击、滚轮、拖拽选择、分栏拖拽；分片 SGR 序列可重组。
-- 粘贴：bracketed paste 作为批量输入，不逐键处理。
-- 焦点：同一时刻一个焦点；覆盖层优先；Escape 逐层退出。
-- 无法识别的输入可诊断（限流），不静默吞键。
+- 键盘：普通键、修饰键、多字节序列；kitty keyboard 只在已知支持时启用，不做阻塞探测；bracketed paste 批量输入。
+- 鼠标：点击、滚轮、拖拽选择、分栏拖拽（仅 v1 design-contract 允许的槽位）；分片 SGR 可重组；拖选优先于点击。
+- 复制：全屏 + 鼠标捕获下必须提供 OSC 52 / pbcopy 或释放鼠标模式；选区按 grapheme 边界，不切 ZWJ/宽字符。
+- 焦点：单一焦点；覆盖层优先；Escape 逐层退出；无法识别输入限流可诊断。
+- 键位单一源：`src/input/keymap.ts`；S02 注册功能键；S03 生成 README/`--help`。
+
+### 3.4 主题与视觉
+
+- 沿用 `ADR-20261022-independent-tui-theme`、`ADR-20261022-nano-theme-scope`、`ADR-20261026-spacing-token-architecture`；深/浅、60/100 列、间距 token、4ch/2ch、diff 8 行预算都要有验收；不新增第二套视觉体系。
 
 ## 4. 对话、阅读与决策
 
-- 真实对话：提交、队列 / 插话、停止 / 清空；消息身份用官方 `seq` / `callId` / `toolCallId`，不自造第二份历史。
-- 流式：预览不是历史；正式消息到达后替换；断流 / 未知 / 解析失败显示「未确认 / 连接断开」，不假装完成。
-- 思考与过程：沿用 `ADR-20261028-nano-process-display`（分组、成功 0 行、失败 3 行、思考默认收起点击展开）。
-- markdown 子集：标题、列表、代码块（带语言高亮）、行内代码、强调、链接、表格；代码块不被行内样式破坏。
-- 工具卡：名称、关键参数摘要、状态、可展开输出；超长裁剪并标注完整内容位置；路径/行号可识别为跳转目标，跳转前校验存在性。
-- 文件差异：统一 diff、行号、变更标记、折叠；二进制 / 超大 / 无换行结尾显式呈现；只读，不提供直接应用。
-- 审批与问卷：审批只回官方四种既定结果，无有效回答即拒绝 / 取消；问卷走官方 `userQuestions`；不默认允许。
-- 场景与功能注册：S02/S03 的展示槽位与只读 transcript 接口由本份导出，不复制渲染器。
+- **对话**：`requestId` 提交身份、本地回显与退休、`assistant/attempt`、queue/steer/stop/clear（停止保留队列；清空是复合动作）、断线/未知显示「未确认」；消息身份用官方 `seq`/`callId`/`toolCallId`。
+- **流式**：预览不是历史；正式消息替换预览；允许丢中间帧，不允许丢字符；思考/过程沿用 `ADR-20261028-nano-process-display`（默认收起、点击展开、提交后整行消失）。
+- **阅读**：Markdown 子集、代码高亮、工具卡、diff（坐标/行号/8 行预算/无坐标不填）、阅读锚点、滚轮/粘底；超长内容裁剪并标注完整位置。
+- **决策**：审批只回四种官方结果；无有效回答即拒绝/取消；默认焦点在拒绝；无 `callId` 不猜命令；问卷走官方契约（每题 `{id,selected,custom?}`、blocking/timed、失败分类）；注册唯一 answerer；计划审阅与只读回看沿用 v1。
+- **场景**：导出可交互 transcript、焦点、场景注册给 S02；不复制渲染器。
 
 ## 5. 验收
 
-### 5.1 phase-0（本份合入前提）
+### 5.1 phase-0（已通过）
 
-1. 自建 Cordis 根 + `dsh-app-boot` 组装官方核心成功；真实官方包、真实 `$DSH_HOME`。
-2. 首帧先于模型 / 会话列表加载可见；启动全程 stdout 无官方写入（捕获证据）。
-3. 创建或恢复一个真实会话，完成一轮真实模型对话；正常退出后终端属性恢复。
-4. 若 1–3 任一不成立：回退官方 `dsh --profile` 入口，记录原因与证据；其余决定不变。
+自建根 + 官方核心 505–826ms、87 服务、必需服务齐全、启动 stdout 0 写入、storage 根写入数据根、会话创建/flush 成功；证据见 [spike-phase0.md](spike-phase0.md)。
 
 ### 5.2 α
 
-- 真实对话 / 流式 / 工具 / 差异 / 审批 / 问卷可用；单进程、无自造协议。
-- 1000 行 transcript 下滚动一屏、流式追加、resize 三类操作各给 p50 / p95 实测。
-- CJK / emoji / ZWJ / 中文输入法组合态、粘贴、鼠标拖选各有测试或人工验收记录。
-- 焦点：覆盖层打开时主体不接收按键；Escape 逐层退出。
-- 退出 / SIGINT / SIGTERM / SIGHUP 后终端属性逐项恢复；强杀后 `reset` 提示可读。
+- 真实对话/流式/工具/差异/审批/问卷可用；单进程、无 `nano.*` 协议、无第二宿主。
+- 1000 行滚动/流式/resize 达到 §3.1 的 p50/p95 目标；5000 行内存有界。
+- CJK/emoji/ZWJ/组合字符、中文输入法组合态、粘贴、鼠标拖选与复制各有测试或人工记录。
+- 主题/间距/深色/浅色/60/100 列按 §3.4 验收。
+- 终端恢复：正常退出 + SIGINT/SIGTERM/SIGHUP；`uncaughtException`/`unhandledRejection`；强杀后下次启动提示 `reset`。
+- 控制字符/ESC/OSC 注入不改变屏幕、光标、剪贴板和标题。
 
 ## 6. 本份机制与自定细节
 
-- 机制：自建根 + 官方核心组装、reconciler host config、Yoga 子集、cell 双缓冲 + diff + 单写入器、终端独占 + stdout 证据、能力快照；确认与代价见总纲 §9。
-- 目录结构按总纲 §6 的 owner 划分；组件 API（`<Box>` / `<Text>` / `<Overlay>` 等）在实施时冻结并写入 README。
-- `react` / `react-reconciler` / Yoga / 官方包版本实施时选定并锁定；虚拟化窗口、缓存上限、批次大小、帧率目标由实测定。
-- 备用屏幕是否启用由本份与 S03 共同决定。
-- 图片协议（Kitty / Sixel）不在本次范围。
+- 机制：自建根 + boot 组装、应用自持 profile、pre-boot 首帧、reconciler/Yoga、cell 双缓冲/diff/单写入器、终端独占与运行时守护、storage 根 patch；见总纲 §9。
+- 目录按总纲 §6；组件 API（`<Box>`/`<Text>`/`<Overlay>`）实施时冻结并写入 README 由 S03 承接。
+- React/react-reconciler/Yoga/官方包版本实施时锁定；未知官方版本拒绝启动。
+- 备用屏由本份决定并写入 README；图片协议不在本次范围。
 
 ## 7. 审核修订记录
 
-（待审核后填写）
+- 2026-10-28 重审 8 份后按发现重写：组装 API、storage 根、v1 承接、终端运行时守护、转义净化、性能阈值、owner；完整清单位于 PR #84 评论。
