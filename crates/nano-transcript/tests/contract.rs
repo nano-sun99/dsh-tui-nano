@@ -309,7 +309,7 @@ fn a_finished_preview_refreshes_through_the_render_cache() {
         &json!({
             "address": {"rootSessionId": "root"},
             "frame": {
-                "type": "chunk", "attemptId": "a-1", "revision": 1, "index": 0,
+                "type": "chunk", "attemptId": "a-1", "revision": 2, "index": 0,
                 "chunk": {"type": "text-delta", "index": 0, "text": "partial"}
             }
         }),
@@ -325,7 +325,7 @@ fn a_finished_preview_refreshes_through_the_render_cache() {
         &json!({
             "address": {"rootSessionId": "root"},
             "frame": {
-                "type": "end", "attemptId": "a-1", "revision": 1, "index": 1,
+                "type": "end", "attemptId": "a-1", "revision": 3, "index": 1,
                 "outcome": {"kind": "unknown"}
             }
         }),
@@ -370,7 +370,7 @@ fn a_finished_preview_freezes_its_reasoning_duration() {
         &json!({
             "address": {"rootSessionId": "root"},
             "frame": {
-                "type": "chunk", "attemptId": "a-1", "revision": 1, "index": 0,
+                "type": "chunk", "attemptId": "a-1", "revision": 2, "index": 0,
                 "chunk": {"type": "reasoning-delta", "index": 0, "text": "think"}
             }
         }),
@@ -380,7 +380,7 @@ fn a_finished_preview_freezes_its_reasoning_duration() {
         &json!({
             "address": {"rootSessionId": "root"},
             "frame": {
-                "type": "end", "attemptId": "a-1", "revision": 1, "index": 1,
+                "type": "end", "attemptId": "a-1", "revision": 3, "index": 1,
                 "outcome": {"kind": "abandoned"}
             }
         }),
@@ -427,7 +427,7 @@ fn the_reading_anchor_survives_preview_to_message_handoff() {
         &json!({
             "address": {"rootSessionId": "root"},
             "frame": {
-                "type": "chunk", "attemptId": "a-1", "revision": 1, "index": 0,
+                "type": "chunk", "attemptId": "a-1", "revision": 2, "index": 0,
                 "chunk": {"type": "text-delta", "index": 0, "text": "partial"}
             }
         }),

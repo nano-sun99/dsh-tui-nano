@@ -567,13 +567,14 @@ mod tests {
             "frame": {
                 "type": "chunk",
                 "attemptId": "a-1",
-                "revision": 1,
+                "revision": 2,
                 "index": 0,
                 "chunk": {"type": "text-delta", "index": 0, "text": "partial"}
             }
         });
         model.apply_event("conversation.stream", &chunk);
         assert_eq!(model.live().previews.len(), 1);
+        assert_eq!(model.live().previews[0].text, "partial");
         durable(
             &mut model,
             2,
