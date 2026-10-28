@@ -1,14 +1,42 @@
 {
   "name": "dsh-tui-nano",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "bin": {
+    "nano": "dist/bin.js"
+  },
   "scripts": {
-    "test:bridge": "node --test bridge/test/*.test.mjs",
-    "test:rust": "cargo test",
-    "test:e2e": "cargo test --test integration -- --ignored --test-threads=1 --skip shutdown_budget_is_bounded_when_cleanup_hangs",
-    "test:host": "NANO_E2E=1 node --test bridge/test/integration/*.test.mjs",
-    "test:host:schedule": "NANO_E2E=1 node --test bridge/test/integration/schedule.test.mjs",
-    "test:e2e:slow": "NANO_E2E_SLOW=1 cargo test --test integration -- --ignored --exact shutdown_budget_is_bounded_when_cleanup_hangs"
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check src tests/unit",
+    "start": "node dist/bin.js"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.2.1-rc.2",
+    "marked": "^15.0.12",
+    "prismjs": "^1.30.0",
+    "react": "^19.1.1",
+    "react-reconciler": "^0.33.0",
+    "string-width": "^7.2.0",
+    "yaml": "^2.9.1",
+    "yoga-layout": "^3.2.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.4",
+    "@types/node": "^24.3.0",
+    "@types/prismjs": "^1.26.5",
+    "@types/react": "^19.1.12",
+    "@types/react-reconciler": "^0.32.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "@deepseek-ai/dsh": "0.2.1-rc.2"
   }
 }
