@@ -75,6 +75,8 @@
     .tool-note { margin-left:2ch; color:var(--muted); }
     .live-tail { margin-left:2ch; color:var(--muted); height:calc(var(--line) * 2); overflow:hidden; }
     .live-line { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .thinking-live { margin:0 0 var(--line); color:var(--muted); }
+    .thinking-body { padding-left:2ch; }
     .error-line { margin-left:2ch; color:var(--error); }
     .answer { margin-top:var(--line); }
     .answer p { margin:0 0 var(--line); }
@@ -427,13 +429,14 @@
       ? `<span class="cjk">${escape(c)}</span>` : escape(c)).join('')
   }
   function detail(id, kind, name, meta, body, options = {}) {
+    const hint = options.hint ? ` · ${state.expanded.has(id) ? '点击收起' : '点击展开'}` : ''
     return `<details data-key="${id}" data-detail="${id}"${state.expanded.has(id) ? ' open' : ''}>
       <summary aria-label="${escape(`${kind} ${name}，${meta}，展开或收起详情`)}">
         <span class="disclose" aria-hidden="true"></span>
         <span class="summary-kind">${cells(kind)}</span>
         <span class="summary-name">${cells(name)}</span>
         ${options.hiddenLines ? `<span class="summary-count">${cells(`+${options.hiddenLines} 行`)}</span>` : ''}
-        <span class="summary-meta${options.error ? ' error-line' : ''}">${cells(meta)}</span>
+        <span class="summary-meta${options.error ? ' error-line' : ''}">${cells(meta + hint)}</span>
       </summary>
       <div class="detail">${body}</div>
     </details>`
@@ -563,23 +566,29 @@
       $('#geometry').textContent = `${state.width} 列 · 输入框边框的着色段表示上下文占用`
     }
     document.querySelectorAll('[data-scene]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.scene === state.scene)))
-    const thoughtBody = `<div class="detail-title">${cells('思考记录（演示文字）')}</div><div>${cells('核对空配置与 JSON 解析失败的返回方式。')}</div><div>${cells('确认检查命令覆盖这两个边界。')}</div>`
     const readBody = `<div class="detail-title">${state.scene === 'edit' ? 'src/config-reader.ts' : 'src/tuiSettingsFile.ts'} ${cells('· 内容示意')}</div><pre>${cells('export function readValues(raw) {\n  const doc = JSON.parse(raw)\n  return doc?.values ?? {}\n}')}</pre>`
     const output = failed
       ? "Error: fixture file was not found\nThe requested test input could not be read.\nProcess exited with code 1."
       : logs.join('\n')
     const commandBody = `<div class="detail-title">${cells('完整脚本 · 11 行')}</div><pre>${cells(command)}</pre><button class="copy-command" data-copy>${cells('复制脚本')}</button><div class="body-section"><div class="detail-title">${cells('输出')}</div><pre>${cells(waiting ? '等待允许，尚未执行。' : running ? logs.slice(0, 2 + state.outputIndex).join('\n') : output)}</pre></div>`
-    const currentPair = [logs[state.outputIndex % logs.length], logs[(state.outputIndex + 1) % logs.length]]
+    // 过程块默认不露出结果：隐藏行数 = 未显示的命令行 + 未显示的输出行。
+    const outputRowCount = waiting ? 0 : running ? logs.slice(0, 2 + state.outputIndex).length : failed ? 3 : logs.length
+    const bashHidden = command.split('\n').length - 1 + outputRowCount
+    const groupBody = `<div class="detail-title">${cells('读取与搜索 · 3 次')}</div><div>Read src/tuiSettingsFile.ts</div><div>Read src/config-reader.ts</div><div>Grep “values ?? {}” · 2 个文件</div>`
+    // 思考只在流式时显示正文；完成后整行消失，不保留可点入口。
+    const liveThinking = running ? `<div class="thinking-live" data-key="thinking-live">
+      <div>${cells('▸ 思考 进行中… · 3s')}</div>
+      <div class="thinking-body">${cells('核对空配置与 JSON 解析失败的返回方式。')}</div>
+      <div class="thinking-body">${cells('确认检查命令覆盖这两个边界。')}</div>
+    </div>` : ''
     transcript.innerHTML = state.scene==='subagents' ? history() + subagentPreview.mainTranscriptHtml() : history() + (state.scene==='questions' ? `<section class="turn"><div class="term-row user">${cells('> 请先确认验证方式和需要覆盖的终端场景。')}</div><p>${cells('我会按你选择的范围准备验证。')}</p></section>` : `<section class="turn" data-key="current-turn">
       <div class="term-row user" data-key="prompt">${cells('> 检查配置读取，修复空配置报错，再跑验证。')}</div>
       <p class="narration" data-key="narration">${cells('我会先核对读取入口，再检查空配置和解析失败两条路径。')}</p>
-      ${state.scene === 'edit' ? `<div class="process">${detail('thinking', '思考', '已完成', '4s', thoughtBody)}${detail('read', 'Read', 'src/config-reader.ts', '完成 · 0.1s', readBody)}</div>${editBlock()}` : `<section class="process" aria-label="过程记录">
-        ${detail('thinking', '思考', '已完成', '4s', thoughtBody)}
-        ${detail('read', 'Read', 'src/tuiSettingsFile.ts', '完成 · 0.1s', readBody)}
-        <div class="tool-block" data-card="bash">${detail('bash', 'Bash', command.split('\n')[0], waiting ? '等待确认' : running ? '运行中 · 8s' : failed ? '失败 · 1.2s' : '完成 · 2.4s', commandBody, {error:failed,hiddenLines:command.split('\n').length-1})}
-        ${failed ? `<div class="error-line" data-key="failure">${cells('失败：测试数据文件不存在（退出码 1）。')}</div>` : ''}
-        ${running ? `<div class="live-tail" data-key="live"><div class="live-line">${cells(currentPair[0])}</div><div class="live-line">${cells(currentPair[1])}</div></div>` : ''}
-        ${!running && !failed && !waiting ? `<div class="tool-note" data-key="result-summary">${cells('完成：2 项边界检查通过；点击此块查看，再点收起。')}</div>` : ''}</div>
+      ${state.scene === 'edit' ? `<div class="process">${detail('group', 'Read', 'src/config-reader.ts', '完成 · 0.1s', readBody, {hint:true})}</div>${editBlock()}` : `<section class="process" aria-label="过程记录">
+        ${liveThinking}
+        ${detail('group', 'Read', '2 个文件 · Grep 1 次', running ? '进行中…' : '完成 · 0.3s', groupBody, {hint:true})}
+        <div class="tool-block" data-card="bash">${detail('bash', 'Bash', command.split('\n')[0], waiting ? '等待确认' : running ? '运行中 · 8s' : failed ? '失败 · 1.2s' : '完成 · 2.4s', commandBody, {error:failed,hiddenLines:bashHidden,hint:true})}
+        ${failed ? `<div class="error-line" data-key="failure">${cells('失败：测试数据文件不存在（退出码 1）。')}</div>` : ''}</div>
       </section>`}
       ${answer()}
     </section>`)
@@ -608,7 +617,7 @@
     }
     updateJump()
   }
-  function visibleDetailKeys() { return state.scene === 'edit' ? ['thinking','read','edit'] : ['thinking','read','bash'] }
+  function visibleDetailKeys() { return state.scene === 'edit' ? ['group','edit'] : ['group','bash'] }
   function updateExpandLabel() {
     const details = [...subagentPreview.activeTranscript().querySelectorAll('details')]
     const allOpen = state.scene==='subagents'
@@ -669,7 +678,7 @@
     if (state.expanded.has(id)) state.expanded.delete(id)
     else state.expanded.add(id)
     draw({hold:true})
-    const target = id==='edit' ? $('.diff-block') : $('[data-detail="bash"] summary')
+    const target = id==='edit' ? $('.diff-block') : $(`[data-detail="${id}"] summary`)
     target?.focus({preventScroll:true})
   }
   transcript.addEventListener('click', async event => {
