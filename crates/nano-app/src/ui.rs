@@ -2727,37 +2727,25 @@ fn input_height(app: &App, width: u16) -> u16 {
 }
 
 /// The top and bottom composer lines. The left segment shows context
-/// occupancy; the rest follows the composer focus state.
-fn draw_input_border(
-    frame: &mut Frame,
-    row: Rect,
-    occupancy: Occupancy,
-    theme: Theme,
-    focused: bool,
-) {
+/// occupancy; the rest stays the plain rule so the fill is always visible.
+fn draw_input_border(frame: &mut Frame, row: Rect, occupancy: Occupancy, theme: Theme) {
     let colors = theme.colors();
     let width = row.width as usize;
-    let (segment, style) = if focused {
-        match occupancy {
-            Occupancy::Known { projected, window } if window > 0 => {
-                let percent = projected.saturating_mul(100) / window;
-                let color = if percent >= 95 {
-                    colors.error
-                } else if percent >= 80 {
-                    colors.warning
-                } else {
-                    colors.accent
-                };
-                let cells =
-                    ((width as u64).saturating_mul(projected.min(window)) / window) as usize;
-                (cells.min(width), Style::default().fg(color))
-            }
-            _ => (0, Style::default()),
+    let (segment, style) = match occupancy {
+        Occupancy::Known { projected, window } if window > 0 => {
+            let percent = projected.saturating_mul(100) / window;
+            let color = if percent >= 95 {
+                colors.error
+            } else if percent >= 80 {
+                colors.warning
+            } else {
+                colors.accent
+            };
+            let cells = ((width as u64).saturating_mul(projected.min(window)) / window) as usize;
+            (cells.min(width), Style::default().fg(color))
         }
-    } else {
-        (0, Style::default())
+        _ => (0, Style::default()),
     };
-    let rest_color = if focused { colors.accent } else { colors.rule };
     let mut spans = Vec::new();
     if segment > 0 {
         spans.push(Span::styled("─".repeat(segment), style));
@@ -2765,7 +2753,7 @@ fn draw_input_border(
     if segment < width {
         spans.push(Span::styled(
             "─".repeat(width - segment),
-            Style::default().fg(rest_color),
+            Style::default().fg(colors.rule),
         ));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), row);
@@ -2799,13 +2787,7 @@ fn draw_input(frame: &mut Frame, app: &mut App, area: Rect) {
         muted_style(app.theme)
     };
     if area.height >= 2 {
-        draw_input_border(
-            frame,
-            Rect { height: 1, ..area },
-            occupancy,
-            app.theme,
-            focused,
-        );
+        draw_input_border(frame, Rect { height: 1, ..area }, occupancy, app.theme);
         draw_input_border(
             frame,
             Rect {
@@ -2815,7 +2797,6 @@ fn draw_input(frame: &mut Frame, app: &mut App, area: Rect) {
             },
             occupancy,
             app.theme,
-            focused,
         );
     }
     let inner = Rect::new(
@@ -4637,7 +4618,7 @@ mod tests {
     }
 
     #[test]
-    fn the_composer_focus_changes_the_border_and_prompt_style() {
+    fn the_composer_focus_changes_the_prompt_style() {
         use nano_conversation::scene::FocusId;
 
         let mut app = app();
@@ -4652,7 +4633,8 @@ mod tests {
         let colors = *app.theme.colors();
         let focused_y = border_y(&focused);
         let blurred_y = border_y(&blurred);
-        assert_eq!(focused[(50, focused_y)].fg, colors.accent);
+        // The border stays the plain rule so the occupancy fill is visible.
+        assert_eq!(focused[(50, focused_y)].fg, colors.rule);
         assert_eq!(blurred[(50, blurred_y)].fg, colors.rule);
 
         let prompt_cell = |frame: &ratatui::buffer::Buffer, y: u16| {
@@ -4961,13 +4943,16 @@ mod tests {
         let accent = app.theme.colors().accent;
         let warning = app.theme.colors().warning;
         let error = app.theme.colors().error;
-        // A focused composer uses the focus color across the free border.
-        assert!(colors.iter().all(|(_, color)| *color == accent));
+        let rule = app.theme.colors().rule;
+        // An unknown occupancy leaves the whole border plain.
+        assert!(colors.iter().all(|(_, color)| *color == rule));
 
         app.context = Some(meter(50, 100));
-        assert!(border_colors(&mut app)
-            .iter()
-            .all(|(_, color)| *color == accent));
+        let half = border_colors(&mut app);
+        let filled = half.iter().filter(|(_, color)| *color == accent).count();
+        let free = half.iter().filter(|(_, color)| *color == rule).count();
+        assert!(filled > 40, "filled half: {half:?}");
+        assert!(free > 40, "free half: {half:?}");
 
         app.context = Some(meter(80, 100));
         assert!(border_colors(&mut app)
@@ -4980,7 +4965,7 @@ mod tests {
 
         use nano_conversation::scene::FocusId;
         app.scene.focus_mut().reset(FocusId::queue());
-        let rule = app.theme.colors().rule;
+        app.context = None;
         assert!(border_colors(&mut app)
             .iter()
             .all(|(_, color)| *color == rule));
@@ -5158,7 +5143,7 @@ mod tests {
                 Color::Reset,
                 "ordinary frame background stays Reset at ({x},{y}): {cell:?}"
             );
-            if cell.symbol() == "─" && cell.fg == Theme::Light.colors().accent {
+            if cell.symbol() == ">" && cell.fg == Theme::Light.colors().accent {
                 saw_focus = true;
             }
             skip = cell
@@ -5169,7 +5154,7 @@ mod tests {
                 .unwrap_or(0)
                 .saturating_sub(1);
         }
-        assert!(saw_focus, "composer border uses the light accent role");
+        assert!(saw_focus, "composer prompt uses the light accent role");
     }
 
     #[test]
@@ -6693,17 +6678,26 @@ mod tests {
             "model-xhigh-60-dark-1050" => {
                 Some((evidence_sweep_fixture(app(), 1050), 60, 30, false))
             }
-            "process-collapsed-100-dark" => {
-                Some((evidence_process_display(app(), false), 100, 36, false))
-            }
-            "process-collapsed-60-light" => {
-                Some((evidence_process_display(light(), false), 60, 30, false))
-            }
-            "process-collapsed-100-light" => {
-                Some((evidence_process_display(light(), false), 100, 36, false))
-            }
+            "process-collapsed-100-dark" => Some((
+                evidence_process_display(app(), false, false),
+                100,
+                36,
+                false,
+            )),
+            "process-collapsed-60-light" => Some((
+                evidence_process_display(light(), false, false),
+                60,
+                30,
+                false,
+            )),
+            "process-collapsed-100-light" => Some((
+                evidence_process_display(light(), false, false),
+                100,
+                36,
+                false,
+            )),
             "process-collapsed-60-dark" => {
-                Some((evidence_process_display(app(), false), 60, 30, false))
+                Some((evidence_process_display(app(), false, false), 60, 30, false))
             }
             "process-expanded-100-dark" => {
                 Some((evidence_process_group_expanded(app()), 100, 36, false))
@@ -6717,6 +6711,15 @@ mod tests {
             "process-expanded-60-dark" => {
                 Some((evidence_process_group_expanded(app()), 60, 30, false))
             }
+            "process-thinking-expanded-100-dark" => {
+                Some((evidence_process_display(app(), false, true), 100, 36, false))
+            }
+            "process-thinking-expanded-60-light" => Some((
+                evidence_process_display(light(), false, true),
+                60,
+                30,
+                false,
+            )),
             _ => None,
         }
     }
@@ -6803,7 +6806,7 @@ mod tests {
     /// Deterministic process-display scene: grouped reads/searches, one
     /// successful Bash card, one failed read that splits the run, and a live
     /// thinking stream with its body.
-    fn evidence_process_display(mut app: App, expanded: bool) -> App {
+    fn evidence_process_display(mut app: App, expanded: bool, thinking_expanded: bool) -> App {
         app.model.apply_event(
             "session.event",
             &serde_json::json!({
@@ -6934,6 +6937,10 @@ mod tests {
         );
         if expanded {
             app.view.reveal("call-c-1");
+            app.transcript_dirty = true;
+        }
+        if thinking_expanded {
+            app.view.reveal("preview-a-1");
             app.transcript_dirty = true;
         }
         stream_event(

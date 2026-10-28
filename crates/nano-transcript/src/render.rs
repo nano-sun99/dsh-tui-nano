@@ -591,7 +591,14 @@ fn render_entry(entry: &Entry, width: usize, expanded: bool, theme: Theme) -> Re
             }
         }
         EntryKind::Tool(record) => render_tool(&mut output, record, width, expanded, theme),
-        EntryKind::Preview(preview) => render_preview(&mut output, preview, width, theme),
+        EntryKind::Preview(preview) => render_preview(
+            &mut output,
+            &entry.identity,
+            preview,
+            width,
+            expanded,
+            theme,
+        ),
         EntryKind::Echo { text, state } => render_echo(&mut output, width, text, state, theme),
     }
     output
@@ -1341,7 +1348,14 @@ enum DiffRow {
     Separator(String),
 }
 
-fn render_preview(output: &mut RenderedEntry, preview: &PreviewEntry, width: usize, theme: Theme) {
+fn render_preview(
+    output: &mut RenderedEntry,
+    identity: &str,
+    preview: &PreviewEntry,
+    width: usize,
+    expanded: bool,
+    theme: Theme,
+) {
     let (status, status_style) = if let Some(outcome) = preview.outcome {
         match outcome {
             PreviewOutcome::Committed => ("▸ 回答已提交", muted(theme)),
@@ -1374,21 +1388,28 @@ fn render_preview(output: &mut RenderedEntry, preview: &PreviewEntry, width: usi
         } else {
             "进行中…"
         };
+        let marker = if expanded { "▾" } else { "▸" };
+        let hit = Some(Hit {
+            identity: identity.to_string(),
+            kind: HitKind::Toggle,
+        });
         output.lines.push(Line::from(vec![
-            Span::styled(format!("▸ 思考 {state}"), muted(theme)),
+            Span::styled(format!("{marker} 思考 {state}"), muted(theme)),
             Span::styled(timing, muted(theme)),
         ]));
-        output.hits.push(None);
-        for row in wrap_block(
-            &preview.reasoning,
-            width.saturating_sub(spacing::INDENT).max(1),
-            MAX_BLOCK_ROWS,
-        ) {
-            output.lines.push(Line::from(Span::styled(
-                format!("{}{row}", " ".repeat(spacing::INDENT)),
-                muted(theme),
-            )));
-            output.hits.push(None);
+        output.hits.push(hit.clone());
+        if expanded {
+            for row in wrap_block(
+                &preview.reasoning,
+                width.saturating_sub(spacing::INDENT).max(1),
+                MAX_BLOCK_ROWS,
+            ) {
+                output.lines.push(Line::from(Span::styled(
+                    format!("{}{row}", " ".repeat(spacing::INDENT)),
+                    muted(theme),
+                )));
+                output.hits.push(hit.clone());
+            }
         }
     }
     let text_rows = wrap_block(&preview.text, width, MAX_BLOCK_ROWS);
@@ -3038,34 +3059,44 @@ mod tests {
     }
 
     #[test]
-    fn preview_shows_thinking_body_then_one_gap_before_the_answer() {
-        let entries = vec![preview_entry_with_thinking("流式正文", "先想想")];
-        let rows = render_model_lines(entries, 100);
-        let thinking = rows
-            .iter()
-            .position(|row| row.contains("思考 进行中"))
-            .expect("preview thinking");
+    fn preview_thinking_starts_collapsed_and_expands_to_its_body() {
+        let entry = preview_entry_with_thinking("流式正文", "先想想");
+        let collapsed = plain(&render_one(entry.clone(), false, 100));
         assert!(
-            rows[thinking + 1].starts_with("  先想想"),
-            "thinking body follows its header: {rows:?}"
+            collapsed.iter().any(|row| row.contains("▸ 思考 进行中")),
+            "{collapsed:?}"
         );
-        let text = rows
+        assert!(
+            !collapsed.iter().any(|row| row.contains("先想想")),
+            "thinking body stays hidden until clicked: {collapsed:?}"
+        );
+
+        let expanded = plain(&render_one(entry, true, 100));
+        let thinking = expanded
+            .iter()
+            .position(|row| row.contains("▾ 思考 进行中"))
+            .expect("expanded thinking header");
+        assert!(
+            expanded[thinking + 1].starts_with("  先想想"),
+            "thinking body follows its header: {expanded:?}"
+        );
+        let text = expanded
             .iter()
             .position(|row| row.contains("流式正文"))
             .expect("preview text");
         assert_eq!(
             thinking + 3,
             text,
-            "one gap between the thinking body and the answer: {rows:?}"
+            "one gap between the thinking body and the answer: {expanded:?}"
         );
-        let tool = rows
+        let tool = expanded
             .iter()
             .position(|row| row.contains("参数完成"))
             .expect("preview tool line");
         assert_eq!(
             text + 1,
             tool,
-            "preview tool lines stay tight after the text: {rows:?}"
+            "preview tool lines stay tight after the text: {expanded:?}"
         );
     }
 
@@ -4314,7 +4345,7 @@ mod tests {
     }
 
     #[test]
-    fn settled_thinking_never_renders_and_live_thinking_shows_its_body() {
+    fn settled_thinking_never_renders_and_live_thinking_starts_collapsed() {
         let answered = render_one(assistant_entry("a-1", "答案", "先想想"), false, 80);
         assert!(!plain(&answered).iter().any(|row| row.contains("思考")));
 
@@ -4325,13 +4356,20 @@ mod tests {
             plain(&only_thinking)
         );
 
-        let live = plain(&render_one(
+        let live = render_one(preview_entry_with_thinking("", "先想想"), false, 80);
+        let rows = plain(&live);
+        assert!(rows.iter().any(|row| row.contains("▸ 思考 进行中")));
+        assert!(!rows.iter().any(|row| row.contains("先想想")), "{rows:?}");
+        let toggle = live.hits[1].as_ref().expect("thinking row hit");
+        assert_eq!(toggle.identity, "preview-1");
+        assert_eq!(toggle.kind, HitKind::Toggle);
+
+        let expanded = plain(&render_one(
             preview_entry_with_thinking("", "先想想"),
-            false,
+            true,
             80,
         ));
-        assert!(live.iter().any(|row| row.contains("思考 进行中")));
-        assert!(live.iter().any(|row| row.starts_with("  先想想")));
+        assert!(expanded.iter().any(|row| row.starts_with("  先想想")));
 
         let empty = plain(&render_one(
             preview_entry_with_thinking("正文", ""),

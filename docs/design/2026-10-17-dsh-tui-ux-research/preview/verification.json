@@ -61,7 +61,15 @@
       "passed": true
     },
     {
-      "check": "running state shows live thinking text without a completed thinking row",
+      "check": "running thinking starts collapsed",
+      "passed": true
+    },
+    {
+      "check": "clicking the thinking row expands its body",
+      "passed": true
+    },
+    {
+      "check": "clicking the thinking row again collapses its body",
       "passed": true
     },
     {
