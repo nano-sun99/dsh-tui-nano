@@ -4397,6 +4397,52 @@ mod tests {
     }
 
     #[test]
+    fn the_thinking_hit_toggles_the_real_preview_entry() {
+        let mut model = model(vec![preview_entry_with_thinking("", "先想想")]);
+        let mut cache = RenderCache::new();
+        let mut scroll = ScrollState::default();
+        let collapsed = render(&model, &mut cache, &mut scroll, 80, 40, Theme::Dark);
+        let rows: Vec<String> = collapsed.lines.iter().map(ToString::to_string).collect();
+        assert!(!rows.iter().any(|row| row.contains("先想想")), "{rows:?}");
+        let hit = collapsed
+            .hits
+            .iter()
+            .flatten()
+            .find(|hit| hit.kind == HitKind::Toggle)
+            .expect("thinking hit");
+        assert_eq!(hit.identity, "preview-1");
+        assert!(model.toggle(&hit.identity));
+        let expanded = render(&model, &mut cache, &mut scroll, 80, 40, Theme::Dark);
+        let rows: Vec<String> = expanded.lines.iter().map(ToString::to_string).collect();
+        assert!(
+            rows.iter().any(|row| row.starts_with("  先想想")),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn abandoned_and_unknown_previews_still_expand_their_thinking() {
+        for outcome in [PreviewOutcome::Abandoned, PreviewOutcome::Unknown] {
+            let mut entry = finished_preview(outcome);
+            let EntryKind::Preview(preview) = &mut entry.kind else {
+                unreachable!("preview entry");
+            };
+            preview.reasoning = "先想想".into();
+            preview.reasoning_ms = Some(1_200);
+            let collapsed = plain(&render_one(entry.clone(), false, 80));
+            assert!(
+                !collapsed.iter().any(|row| row.contains("先想想")),
+                "{outcome:?}: {collapsed:?}"
+            );
+            let expanded = plain(&render_one(entry, true, 80));
+            assert!(
+                expanded.iter().any(|row| row.starts_with("  先想想")),
+                "{outcome:?}: {expanded:?}"
+            );
+        }
+    }
+
+    #[test]
     fn an_expanded_group_wraps_a_long_target() {
         let long = "crates/nano-transcript/src/a-very-long-directory-name/another/deep/module.rs";
         let entries = vec![

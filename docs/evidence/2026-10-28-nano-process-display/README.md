@@ -2,7 +2,7 @@
 
 - 规格：`docs/specs/2026-10-28-nano-process-display/README.md`
 - 生成：`python3 scripts/pty-evidence-input-preview.py process-display`
-- 构建：worktree `.claude/worktrees/issue-79`（`issue-79`），基线 `aeb343a`，`target/debug/nano` 测试二进制
+- 构建：worktree `.claude/worktrees/ctx-think`（`fix/context-thinking`），基线 `be58b4c`，`target/debug/nano` 测试二进制
 - 终端：tmux PTY（`TERM=xterm-256color`），100×36 与 60×30；Dark 默认主题，Light 用 `NANO_THEME=light`
 - 数据：确定性 `evidence_frame` fixture，不是账号真实会话，也不产生模型费用
 
@@ -42,6 +42,8 @@
 |---|---|
 | 09-thinking-expanded-pty-100-dark.txt | 100 列 dark：流式思考标题 + 展开正文 |
 | 10-thinking-expanded-pty-60-light.txt | 60 列 light，同一形状 |
+| 11-thinking-expanded-pty-100-light.txt | 100 列 light，同一形状 |
+| 12-thinking-expanded-pty-60-dark.txt | 60 列 dark，同一形状 |
 
 实测：默认只有 `▸ 思考 进行中… · 用时` 一行；展开后标题变 `▾`，正文 muted、缩进 2ch，下方仍保留与正文之间的 1 行间距。
 

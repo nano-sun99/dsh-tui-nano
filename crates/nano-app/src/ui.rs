@@ -4936,6 +4936,62 @@ mod tests {
             .collect()
     }
 
+    fn border_rows(app: &mut App) -> Vec<Vec<Color>> {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+        let width = 100;
+        let height = 30;
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal.draw(|frame| draw(frame, app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        (0..height)
+            .filter(|y| (2..98).all(|x| buffer[(x, *y)].symbol() == "─"))
+            .map(|y| (2..98).map(|x| buffer[(x, y)].fg).collect())
+            .collect()
+    }
+
+    #[test]
+    fn the_context_bar_keeps_fill_and_rest_distinct_at_boundaries() {
+        let mut app = app();
+        let colors = *app.theme.colors();
+        for projected in [0u64, 1] {
+            app.context = Some(meter(projected, 100));
+            let row = border_colors(&mut app);
+            assert!(
+                row.iter().all(|(_, color)| *color == colors.rule),
+                "{projected}% has no fill: {row:?}"
+            );
+        }
+        for (projected, expected) in [
+            (79u64, colors.accent),
+            (80, colors.warning),
+            (94, colors.warning),
+            (95, colors.error),
+        ] {
+            app.context = Some(meter(projected, 100));
+            let row = border_colors(&mut app);
+            let first = row.iter().position(|(_, color)| *color == expected);
+            assert_eq!(
+                first,
+                Some(0),
+                "{projected}% fill starts at the left: {row:?}"
+            );
+            assert!(
+                row.iter().any(|(_, color)| *color == colors.rule),
+                "{projected}% keeps the rest distinct: {row:?}"
+            );
+        }
+        app.context = Some(meter(100, 100));
+        let full = border_colors(&mut app);
+        assert!(full.iter().all(|(_, color)| *color == colors.error));
+
+        app.context = Some(meter(50, 100));
+        let rows = border_rows(&mut app);
+        assert!(rows.len() >= 2, "top and bottom borders: {rows:?}");
+        assert_eq!(rows[0], rows[1], "both composer borders match");
+    }
+
     #[test]
     fn the_context_line_uses_accent_warning_error_and_a_plain_unknown_border() {
         let mut app = app();
@@ -6386,6 +6442,41 @@ mod tests {
         );
     }
 
+    /// Thinking-expanded evidence lives outside the large scenario match so
+    /// its extra App temporaries do not grow that function's stack frame.
+    fn evidence_thinking_scenario(name: &str) -> Option<(App, u16, u16, bool)> {
+        let light = || {
+            App::with_theme(
+                crate::cli::Cli::default(),
+                "root".to_string(),
+                false,
+                Theme::Light,
+            )
+        };
+        match name {
+            "process-thinking-expanded-100-dark" => {
+                Some((evidence_process_thinking(app()), 100, 36, false))
+            }
+            "process-thinking-expanded-60-light" => {
+                Some((evidence_process_thinking(light()), 60, 30, false))
+            }
+            "process-thinking-expanded-100-light" => {
+                Some((evidence_process_thinking(light()), 100, 36, false))
+            }
+            "process-thinking-expanded-60-dark" => {
+                Some((evidence_process_thinking(app()), 60, 30, false))
+            }
+            _ => None,
+        }
+    }
+
+    fn evidence_process_thinking(mut app: App) -> App {
+        let mut app = evidence_process_display(app, false);
+        app.view.reveal("preview-a-1");
+        app.transcript_dirty = true;
+        app
+    }
+
     /// Evidence-only renderer. It draws a synthetic state through the real
     /// `draw` path and prints the buffer as ANSI so a PTY capture can archive
     /// deterministic frames (including states a live host rarely reaches).
@@ -6395,7 +6486,9 @@ mod tests {
     #[ignore = "evidence frame renderer; run with NANO_EVIDENCE_SCENARIO"]
     fn evidence_frame() {
         let scenario = std::env::var("NANO_EVIDENCE_SCENARIO").unwrap_or_default();
-        let Some((mut app, width, height, show_cursor)) = evidence_scenario(&scenario) else {
+        let Some((mut app, width, height, show_cursor)) =
+            evidence_thinking_scenario(&scenario).or_else(|| evidence_scenario(&scenario))
+        else {
             panic!("unknown evidence scenario: {scenario}");
         };
         use ratatui::backend::{Backend, TestBackend};
@@ -6678,26 +6771,17 @@ mod tests {
             "model-xhigh-60-dark-1050" => {
                 Some((evidence_sweep_fixture(app(), 1050), 60, 30, false))
             }
-            "process-collapsed-100-dark" => Some((
-                evidence_process_display(app(), false, false),
-                100,
-                36,
-                false,
-            )),
-            "process-collapsed-60-light" => Some((
-                evidence_process_display(light(), false, false),
-                60,
-                30,
-                false,
-            )),
-            "process-collapsed-100-light" => Some((
-                evidence_process_display(light(), false, false),
-                100,
-                36,
-                false,
-            )),
+            "process-collapsed-100-dark" => {
+                Some((evidence_process_display(app(), false), 100, 36, false))
+            }
+            "process-collapsed-60-light" => {
+                Some((evidence_process_display(light(), false), 60, 30, false))
+            }
+            "process-collapsed-100-light" => {
+                Some((evidence_process_display(light(), false), 100, 36, false))
+            }
             "process-collapsed-60-dark" => {
-                Some((evidence_process_display(app(), false, false), 60, 30, false))
+                Some((evidence_process_display(app(), false), 60, 30, false))
             }
             "process-expanded-100-dark" => {
                 Some((evidence_process_group_expanded(app()), 100, 36, false))
@@ -6711,15 +6795,6 @@ mod tests {
             "process-expanded-60-dark" => {
                 Some((evidence_process_group_expanded(app()), 60, 30, false))
             }
-            "process-thinking-expanded-100-dark" => {
-                Some((evidence_process_display(app(), false, true), 100, 36, false))
-            }
-            "process-thinking-expanded-60-light" => Some((
-                evidence_process_display(light(), false, true),
-                60,
-                30,
-                false,
-            )),
             _ => None,
         }
     }
@@ -6806,7 +6881,7 @@ mod tests {
     /// Deterministic process-display scene: grouped reads/searches, one
     /// successful Bash card, one failed read that splits the run, and a live
     /// thinking stream with its body.
-    fn evidence_process_display(mut app: App, expanded: bool, thinking_expanded: bool) -> App {
+    fn evidence_process_display(mut app: App, expanded: bool) -> App {
         app.model.apply_event(
             "session.event",
             &serde_json::json!({
@@ -6937,10 +7012,6 @@ mod tests {
         );
         if expanded {
             app.view.reveal("call-c-1");
-            app.transcript_dirty = true;
-        }
-        if thinking_expanded {
-            app.view.reveal("preview-a-1");
             app.transcript_dirty = true;
         }
         stream_event(
