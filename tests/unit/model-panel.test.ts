@@ -1,6 +1,6 @@
 /** /model 面板：默认档、扫光、Max 脉冲、减少动效、应用/取消。 */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ModelPanel } from '../../src/controls/model-panel.ts'
 import type { Key } from '../../src/input/parser.ts'
 
@@ -17,13 +17,13 @@ function key(name: Key['name'], extra: Partial<Key> = {}): Key {
   } as Key
 }
 
-function fakeConversation() {
+function fakeConversation(modelName = 'M1') {
   const calls: Array<{ provider: string; model: string; effort?: string }> = []
   return {
     calls,
     modelSelection: { provider: 'p', model: 'm1' },
     listModels: async () => [
-      { id: 'm1', name: 'M1' },
+      { id: 'm1', name: modelName },
       { id: 'm2', name: 'M2' },
     ],
     resolveModelMeta: async (_provider: string, model: string) =>
@@ -53,8 +53,54 @@ function colors(json: string): Array<[number, number, number]> {
   return out
 }
 
-async function open(notices: string[] = []) {
-  const conversation = fakeConversation()
+interface Span {
+  readonly color: [number, number, number]
+  readonly text: string
+}
+
+/** Flatten every colored text run in the rendered element tree. */
+function spans(node: any): Span[] {
+  const out: Span[] = []
+  const visit = (value: any): void => {
+    if (!value || typeof value !== 'object') return
+    const children = value.props?.children
+    const text = Array.isArray(children)
+      ? children.filter((child: unknown) => typeof child === 'string').join('')
+      : typeof children === 'string'
+        ? children
+        : ''
+    if (text !== '' && Array.isArray(value.props?.color)) {
+      out.push({ color: value.props.color, text })
+    }
+    if (Array.isArray(children)) children.forEach(visit)
+    else if (children && typeof children === 'object') visit(children)
+  }
+  visit(node)
+  return out
+}
+
+/** Per-cell colors of the effort bar (fill first, then the rule track). */
+function barColors(panel: ModelPanel, width = 100): Array<[number, number, number]> {
+  return spans(panel.render(width))
+    .filter((span) => /^█+$/u.test(span.text))
+    .flatMap((span) => Array.from({ length: span.text.length }, () => span.color))
+}
+
+function brightestFraction(cells: Array<[number, number, number]>, limit: number): number {
+  let best = -1
+  let index = 0
+  cells.slice(0, limit).forEach(([r, g, b], at) => {
+    const value = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    if (value > best) {
+      best = value
+      index = at
+    }
+  })
+  return index / Math.max(1, limit - 1)
+}
+
+async function open(notices: string[] = [], modelName = 'M1') {
+  const conversation = fakeConversation(modelName)
   const panel = new ModelPanel({
     conversation: conversation as never,
     onChange: () => {},
@@ -68,6 +114,8 @@ async function open(notices: string[] = []) {
 
 afterEach(() => {
   delete process.env.NANO_REDUCED_MOTION
+  vi.clearAllTimers()
+  vi.useRealTimers()
 })
 
 describe('/model panel', () => {
@@ -91,6 +139,38 @@ describe('/model panel', () => {
     const values = colors(JSON.stringify(panel.render(100)))
     expect(values.some(([r, g, b]) => r === 93 && g === 127 && b === 173)).toBe(true)
     expect(values.some(([r, g, b]) => r > 130 && g > 160 && b > 200)).toBe(true)
+    panel.handleKey(key('escape'))
+  })
+
+  it('扫光按设计稿 1.4s 周期：0.72s 后离开填充区、1.4s 从左缘重播', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(0)
+    const { panel } = await open()
+    panel.handleKey(key('right'))
+    panel.handleKey(key('right'))
+    panel.handleKey(key('right')) // Off → Low → High
+    const fill = 64 // 100 列内容宽 96，High 占 2/3
+
+    expect(brightestFraction(barColors(panel), fill)).toBeLessThanOrEqual(0.1)
+    vi.setSystemTime(600)
+    expect(brightestFraction(barColors(panel), fill)).toBeGreaterThanOrEqual(0.9)
+    vi.setSystemTime(800)
+    expect(
+      barColors(panel)
+        .slice(0, fill)
+        .every(([r, g, b]) => r === 93 && g === 127 && b === 173),
+    ).toBe(true)
+    vi.setSystemTime(1400)
+    expect(brightestFraction(barColors(panel), fill)).toBeLessThanOrEqual(0.1)
+
+    panel.handleKey(key('escape'))
+  })
+
+  it('60 列头部摘要不被提前截断', async () => {
+    const { panel } = await open([], 'DeepSeek-V4.1-Flash')
+    const summary = spans(panel.render(60)).find((span) => span.text.startsWith('当前：'))
+    expect(summary?.text).toContain('默认（模型默认：High）')
+    expect(summary?.text).not.toContain('…')
     panel.handleKey(key('escape'))
   })
 

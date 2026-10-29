@@ -46,6 +46,15 @@ const SWEEP_HIGHLIGHT: Rgb = [155, 184, 223]
 const MAX_BRIGHT: Rgb = [74, 129, 216]
 const MAX_LABEL = [111, 156, 221] as Rgb
 const TICK_MS = 50
+/**
+ * 设计稿扫光：1.4s 线性循环，`background-size:220%`、`background-position`
+ * 从 100% 走到 -120%。换到填充区坐标，高光中心从 -0.1 个填充宽走到 2.54 个，
+ * 高光带半宽 26.4%。中心离开填充区后自然形成约 0.68s 的空窗，再从左缘重播。
+ */
+const SWEEP_PERIOD_MS = 1400
+const SWEEP_START = -0.1
+const SWEEP_TRAVEL = 2.64
+const SWEEP_RADIUS = 0.264
 
 function mix(a: Rgb, b: Rgb, amount: number): Rgb {
   const t = Math.max(0, Math.min(1, amount))
@@ -270,9 +279,10 @@ export class ModelPanel {
       if (this.maxActive) return BASE.max!
     }
     if (this.sweepActive) {
-      const radius = Math.max(2, fillWidth * 0.25)
-      // 从填充区左边缘起播、到右边缘回绕：起播即可见，周期末无空窗。
-      const center = this.phase(1400) * fillWidth
+      const radius = Math.max(2, fillWidth * SWEEP_RADIUS)
+      const elapsed = Date.now() - this.phaseStart
+      const phase = ((elapsed % SWEEP_PERIOD_MS) + SWEEP_PERIOD_MS) % SWEEP_PERIOD_MS
+      const center = (SWEEP_START + SWEEP_TRAVEL * (phase / SWEEP_PERIOD_MS)) * fillWidth
       const intensity = Math.max(0, 1 - Math.abs(index - center) / radius)
       return mix(SWEEP_BASE, SWEEP_HIGHLIGHT, intensity)
     }
@@ -365,13 +375,17 @@ export class ModelPanel {
     const barWidth = Math.max(1, width - EDGE * 2)
     const summary = `当前：${this.focus?.name ?? ''} · ${this.effortLabel()}`
     const lines: Array<ReturnType<typeof createElement>> = [
-      createElement(Text, { color: theme.accent }, `  ${'─'.repeat(barWidth)}`),
+      createElement(
+        Box,
+        { flexDirection: 'row', paddingX: EDGE, width },
+        createElement(Text, { color: theme.accent }, '─'.repeat(barWidth)),
+      ),
       createElement(
         Box,
         { flexDirection: 'row', paddingX: EDGE, width },
         createElement(Text, { color: theme.accent, bold: true }, '模型'),
         createElement(Box, { flexGrow: 1 }),
-        createElement(Text, { color: theme.muted }, truncate(summary, Math.max(10, barWidth - 8))),
+        createElement(Text, { color: theme.muted }, truncate(summary, Math.max(10, barWidth - 4))),
       ),
     ]
     const visible = this.entries.slice(0, 8)
@@ -379,17 +393,33 @@ export class ModelPanel {
       const selected = index === this.modelIndex
       lines.push(
         createElement(
-          Text,
-          { ...(selected ? { color: theme.accent, bold: true } : {}) },
-          `  ${selected ? '▶ ' : '  '}${truncate(entry.name, Math.max(8, barWidth - 4))}`,
+          Box,
+          { flexDirection: 'row', paddingX: EDGE, width },
+          createElement(
+            Text,
+            { ...(selected ? { color: theme.accent, bold: true } : {}) },
+            `${selected ? '▶ ' : '  '}${truncate(entry.name, Math.max(8, barWidth - 4))}`,
+          ),
         ),
       )
     })
     if (this.levels.length === 0) {
       const text = this.focus?.error ? '强度：—' : '强度：该模型未声明（不可调）'
-      lines.push(createElement(Text, { color: theme.muted }, `  ${text}`))
+      lines.push(
+        createElement(
+          Box,
+          { flexDirection: 'row', paddingX: EDGE, width },
+          createElement(Text, { color: theme.muted }, text),
+        ),
+      )
     } else {
-      lines.push(createElement(Text, { color: theme.rule }, `  ${'─'.repeat(barWidth)}`))
+      lines.push(
+        createElement(
+          Box,
+          { flexDirection: 'row', paddingX: EDGE, width },
+          createElement(Text, { color: theme.rule }, '─'.repeat(barWidth)),
+        ),
+      )
       const percent =
         this.effortIndex === 0
           ? 0

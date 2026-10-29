@@ -3,6 +3,7 @@
 // 不需要开窗口。
 import stringWidth from 'string-width'
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI ESC is the intended input.
 const CSI = /\x1b\[([0-9;?<>]*)([A-Za-z])/y
 
 export class Screen {
