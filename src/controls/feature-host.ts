@@ -77,6 +77,17 @@ export class Features implements FeatureHost {
     this.schedule = schedule
     await schedule.mount()
 
+    // 能力快照（spec §2.5）：β 必需项缺一即启动失败并点名。
+    const missing: string[] = []
+    if (!ctx.get('terminalController')) missing.push('terminalController')
+    if (typeof ctx.get('sessionController')?.resolveAgent !== 'function') {
+      missing.push('sessionController.resolveAgent')
+    }
+    if (!ctx.get('schedule')) missing.push('schedule')
+    if (missing.length > 0) {
+      throw new Error(`nano: 能力快照失败，缺少：${missing.join('、')}`)
+    }
+
     // 4) 终端面板：只用官方 terminalController。
     const pane = new TerminalPane({
       ctx,
@@ -156,6 +167,10 @@ export class Features implements FeatureHost {
     // 带图片引用时 Enter 走附件链：持久化 + 官方准入后再提交。
     if (key.name === 'enter' && !key.shift && !key.ctrl && !key.alt) {
       const text = this.context?.input.text ?? ''
+      if (text.trimStart().startsWith('/')) {
+        void this.runSlashCommand(text)
+        return true
+      }
       const bash = parseBashInput(text)
       if (bash) {
         void this.runManualCommand(bash.command, bash.inject)
@@ -167,6 +182,44 @@ export class Features implements FeatureHost {
       }
     }
     return false
+  }
+
+  /**
+   * `/` 命令：只检索与转发官方命令（含 `/permission <preset>`、`/compact`）。
+   * 同名时命令优先于技能；未知 `/name` 按普通消息发送并标「未注入」。
+   */
+  private async runSlashCommand(text: string): Promise<void> {
+    const context = this.context
+    if (!context) return
+    const model = context.conversation.model
+    const agent = context.conversation.agent
+    const commands = context.core.ctx.get('commands')
+    const name = (text.trim().slice(1).split(/\s+/u)[0] ?? '').toLowerCase()
+    context.input.take()
+    context.requestRender()
+    const definition = agent && commands ? commands.find(agent, name) : undefined
+    if (!definition) {
+      model.appendNotice(`未知命令 /${name}：按普通消息发送（未注入命令）`, 'warning')
+      try {
+        context.conversation.submit(text)
+      } catch (error) {
+        model.appendNotice(`发送失败：${String((error as Error)?.message ?? error)}`, 'danger')
+      }
+      context.requestRender()
+      return
+    }
+    try {
+      const execution = await commands.execute(agent, text, [], new AbortController().signal)
+      const result = execution?.result
+      if (result?.kind === 'success') {
+        if (result.text) model.appendNotice(result.text, 'info')
+      } else if (result?.kind === 'error') {
+        model.appendNotice(`命令失败：${result.text}`, 'danger')
+      }
+    } catch (error) {
+      model.appendNotice(`命令失败：${String((error as Error)?.message ?? error)}`, 'danger')
+    }
+    context.requestRender()
   }
 
   /**
