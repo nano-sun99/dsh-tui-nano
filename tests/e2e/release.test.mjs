@@ -12,6 +12,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs'
 import os from 'node:os'
@@ -149,25 +150,24 @@ function runNano(prefix, args, env) {
 }
 
 /** 用 Python 开真 PTY 跑一次启动冒烟（macOS 的 `script` 不接受非 TTY stdin）。 */
-function startInPty(prefix, env, { waitMs = 7000, nodeBin: extraNode } = {}) {
+function startInPty(prefix, env, { waitMs = 7000, nodeBin: extraNode, until } = {}) {
   const out = path.join(tempDir('nano-e2e-pty'), 'screen.bin')
   // bin 的 shebang 是 `#!/usr/bin/env node`；把指定 Node 放到 PATH 最前即可换运行时。
   const extraEnv = extraNode ? { PATH: `${path.dirname(extraNode)}:${process.env.PATH}` } : {}
-  const result = run(
-    'python3',
-    [
-      'tests/e2e/pty-start.py',
-      '--out',
-      out,
-      '--wait',
-      String(waitMs / 1000),
-      '--',
-      nanoBin(prefix),
-      '--root',
-      'e2e-root',
-    ],
-    { env: baseEnv({ ...env, ...extraEnv }), cwd: repoRoot },
-  )
+  const args = [
+    'tests/e2e/pty-start.py',
+    '--out',
+    out,
+    '--wait',
+    String(waitMs / 1000),
+    '--rows',
+    '30',
+    '--cols',
+    '100',
+  ]
+  if (until) args.push('--until', until)
+  args.push('--', nanoBin(prefix), '--root', 'e2e-root')
+  const result = run('python3', args, { env: baseEnv({ ...env, ...extraEnv }), cwd: repoRoot })
   assert.equal(result.status, 0, `pty-start.py 失败：${result.stderr}`)
   const code = Number.parseInt(result.stdout.trim().split('\n').at(-1) ?? '', 10)
   let output = ''
@@ -292,7 +292,7 @@ test('purge --yes 删除数据根', () => {
 
 test('启动冒烟：真 PTY 下起骨架并干净退出，$DSH_HOME 只允许官方标识变化', () => {
   const before = hashTree(ctx.dshHome)
-  const { code, output } = startInPty(ctx.prefix, ctx.env)
+  const { code, output } = startInPty(ctx.prefix, ctx.env, { until: '输入消息' })
   const after = hashTree(ctx.dshHome)
   const added = Object.keys(after).filter((key) => !(key in before))
   const changed = Object.keys(after).filter((key) => key in before && after[key] !== before[key])
@@ -328,9 +328,39 @@ test('强杀残留：陈旧挂载锁让下次启动提示 reset', () => {
   mkdirSync(mountDir, { recursive: true })
   // 999999 是不存在的 pid：等价于上次进程被 SIGKILL 后留下的锁（锁文件是 JSON）。
   writeFileSync(path.join(mountDir, 'e2e-root.lock'), JSON.stringify({ pid: 999999 }))
-  const { code, output } = startInPty(ctx.prefix, ctx.env)
+  const { code, output } = startInPty(ctx.prefix, ctx.env, { until: '输入消息' })
   assert.match(output, /reset/, '启动应在界面提示 reset')
   assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
+})
+
+test('骨架后核心加载失败：恢复终端、可见错误、退出 1', () => {
+  const pkgDir = path.join(ctx.prefix, 'lib', 'node_modules', 'dsh-tui-nano')
+  const assemble = path.join(pkgDir, 'dist', 'boot', 'assemble.js')
+  const real = path.join(pkgDir, 'dist', 'boot', 'assemble.real.js')
+  const original = readFileSync(assemble, 'utf8')
+  try {
+    // 让 startCore 在骨架画出来之后再失败（main.ts 的 catch 路径）。
+    writeFileSync(real, original)
+    writeFileSync(
+      assemble,
+      [
+        "export * from './assemble.real.js'",
+        'export async function startCore() {',
+        '  await new Promise((resolve) => setTimeout(resolve, 600))',
+        "  throw new Error('injected core boot failure')",
+        '}',
+        '',
+      ].join('\n'),
+    )
+    const { code, output } = startInPty(ctx.prefix, ctx.env)
+    assert.equal(code, 1, `应退出 1，实际 ${code}\n${output.slice(-1500)}`)
+    assert.match(output, /正在启动官方核心/, '应先出现 pre-boot 骨架')
+    assert.match(output, /injected core boot failure/, '应在终端留下可见错误')
+  } finally {
+    writeFileSync(assemble, original)
+    rmSync(real, { force: true })
+  }
+  assert.equal(readFileSync(assemble, 'utf8'), original, '安装前缀必须恢复原状')
 })
 
 // 本机没有对应 Node 时跳过；发布证据运行会显式设置这两个变量。
@@ -353,7 +383,7 @@ test('Node 22.19（下限）里能启动', { skip: node22 ? false : '未设置 N
     { env: baseEnv() },
   )
   assert.equal(resolved.stdout.trim(), '22.19.0')
-  const { code, output } = startInPty(ctx.prefix, ctx.env, { nodeBin: node22 })
+  const { code, output } = startInPty(ctx.prefix, ctx.env, { nodeBin: node22, until: '输入消息' })
   assert.ok(code === 0 || code === 130, `22.19 启动退出码异常：${code}\n${output.slice(0, 1500)}`)
 })
 
@@ -392,7 +422,7 @@ test('普通卸载保留数据根，重装后能真正启动', () => {
   assert.ok(existsSync(path.join(ctx.dataRoot, 'profile-marker')), '普通卸载必须保留数据根')
   installGlobal(ctx.packed.tarball, ctx.prefix)
   snapshot('after-reinstall')
-  const { code, output } = startInPty(ctx.prefix, ctx.env)
+  const { code, output } = startInPty(ctx.prefix, ctx.env, { until: '输入消息' })
   assert.ok(code === 0 || code === 130, `重装后启动失败：${code}\n${output.slice(0, 1500)}`)
 })
 

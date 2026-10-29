@@ -21,7 +21,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run && vitest run --config tests/feature/vitest.config.ts",
     "test:watch": "vitest",
-    "test:e2e": "node --test tests/e2e/*.test.mjs",
+    "test:e2e": "node --test --test-concurrency=1 tests/e2e/*.test.mjs",
     "lint": "biome check src tests",
     "keymap:docs": "node scripts/keymap-docs.mjs",
     "prepack": "npm run build && node scripts/keymap-docs.mjs --check && node scripts/prepack-check.mjs",
@@ -38,7 +38,7 @@
     "yoga-layout": "^3.2.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.4",
+    "@biomejs/biome": "2.6.3",
     "@types/node": "^24.3.0",
     "@types/prismjs": "^1.26.5",
     "@types/react": "^19.1.12",

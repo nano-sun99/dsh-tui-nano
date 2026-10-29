@@ -24,10 +24,9 @@
 
 ## 证据未覆盖（不当作已验证）
 
-- **v2 的 Ghostty 真机视觉**：深/浅主题、间距、process-display、diff 8 行、CJK/窄屏有实现与单测，但没有 0.2.0 的 Ghostty 截图；`docs/release/0.1.0/evidence/ghostty/` 的截图属于已退场的 Rust 实现，不能替代。
+- **v2 的 Ghostty 真机视觉**：深/浅主题、间距、process-display、diff 8 行、CJK/窄屏有实现与单测，PTY 无头验证也确认了主题 RGB 与 60/100 列；但没有 0.2.0 的 Ghostty 截图，合成、透明、字体与窗口观感未验证；`docs/release/0.1.0/evidence/ghostty/` 的截图属于已退场的 Rust 实现，不能替代。
 - **IME 组合态**：parser 按 UTF-8 / grapheme 处理，组合中的预编辑文本由终端负责；真实输入法组合未自动模拟。
 - **鼠标拖选与剪贴板**：选区提取、宽字符起点、OSC 52 / pbcopy 有单测；Ghostty 实际拖选手感未取证。
 - **断网与官方异常**：没有自动化注入，未取证。
-- **骨架后核心加载失败**：代码路径为恢复终端 + tty 报错 + 退出 1，但没有构造真实失败的证据。
 - **跨会话九面隔离**：transcript / 草稿 / 队列 / 附件 / 审批 / 问卷 / 终端 / Monitor / 调度逐面隔离尚无 0.2.0 证据；同根第二窗口拒绝与双 root 目录隔离已有证据。
 - **`!` 权限提示与 terminal 不进 Agent 工具表**：实现存在，发布级证据未取。

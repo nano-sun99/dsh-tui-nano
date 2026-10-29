@@ -1,36 +1,44 @@
 # 证据已脱敏：<repo> = 仓库工作区，<user> = 本机用户名
-PACK sha256=7159195dd0e94c37d2d53d4d6a35629cca919d65dc80ad20e86f54d088c08dbe integrity=sha512-7GxLr41QPPGADwqGW6oSxaU65RdBpJmIo4tafX36bSgCX4iKtvnzLNVFVNtaC5wussJWF+nz7pJNcPymoLXVlg==
+
+> dsh-tui-nano@0.2.0 test:e2e
+> node --test --test-concurrency=1 tests/e2e/*.test.mjs
+
+PACK sha256=1a2d53571ee1f697ffd88d2d58f17f5351fdf2060615321bbd9af9015caddf88 integrity=sha512-1cOtd1HzXYnpxJvKp/+FSdZxEFwr0GS3d17Y+5vuUWakzo96AZB491nDXPQrhQGwIC0fnM41/IBO59guIe1t5g==
 STEP before-install {"dataRoot":{"files":0,"digest":"44136fa355b3678a"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":0,"digest":"44136fa355b3678a"}}
-STEP after-install {"dataRoot":{"files":0,"digest":"44136fa355b3678a"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"c679093d25dabbf8"}}
-STEP before-purge-refused {"dataRoot":{"files":1,"digest":"6324d2abd503280e"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"c679093d25dabbf8"}}
-STEP after-purge-refused {"dataRoot":{"files":1,"digest":"6324d2abd503280e"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"c679093d25dabbf8"}}
-STEP before-purge {"dataRoot":{"files":4,"digest":"ad8bc9a12047651a"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"c679093d25dabbf8"}}
-STEP after-purge {"dataRoot":{"files":0,"digest":"44136fa355b3678a"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"c679093d25dabbf8"}}
-STEP before-upgrade {"dataRoot":{"files":11,"digest":"8c10f2c472ee65d7"},"dshHome":{"files":1,"digest":"d1f3a8751a16b28f"},"installed":{"files":64617,"digest":"c679093d25dabbf8"}}
-STEP after-upgrade {"dataRoot":{"files":11,"digest":"8c10f2c472ee65d7"},"dshHome":{"files":1,"digest":"d1f3a8751a16b28f"},"installed":{"files":64617,"digest":"e44cbe5eb6dfb56e"}}
-STEP before-uninstall {"dataRoot":{"files":12,"digest":"4437588678ee94df"},"dshHome":{"files":1,"digest":"d1f3a8751a16b28f"},"installed":{"files":64617,"digest":"c679093d25dabbf8"}}
-STEP after-uninstall {"dataRoot":{"files":12,"digest":"4437588678ee94df"},"dshHome":{"files":1,"digest":"d1f3a8751a16b28f"},"installed":{"files":0,"digest":"44136fa355b3678a"}}
-STEP after-reinstall {"dataRoot":{"files":12,"digest":"4437588678ee94df"},"dshHome":{"files":1,"digest":"d1f3a8751a16b28f"},"installed":{"files":64617,"digest":"c679093d25dabbf8"}}
-✔ pack 产物可复现且与版本矩阵一致 (0.515583ms)
-✔ 全新安装后 nano --version 可用 (63583.350833ms)
-✔ --help 含用法与键位段 (138.916458ms)
-✔ purge 无 --yes 且非交互时拒绝并保留数据根 (3692.431209ms)
-✔ --root purge 不会被当成 purge 子命令（回归：数据丢失） (568.247375ms)
-✔ purge --yes 删除数据根 (3739.473375ms)
-✔ 启动冒烟：真 PTY 下起骨架并干净退出，$DSH_HOME 只允许官方标识变化 (7202.084ms)
-✔ 未知 harness 版本拒绝启动 (30.969291ms)
-✔ 强杀残留：陈旧挂载锁让下次启动提示 reset (7123.381416ms)
-✔ Node 22.19（下限）里能启动 (7539.438459ms)
-✔ 低于 22.19 拒绝启动并给可操作错误 (268.218292ms)
-✔ 升级：安装更高版本后 --version 跟着变 (28842.169542ms)
-✔ 普通卸载保留数据根，重装后能真正启动 (23065.133ms)
-✔ keymap 文档与源码一致 (52.082917ms)
-✔ 架构门禁：仓库内无旧工具链/桥接引用 (150.712375ms)
-ℹ tests 15
+STEP after-install {"dataRoot":{"files":0,"digest":"44136fa355b3678a"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"a02a43a08f3ec5b3"}}
+STEP before-purge-refused {"dataRoot":{"files":1,"digest":"6324d2abd503280e"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"a02a43a08f3ec5b3"}}
+STEP after-purge-refused {"dataRoot":{"files":1,"digest":"6324d2abd503280e"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"a02a43a08f3ec5b3"}}
+STEP before-purge {"dataRoot":{"files":4,"digest":"e688938154ed21ba"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"a02a43a08f3ec5b3"}}
+STEP after-purge {"dataRoot":{"files":0,"digest":"44136fa355b3678a"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"a02a43a08f3ec5b3"}}
+STEP before-upgrade {"dataRoot":{"files":12,"digest":"993a099cfe64c772"},"dshHome":{"files":1,"digest":"ea2cf9260c62ea8d"},"installed":{"files":64617,"digest":"a02a43a08f3ec5b3"}}
+STEP after-upgrade {"dataRoot":{"files":12,"digest":"993a099cfe64c772"},"dshHome":{"files":1,"digest":"ea2cf9260c62ea8d"},"installed":{"files":64617,"digest":"ebbcd4cbdd99b46c"}}
+STEP before-uninstall {"dataRoot":{"files":13,"digest":"7f265d581c717275"},"dshHome":{"files":1,"digest":"ea2cf9260c62ea8d"},"installed":{"files":64617,"digest":"a02a43a08f3ec5b3"}}
+STEP after-uninstall {"dataRoot":{"files":13,"digest":"7f265d581c717275"},"dshHome":{"files":1,"digest":"ea2cf9260c62ea8d"},"installed":{"files":0,"digest":"44136fa355b3678a"}}
+STEP after-reinstall {"dataRoot":{"files":13,"digest":"7f265d581c717275"},"dshHome":{"files":1,"digest":"ea2cf9260c62ea8d"},"installed":{"files":64617,"digest":"a02a43a08f3ec5b3"}}
+✔ pack 产物可复现且与版本矩阵一致 (0.33325ms)
+✔ 全新安装后 nano --version 可用 (11837.280125ms)
+✔ --help 含用法与键位段 (142.395875ms)
+✔ purge 无 --yes 且非交互时拒绝并保留数据根 (3813.280916ms)
+✔ --root purge 不会被当成 purge 子命令（回归：数据丢失） (568.538583ms)
+✔ purge --yes 删除数据根 (3876.877667ms)
+✔ 启动冒烟：真 PTY 下起骨架并干净退出，$DSH_HOME 只允许官方标识变化 (1306.024375ms)
+✔ 未知 harness 版本拒绝启动 (28.130167ms)
+✔ 强杀残留：陈旧挂载锁让下次启动提示 reset (1103.892375ms)
+✔ 骨架后核心加载失败：恢复终端、可见错误、退出 1 (1078.28875ms)
+✔ Node 22.19（下限）里能启动 (1406.600083ms)
+✔ 低于 22.19 拒绝启动并给可操作错误 (240.638917ms)
+✔ 升级：安装更高版本后 --version 跟着变 (29239.189709ms)
+✔ 普通卸载保留数据根，重装后能真正启动 (17353.357709ms)
+✔ keymap 文档与源码一致 (46.461541ms)
+✔ 架构门禁：仓库内无旧工具链/桥接引用 (71.724875ms)
+✔ 深色主题：真彩色 token 命中深色盘，且不带 ANSI 命名色 (1396.614125ms)
+✔ 浅色主题：真彩色 token 命中浅色盘，且不带 ANSI 命名色 (993.633625ms)
+✔ 60 与 100 列：骨架行不超过列宽，且有一行铺满 (1982.010542ms)
+ℹ tests 19
 ℹ suites 0
-ℹ pass 15
+ℹ pass 19
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 148473.801125
+ℹ duration_ms 78746.4045

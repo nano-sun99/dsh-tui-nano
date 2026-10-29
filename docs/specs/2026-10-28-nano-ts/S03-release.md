@@ -34,7 +34,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run && vitest run --config tests/feature/vitest.config.ts",
     "test:watch": "vitest",
-    "test:e2e": "node --test tests/e2e/*.test.mjs",
+    "test:e2e": "node --test --test-concurrency=1 tests/e2e/*.test.mjs",
     "lint": "biome check src tests",
     "start": "node dist/bin.js",
     "keymap:docs": "node scripts/keymap-docs.mjs",
