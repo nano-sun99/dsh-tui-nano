@@ -98,6 +98,17 @@ export class Features implements FeatureHost {
           context.input.insert(draft)
           context.setNotice('已从上一次受控切换恢复草稿')
         }
+        const renameTo = handoff.payload?.renameTo
+        if (typeof renameTo === 'string' && renameTo !== '') {
+          // 冷改名：新进程拿到写锁后写官方标题，失败不猜、只报原因。
+          try {
+            const session = context.conversation.agent?.session
+            const title = context.core.ctx.get('sessionTitle')
+            if (session && title) title.rename(session, renameTo)
+          } catch (error) {
+            throw new Error(`nano: 改名失败：${String((error as Error)?.message ?? error)}`)
+          }
+        }
       }
     } catch (error) {
       // handoff 损坏：官方 takeHandoff 已删除并报错；这里不猜、不静默继续。
@@ -164,6 +175,25 @@ export class Features implements FeatureHost {
       onChange: () => context.requestRender(),
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
       onSwitch: (rootId) => context.requestRestart({ rootId, reason: 'root-switch', payload: { draft: context.input.text } }),
+      onRename: (rootId, title) => {
+        if (rootId === context.rootId) {
+          try {
+            const session = context.conversation.agent?.session
+            const service = ctx.get('sessionTitle')
+            if (session && service) service.rename(session, title)
+          } catch (error) {
+            const message = String((error as Error)?.message ?? error)
+            context.conversation.model.appendNotice(`改名失败：${message}`, 'danger')
+            context.requestRender()
+          }
+          return
+        }
+        context.requestRestart({
+          rootId,
+          reason: 'cold-rename',
+          payload: { draft: context.input.text, renameTo: title },
+        })
+      },
     })
     this.jobs = new JobsPanel({
       ctx,

@@ -109,7 +109,7 @@ ctx.get('typertGateway').stream({
 |---|---|---|
 | 输入：多行/IME、`@` 语法、三类补全、补全打开 Enter 只接受、未知 `/name`、32 KiB 限 | 部分 | 补全真机 `@src` 出候选；未知 `/` 命令真机提示「未注入」；32 KiB 仍走 S01 既有路径（S02 附件链按引用字节计） |
 | 附件：官方图片准入、超限/不支持、通用文件 >20MiB、回执复用拒绝 | 部分 | `tests/feature/attachments.test.ts`（5 例：引用识别、纯文本、图片顺序、准入失败、21 MiB 通用文件与新回执） |
-| 会话：列表/恢复/not-found/损坏、冷改名走受控重启、四种失败路径 | 部分 | 列表真机可见；`requestRestart` + handoff 真机验证（切换后草稿恢复）；`tests/feature/handoff.test.ts`（轮转与坏版本）。四种失败路径尚未逐条取证 |
+| 会话：列表/恢复/not-found/损坏、冷改名走受控重启、四种失败路径 | 部分 | 列表真机可见；`requestRestart` + handoff 真机验证（切换后草稿恢复）；热改名真机通过；`tests/feature/handoff.test.ts`（轮转与坏版本）。冷改名四种失败路径尚未逐条取证 |
 | 权限：走 `/permission <preset>`、失败保留原值并警告、`never` 后果、模型 changed-by-user | 部分 | `/permission read-only` 真机无报错（走官方命令路径）；失败回滚与警告未取证 |
 | 模型/强度：`provider + model` 身份、只列官方 `efforts`、以官方回执为准 | 部分 | `InfoPanel.readModelIdentity` 单测（缺任一半即未知） |
 | 技能/规矩：命令同名优先、`complete=false` 标注、发现失败保留目录、预览只读 | 部分 | 信息面板实现与 `complete` 标记；发现失败路径单测未覆盖 |

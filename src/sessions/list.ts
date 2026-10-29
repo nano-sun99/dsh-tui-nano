@@ -23,6 +23,8 @@ export interface SessionsPanelOptions {
   readonly writeDiagnostic: (line: string) => void
   /** 切根：交给受控重启；失败由 S01 的失败矩阵处理。 */
   readonly onSwitch?: (rootId: string) => void
+  /** 冷改名：切到目标根后在新进程里写官方标题（受控重启）。 */
+  readonly onRename?: (rootId: string, title: string) => void
 }
 
 export class SessionsPanel {
@@ -32,6 +34,7 @@ export class SessionsPanel {
   private open = false
   private notice: string | undefined
   private loading = false
+  private renaming: string | undefined
 
   constructor(options: SessionsPanelOptions) {
     this.options = options
@@ -98,6 +101,33 @@ export class SessionsPanel {
 
   handleKey(key: Key): boolean {
     if (!this.open) return false
+    if (this.renaming !== undefined) {
+      if (key.name === 'escape') {
+        this.renaming = undefined
+        this.options.onChange()
+        return true
+      }
+      if (key.name === 'enter') {
+        const row = this.rows[this.selected]
+        const title = this.renaming.trim()
+        this.renaming = undefined
+        if (row && title !== '' && this.options.onRename) this.options.onRename(row.id, title)
+        else if (row && title === '') this.notice = '标题不能为空'
+        this.options.onChange()
+        return true
+      }
+      if (key.name === 'backspace') {
+        this.renaming = [...this.renaming].slice(0, -1).join('')
+        this.options.onChange()
+        return true
+      }
+      if (key.name === 'char' && key.text && !key.ctrl && !key.alt) {
+        this.renaming += key.text
+        this.options.onChange()
+        return true
+      }
+      return true
+    }
     if (key.name === 'escape') {
       this.hide()
       return true
@@ -109,6 +139,15 @@ export class SessionsPanel {
     }
     if (key.name === 'down') {
       this.selected = Math.min(Math.max(0, this.rows.length - 1), this.selected + 1)
+      this.options.onChange()
+      return true
+    }
+    if (key.name === 'char' && key.text === 'r' && !key.ctrl) {
+      const row = this.rows[this.selected]
+      if (row) {
+        this.renaming = row.title !== '' ? row.title : ''
+        this.notice = '输入新标题，Enter 提交，Esc 取消'
+      }
       this.options.onChange()
       return true
     }
@@ -131,7 +170,7 @@ export class SessionsPanel {
     if (!this.open) return null
     const lines: ReactNode[] = []
     lines.push(
-      createElement(Text, { dim: true }, `会话 · ↑↓ 选择 · Enter 切换（需受控重启） · Esc 关闭${this.loading ? ' · 加载中…' : ''}`),
+      createElement(Text, { dim: true }, `会话 · ↑↓ 选择 · Enter 切换（受控重启） · r 改名 · Esc 关闭${this.loading ? ' · 加载中…' : ''}`),
     )
     if (this.rows.length === 0 && !this.loading) {
       lines.push(createElement(Text, { dim: true }, '  （没有会话）'))
@@ -148,6 +187,9 @@ export class SessionsPanel {
         ),
       )
     })
+    if (this.renaming !== undefined) {
+      lines.push(createElement(Text, { reverse: true }, `  新标题：${this.renaming}`))
+    }
     if (this.notice) lines.push(createElement(Text, { dim: true }, `  ${this.notice}`))
     return createElement(Box, { flexDirection: 'column', width }, ...lines)
   }
