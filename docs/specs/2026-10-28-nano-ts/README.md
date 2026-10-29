@@ -105,7 +105,7 @@ Ghostty
 
 | 子 spec | 产出 | 消费 | 文件 owner | 不碰 | 开始 / 合入 / 发布 | 波次 |
 |---|---|---|---|---|---|---|
-| [S01 α](S01-runtime-render-conversation.md) | 自建根/核心组装、pre-boot 首帧、终端独占、渲染/输入、真实对话与阅读决策 | 官方公开导出 | `package.json`、`src/boot`、`src/runtime`、`src/render`、`src/input`、`src/theme`、`src/conversation`、`src/transcript`、`src/decisions`、`tests/unit`、`docs/evidence/2026-10-28-nano-ts/alpha` | S02/S03 文件、官方存储 | spec 合并后 / phase-0+α / 由 S03 发布 | A |
+| [S01 α](S01-runtime-render-conversation.md) | 自建根/核心组装、pre-boot 首帧、终端独占、渲染/输入、真实对话与阅读决策 | 官方公开导出 | `package.json`、`package-lock.json`、`tsconfig.json`、`vitest.config.ts`、`biome.json`、`src/boot`、`src/runtime`、`src/render`、`src/input`、`src/theme`、`src/conversation`、`src/transcript`、`src/decisions`、`src/app`、`src/types`、`src/main.ts`、`src/bin.ts`、`tests/unit`、`docs/evidence/2026-10-28-nano-ts/alpha` | S02/S03 文件、官方存储 | spec 合并后 / phase-0+α / 由 S03 发布 | A |
 | [S02 β](S02-input-sessions-terminal.md) | 输入/会话/控制/附件/技能、终端/任务/Monitor/调度/子代理 | S01 render/input/transcript/keymap/scene 契约 | `src/attachments`、`src/sessions`、`src/controls`、`src/skills`、`src/terminal`、`src/jobs`、`src/monitor`、`src/schedule`、`src/subagents`、`tests/feature`、`docs/evidence/2026-10-28-nano-ts/beta` | `src/render`、`package.json`、S01/S03 文件 | S01 契约冻结后 / β / 由 S03 发布 | B |
 | [S03 γ](S03-release.md) | npm 包、发布验收、证据、Rust 与 bridge 退场 | 全部成果 | `packaging/`、`tests/e2e/`、`scripts/`（Rust 期证据脚本）、`docs/release/`、`README.md`、`README.en.md`、键位文档；仅删除 `crates/`、`Cargo.*`、`rust-toolchain.toml`、`protocol/`、`bridge/` | 代其他子件补写功能 | S01 包入口 + S02 键位冻结 / γ / 本份发布 | C |
 
