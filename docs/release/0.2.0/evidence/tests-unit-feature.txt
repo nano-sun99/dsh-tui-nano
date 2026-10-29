@@ -1,0 +1,45 @@
+# 证据已脱敏：<repo> = 仓库工作区，<user> = 本机用户名
+
+> dsh-tui-nano@0.2.0 build
+> tsc -p tsconfig.json
+
+
+> dsh-tui-nano@0.2.0 test
+> vitest run && vitest run --config tests/feature/vitest.config.ts
+
+
+ RUN  v3.2.7 <repo>
+
+ ✓ tests/unit/seams.test.ts (3 tests) 6ms
+ ✓ tests/unit/text.test.ts (10 tests) 4ms
+ ✓ tests/unit/decisions.test.ts (7 tests) 31ms
+ ✓ tests/unit/boot.test.ts (9 tests) 18ms
+ ✓ tests/unit/d01.test.ts (9 tests) 4ms
+ ✓ tests/unit/renderer.test.ts (8 tests) 31ms
+ ✓ tests/unit/transcript.test.ts (10 tests) 16ms
+ ✓ tests/unit/input.test.ts (10 tests) 3ms
+ ✓ tests/unit/fixes.test.ts (14 tests) 19ms
+ ✓ tests/unit/perf.test.ts (4 tests) 377ms
+
+ Test Files  10 passed (10)
+      Tests  84 passed (84)
+   Start at  15:09:34
+   Duration  677ms (transform 372ms, setup 0ms, collect 986ms, tests 508ms, environment 1ms, prepare 369ms)
+
+
+ RUN  v3.2.7 <repo>
+
+ ✓ tests/feature/bash-mode.test.ts (3 tests) 1ms
+ ✓ tests/feature/handoff.test.ts (2 tests) 11ms
+ ✓ tests/feature/jobs.test.ts (2 tests) 1ms
+ ✓ tests/feature/info-panel.test.ts (3 tests) 2ms
+ ✓ tests/feature/monitor.test.ts (4 tests) 3ms
+ ✓ tests/feature/subagents.test.ts (3 tests) 3ms
+ ✓ tests/feature/attachments.test.ts (6 tests) 50ms
+ ✓ tests/feature/cross-root.test.ts (2 tests) 2ms
+
+ Test Files  8 passed (8)
+      Tests  25 passed (25)
+   Start at  15:09:35
+   Duration  272ms (transform 178ms, setup 0ms, collect 413ms, tests 74ms, environment 1ms, prepare 274ms)
+

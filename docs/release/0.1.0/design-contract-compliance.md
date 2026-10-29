@@ -1,3 +1,6 @@
+> **HISTORICAL（2026-10-29 起）**：v1（Rust 实现）的发布记录，已随实现退场冻结，不作为 0.2.0 的依据。
+> 归档：tag `rust-final`、分支 `archive/rust-v1`。当前记录见 [`../0.2.0/`](../0.2.0/README.md)。
+
 # design-contract 符合性核对（0.1.0）
 
 对照 `docs/release/design-contract.md` 逐项核对。判据只认代码、测试和真实终端证据；未测项不勾。

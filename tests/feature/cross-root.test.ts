@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { scheduleStorageRoot } from '../../src/schedule/storage.ts'
 import { findReferences } from '../../src/attachments/prompt.ts'
 import { detectTrigger } from '../../src/controls/completions.ts'
+import { scheduleStorageRoot } from '../../src/schedule/storage.ts'
 
 describe('跨根隔离（S02 九面中的可纯测部分）', () => {
   it('调度存储按根分目录，两根本会话表互不可见', () => {

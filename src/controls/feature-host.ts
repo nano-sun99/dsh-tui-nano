@@ -7,36 +7,31 @@
  */
 import { createElement, type ReactNode } from 'react'
 import type { FeatureContext, FeatureHost } from '../app/nano-app.ts'
+import { assemblePrompt, findReferences } from '../attachments/prompt.ts'
 import { registerKeybinding } from '../input/keymap.ts'
 import type { Key } from '../input/parser.ts'
+import { INPUT_BYTE_LIMIT } from '../input/segments.ts'
+import { JobsPanel } from '../jobs/panel.ts'
+import { Monitor } from '../monitor/monitor.ts'
+import { MONITOR_SOURCE } from '../monitor/source.ts'
 import { Box } from '../render/components.ts'
 import { takeHandoff } from '../runtime/handoff.ts'
 import { ScheduleRuntime } from '../schedule/service.ts'
 import { ScheduleStorage } from '../schedule/storage.ts'
-import { SessionControllerAdapter } from '../sessions/session-controller-adapter.ts'
-import { TerminalPane } from '../terminal/pane.ts'
-import { INPUT_BYTE_LIMIT } from '../input/segments.ts'
-import { assemblePrompt, findReferences } from '../attachments/prompt.ts'
-import { parseBashInput, renderBashInjection, runBash } from './bash-mode.ts'
-import { JobsPanel } from '../jobs/panel.ts'
 import { SessionsPanel } from '../sessions/list.ts'
+import { SessionControllerAdapter } from '../sessions/session-controller-adapter.ts'
 import { SubagentDock } from '../subagents/dock.ts'
-import { Monitor, renderMonitorLines } from '../monitor/monitor.ts'
-import { MONITOR_SOURCE } from '../monitor/source.ts'
+import { TerminalPane } from '../terminal/pane.ts'
+import { parseBashInput, renderBashInjection, runBash } from './bash-mode.ts'
 import { Completions } from './completions.ts'
+import {
+  FEATURE_KEYBINDINGS,
+  INFO_TOGGLE_ACTION,
+  JOBS_TOGGLE_ACTION,
+  SESSIONS_TOGGLE_ACTION,
+  TERMINAL_TOGGLE_ACTION,
+} from './feature-keys.ts'
 import { InfoPanel } from './info-panel.ts'
-
-/** 终端面板开关（owner s02）：Ctrl+T。 */
-export const TERMINAL_TOGGLE_ACTION = 'terminal.toggle'
-
-/** 任务面板开关（owner s02）：Ctrl+J。 */
-export const JOBS_TOGGLE_ACTION = 'jobs.toggle'
-
-/** 会话列表面板开关（owner s02）：Ctrl+L。 */
-export const SESSIONS_TOGGLE_ACTION = 'sessions.toggle'
-
-/** 信息面板（技能/模型/上下文）开关（owner s02）：Ctrl+I。 */
-export const INFO_TOGGLE_ACTION = 'info.toggle'
 
 function isTerminalToggle(key: Key): boolean {
   return key.name === 'char' && key.ctrl === true && key.text === 't'
@@ -135,9 +130,10 @@ export class Features implements FeatureHost {
       sessionId: context.rootId,
       getAgent: () => context.conversation.agent,
       onChange: () => context.requestRender(),
-      writeDiagnostic: (line) => context.renderer // 诊断走 stderr
-        ? process.stderr.write(`${line}\n`)
-        : undefined,
+      writeDiagnostic: (line) =>
+        context.renderer // 诊断走 stderr
+          ? process.stderr.write(`${line}\n`)
+          : undefined,
     })
     this.terminal = pane
 
@@ -177,7 +173,12 @@ export class Features implements FeatureHost {
       rootId: context.rootId,
       onChange: () => context.requestRender(),
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
-      onSwitch: (rootId) => context.requestRestart({ rootId, reason: 'root-switch', payload: { draft: context.input.text } }),
+      onSwitch: (rootId) =>
+        context.requestRestart({
+          rootId,
+          reason: 'root-switch',
+          payload: { draft: context.input.text },
+        }),
       onRename: (rootId, title) => {
         if (rootId === context.rootId) {
           try {
@@ -206,41 +207,14 @@ export class Features implements FeatureHost {
       watch: (jobId, mode) => this.monitor?.watch(jobId, mode),
     })
 
-    this.disposeKeys.push(
-      registerKeybinding({
-        id: INFO_TOGGLE_ACTION,
-        keys: [{ name: 'char', text: 'i', ctrl: true }],
-        scopes: ['idle', 'input', 'running'],
-        description: '打开/关闭信息面板（技能/模型/上下文）',
-        owner: 's02',
-      }),
-      registerKeybinding({
-        id: SESSIONS_TOGGLE_ACTION,
-        keys: [{ name: 'char', text: 'l', ctrl: true }],
-        scopes: ['idle', 'input', 'running'],
-        description: '打开/关闭会话列表',
-        owner: 's02',
-      }),
-      registerKeybinding({
-        id: JOBS_TOGGLE_ACTION,
-        keys: [{ name: 'char', text: 'j', ctrl: true }],
-        scopes: ['idle', 'input', 'running'],
-        description: '打开/关闭任务面板',
-        owner: 's02',
-      }),
-      registerKeybinding({
-        id: TERMINAL_TOGGLE_ACTION,
-        keys: [{ name: 'char', text: 't', ctrl: true }],
-        scopes: ['idle', 'input', 'running'],
-        description: '打开/关闭终端面板',
-        owner: 's02',
-      }),
-    )
+    // 静态清单是唯一来源（S03 §5）：注册顺序与文档顺序一致。
+    this.disposeKeys.push(...FEATURE_KEYBINDINGS.map((binding) => registerKeybinding(binding)))
   }
 
   handleKey(key: Key): boolean {
     // 开关必须交回 keymap：否则面板聚焦时会把 Ctrl+T 当成终端输入吃掉。
-    if (isTerminalToggle(key) || isJobsToggle(key) || isSessionsToggle(key) || isInfoToggle(key)) return false
+    if (isTerminalToggle(key) || isJobsToggle(key) || isSessionsToggle(key) || isInfoToggle(key))
+      return false
     if (this.completions?.handleKey(key)) return true
     if (this.info?.handleKey(key)) return true
     if (this.sessions?.handleKey(key)) return true
@@ -356,12 +330,17 @@ export class Features implements FeatureHost {
     model?.appendNotice(text, 'info')
     context?.requestRender()
     if (!agent || !llm?.createUserMessage) return
-    const message = llm.createUserMessage({ content: [{ type: 'text', text }], source: MONITOR_SOURCE })
+    const message = llm.createUserMessage({
+      content: [{ type: 'text', text }],
+      source: MONITOR_SOURCE,
+    })
     try {
       if (mode === 'notify') agent.followup(message)
       else agent.inject(message)
     } catch (error) {
-      process.stderr.write(`nano: Monitor 投递失败：${String((error as Error)?.message ?? error)}\n`)
+      process.stderr.write(
+        `nano: Monitor 投递失败：${String((error as Error)?.message ?? error)}\n`,
+      )
     }
   }
 
@@ -372,9 +351,13 @@ export class Features implements FeatureHost {
     const llm = context?.official?.llm
     if (!agent || !llm?.createUserMessage) return
     try {
-      agent.inject(llm.createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
+      agent.inject(
+        llm.createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }),
+      )
     } catch (error) {
-      process.stderr.write(`nano: 注入人工命令输出失败：${String((error as Error)?.message ?? error)}\n`)
+      process.stderr.write(
+        `nano: 注入人工命令输出失败：${String((error as Error)?.message ?? error)}\n`,
+      )
     }
   }
 

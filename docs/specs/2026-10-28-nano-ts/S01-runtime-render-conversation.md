@@ -12,7 +12,7 @@
 
 接入点例外：`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx`、`src/conversation/controller.ts` 这五个文件允许 S02 加六处可选接缝——`extraPatches`（boot 前补丁）、`features`（boot 后初始化与关停）、`featureBody` + `handleKey`/未消费 action 分发（界面与按键）、`FeatureContext.input`（输入框访问）、`submitContent`/`steerContent`（有序内容提交）、`requestRestart`（受控重启）；细则见 [S02 §1](S02-input-sessions-terminal.md) 与 [ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)。接缝之外不改；这些文件的既有行为与回归验收仍归本份。
 
-`package.json` 由本份独占；S02/S03 的依赖变更与 npm manifest 清单经 S01 合入。`src/input/keymap.ts` 由本份独占，S02 只经 D01 的注册 API 加功能键。
+`package.json` 在 α/β 期由本份独占；γ 发布期由 S03 落 manifest（内容以 [S03 §2.1](S03-release.md) 为准）。`src/input/keymap.ts` 由本份独占，S02 只经 D01 的注册 API 加功能键；S03 只按 [S03 §1](S03-release.md) 的入口级例外改它的文档接缝。
 
 ## 2. 运行时与组装
 
@@ -131,7 +131,7 @@
 - React/react-reconciler/Yoga/官方包版本实施时锁定；未知 harness 版本拒绝启动。
 - 备用屏由本份决定并写入 README；图片协议不在本次范围。
 - 进程显示、根身份格式、handoff 路径与格式、启动失败文案由本份自定，写进 D01 接口文件。
-- α 实际实现落在 `src/app/`（App、编排、输入模型、场景、骨架）、`src/main.ts`、`src/bin.ts` 与三份根配置（`tsconfig.json`、`vitest.config.ts`、`biome.json`）；`src/types/` 只放第三方模块声明。S02 只在 §1 的接入点例外里改这些文件的接缝，S03 不修改这些文件。
+- α 实际实现落在 `src/app/`（App、编排、输入模型、场景、骨架）、`src/main.ts`、`src/bin.ts` 与三份根配置（`tsconfig.json`、`vitest.config.ts`、`biome.json`）；`src/types/` 只放第三方模块声明。S02 只在 §1 的接入点例外里改这些文件的接缝；S03 只按 [S03 §1](S03-release.md) 的入口级例外改 `src/bin.ts`、`src/main.ts`、`src/input/keymap.ts`（Node 下限检查、`nano purge` 确认、`--help` 键位段），不改 α 业务行为；其余不修改。
 
 ## 7. 审核修订记录
 
@@ -140,3 +140,4 @@
 - 2026-10-29 实施发现修订（用户 2026-10-29 选择「接受并补文档 / 改旧 spec」）：补 `src/app/`、`src/main.ts`、`src/bin.ts`、`src/types/` 与根配置进 owner；根会话改为 resume 优先（ADR-20261029-root-session-resume-first）；fd 守护明确为 re-exec + 独立 `/dev/tty`（ADR-20261029-single-process-fd-guard）。
 - 2026-10-29 实施发现修订（用户选择「改旧 spec 开三道缝」）：§1 补接入点例外——`extraPatches`、`features`、`featureBody`、动作分发、`input`、`submitContent` 供 S02 加接线（2026-10-29 追加后两条），α 既有行为不变；同 PR 落 [ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)。
 - 2026-10-28 二次轻审修订：`initProfile` 不写 `cordis.yml`、空 YAML 必失败、`loadProfileDirectory` 副作用与 `skippedBundles`、根身份与认领前移、不加载官方 session-controller、不 provide storageDomain、fd 级守护、hook 阶段与截止时间、启动失败两段处置、p95 口径、B8 来源验收、phase-0 覆盖范围澄清。
+- 2026-10-29 γ 发布期同步（用户选择「改旧 spec」）：`src/bin.ts`/`src/main.ts`/`src/input/keymap.ts` 增加 S03 入口级例外（Node 下限检查、`nano purge` 确认、`--help` 键位段），α 业务行为不变；文本与 [S03 §1](S03-release.md) 一致。

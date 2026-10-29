@@ -83,7 +83,11 @@ export function deriveStatus(view: any): DockStatus {
 }
 
 /** 30 秒清理：返回保留下来的行（纯函数，方便测试）。 */
-export function pruneRows(rows: readonly DockRow[], now: number, graceMs = DOCK_GRACE_MS): DockRow[] {
+export function pruneRows(
+  rows: readonly DockRow[],
+  now: number,
+  graceMs = DOCK_GRACE_MS,
+): DockRow[] {
   return rows.filter((row) => row.finishedAt === undefined || now - row.finishedAt < graceMs)
 }
 

@@ -29,7 +29,8 @@
   "files": {
     "includes": [
       "src/**",
-      "tests/unit/**"
+      "tests/**",
+      "scripts/**"
     ]
   }
 }

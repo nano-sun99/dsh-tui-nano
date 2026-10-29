@@ -42,12 +42,29 @@ export async function loadOfficial(
 ): Promise<OfficialModules> {
   const packageRoot = dirname(installAnchor)
   const anchorRequire = createRequire(installAnchor)
-  const version = (JSON.parse(readFileSync(installAnchor, 'utf8')) as { version?: string }).version
+  const nanoRequire = createRequire(import.meta.url)
+  const version = (JSON.parse(readFileSync(installAnchor, 'utf8')) as { version?: unknown }).version
   if (version !== PINNED_HARNESS_VERSION) {
     throw new Error(
-      `nano: 官方 harness 版本不受支持：${version ?? '未知'}（需要 ${PINNED_HARNESS_VERSION}）`,
+      `nano: 官方 harness 版本不受支持：${String(version ?? '未知')}（需要 ${PINNED_HARNESS_VERSION}）`,
     )
   }
+
+  // Cordis / React 必须是单实例：两个副本会让官方插件与 UI 各拿一套上下文。
+  const assertSingleInstance = (name: string): void => {
+    const fromAnchor = anchorRequire.resolve(name)
+    let fromNano: string
+    try {
+      fromNano = nanoRequire.resolve(name)
+    } catch {
+      return // nano 不直接依赖它，没有可比对的第二份
+    }
+    if (fromAnchor !== fromNano) {
+      throw new Error(`nano: ${name} 存在多实例（${fromAnchor} vs ${fromNano}），拒绝启动`)
+    }
+  }
+  assertSingleInstance('@deepseek-ai/cordis')
+  assertSingleInstance('react')
   const load = async (name: string): Promise<Record<string, any>> => {
     const resolved = anchorRequire.resolve(name)
     if (!existsSync(resolved)) throw new Error(`nano: 官方模块缺失：${name}`)

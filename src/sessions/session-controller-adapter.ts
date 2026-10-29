@@ -71,10 +71,18 @@ export class SessionControllerAdapter {
       const raced = this.ctx.agents?.get?.(sessionId)
       if (raced) return { agent: raced }
       if (isNotFound(error)) {
-        return { error: failure('session/not-found', String((error as Error)?.message ?? error), { sessionId }) }
+        return {
+          error: failure('session/not-found', String((error as Error)?.message ?? error), {
+            sessionId,
+          }),
+        }
       }
       if (isWriterHeld(error)) {
-        return { error: failure('session/writer-held', String((error as Error)?.message ?? error), { sessionId }) }
+        return {
+          error: failure('session/writer-held', String((error as Error)?.message ?? error), {
+            sessionId,
+          }),
+        }
       }
       return {
         error: failure(

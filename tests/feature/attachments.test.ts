@@ -18,7 +18,10 @@ function fakeContext(options: { admitError?: Error } = {}) {
         ? {
             saveImages: async (inputs: any[]) => {
               saved.push(...inputs)
-              return inputs.map((input, index) => ({ id: `img-${index}`, mediaType: input.mediaType }))
+              return inputs.map((input, index) => ({
+                id: `img-${index}`,
+                mediaType: input.mediaType,
+              }))
             },
             admitPromptContent: async (parts: any[]) => {
               if (options.admitError) throw options.admitError
@@ -109,7 +112,13 @@ describe('attachFile', () => {
       get: (name: string) =>
         name === 'attachments'
           ? {
-              saveFileStream: async ({ data, name }: { data: AsyncIterable<Uint8Array>; name: string }) => {
+              saveFileStream: async ({
+                data,
+                name,
+              }: {
+                data: AsyncIterable<Uint8Array>
+                name: string
+              }) => {
                 let bytes = 0
                 for await (const chunk of data) bytes += chunk.byteLength
                 sequence += 1

@@ -15,7 +15,11 @@ export interface AttachedFile {
 }
 
 /** 把本地文件作为通用附件提交给官方存储；回执一次性、不复用。 */
-export async function attachFile(ctx: any, path: string, signal?: AbortSignal): Promise<AttachedFile> {
+export async function attachFile(
+  ctx: any,
+  path: string,
+  signal?: AbortSignal,
+): Promise<AttachedFile> {
   const service = ctx.get('attachments')
   if (!service) throw new Error('附件服务不可用')
   const info = await stat(path)

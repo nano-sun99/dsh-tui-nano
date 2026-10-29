@@ -1,3 +1,6 @@
+> **HISTORICAL（2026-10-29 起）**：Rust 实现（v1）的发布结论，已随实现退场冻结；不作为 0.2.0 的依据。
+> 归档：tag `rust-final`、分支 `archive/rust-v1`。当前结论见 [`../0.2.0/release-conclusion.md`](../0.2.0/release-conclusion.md)。
+
 # 发布结论（0.1.0）
 
 **结论：不发布。**

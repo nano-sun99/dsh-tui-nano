@@ -1,211 +1,203 @@
 # dsh-tui-nano
 
-**A minimal, restrained terminal UI for DeepSeek Harness.**
+**A minimal, restrained terminal interface for DeepSeek Harness.**
 
-[中文](README.md) · [Project purpose](https://github.com/Strelizialeomon/dsh-tui-nano/issues/1) · [Spec](docs/specs/2026-10-20-nano-v1/README.md) · [Design notes](docs/design/README.md)
+[中文](README.md) · [Specs](docs/specs/2026-10-28-nano-ts/README.md) · [Release acceptance](docs/release/0.2.0/README.md)
 
-> **Alpha, unreleased.** There is no official release package yet; build or run from source. The only verified combination is macOS arm64 + Ghostty (release acceptance uses fullscreen; evidence screenshots may be window captures).<br>
+> **0.2.0 (TypeScript rewrite).** Not published to the npm registry yet; acceptance and evidence live in `docs/release/0.2.0/`.<br>
 > This is an independent project, not an official DeepSeek product.
 
-![status](https://img.shields.io/badge/status-alpha-orange)
+![status](https://img.shields.io/badge/status-release--candidate-orange)
 ![platform](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)
+![node](https://img.shields.io/badge/node-%3E%3D22.19-blue)
 ![dsh](https://img.shields.io/badge/dsh-0.2.1--rc.2-blue)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
-<p align="center">
-  <img src="docs/evidence/2026-10-22-visual/batch1/03-dark-100-response.png" alt="nano running in Ghostty: conversation, context, and composer" width="900">
-</p>
-
-<p align="center"><sub>Real Ghostty screenshot: 100 columns, dark theme.</sub></p>
-
-<details>
-<summary>More real terminal screenshots</summary>
-
-<p align="center">
-  <img src="docs/evidence/2026-10-22-visual/batch1/02-dark-100-running.png" alt="A running turn and the activity line" width="440">
-  <img src="docs/evidence/2026-10-22-visual/batch1/08-dark-100-diff-not-applied.png" alt="File diff with line numbers" width="440">
-</p>
-
-</details>
-
-> This is an English mirror. If the two versions diverge, the Chinese README is authoritative.
-
 ## Contents
 
-- [What is this](#what-is-this)
+- [What it is](#what-it-is)
 - [Features](#features)
 - [Requirements](#requirements)
-- [Quick start](#quick-start)
-- [Key bindings](#key-bindings)
+- [Install, upgrade, uninstall](#install-upgrade-uninstall)
+- [Keymap](#keymap)
+- [Theme and transparency](#theme-and-transparency)
+- [Architecture](#architecture)
 - [Status](#status)
 - [Known limitations](#known-limitations)
-- [Development](#development)
-- [Architecture](#architecture)
+- [Development and testing](#development-and-testing)
 - [Contributing](#contributing)
 - [License](#license)
 - [Acknowledgements](#acknowledgements)
 
-## What is this
+## What it is
 
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) owns the agent, models, tools, sessions, permissions, and persistence. nano does not reimplement any of that; it is only the terminal interface:
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) owns the agent, models, tools, sessions, permissions and persistence. Nano does not rewrite any of that; it is only a terminal interface:
 
-- **Rust** owns terminal interaction, reading, input, and rendering.
-- **A thin TypeScript bridge** runs inside the official profile and translates public APIs into a versioned protocol.
-- The two sides exchange a versioned local protocol, so upstream changes mostly hit the bridge instead of being scattered across the UI.
+- **One TypeScript codebase**: nano builds its own Cordis root, assembles the official core with `boot()` from `dsh-app-boot`, and runs the UI as a plugin in the same root.
+- **A single runtime host**: the runtime is one Node process that owns the official services, sessions and business state. The CLI entry only wraps stdout/stderr once for fd guarding (bound to log files; the terminal is rendered through a separate `/dev/tty`).
+- **No home-grown protocol**: nano calls official public exports and subscribes to official events directly. There is no cross-process frame format.
 
-The design goals are simple: **reading first, low decoration, and no invented facts**. Sessions, permissions, models, and tool results always belong to the official DSH; nano only displays receipts and state. nano is an independent rewrite and does not inherit the old dsh-TUI fork's implementation or Git history.
+Three principles: **reading first, little decoration, never invent facts**. Sessions, permissions, models and tool results always belong to the official DSH; nano only shows receipts and state.
 
 ## Features
 
-- **Conversation**: multiline input, streaming output, queue / steer / stop, per-address drafts, resume.
-- **Reading and decisions**: tool calls, file diffs, questionnaires, approvals, plan cards; process details stay low-emphasis and expand on demand.
-- **Input**: `@file` references, image / generic file attachments, skill catalog, instruction sources.
-- **Workflow**: `!` manual command, job panel, interactive terminal, Monitor output watching.
-- **Sessions and control**: session list / resume / rename, context pressure, `/compact`, schedules, subagents.
-- **Models and permissions**: `/model` for model and reasoning effort, `/permission` for presets, `Ctrl+P` for the command palette.
-
-Features are implemented per the specs. The first visual-alignment batch is merged; the second batch is pending. Version 0.1.0 has not been released.
+- **Conversation**: multi-line input, streaming output, queue / steer / stop, per-address drafts, session resume.
+- **Reading and decisions**: tool calls, file diffs, questions, approvals, plan cards; quiet by default, expandable on demand.
+- **Input enhancements**: `@file` references, image / generic file attachments, skill catalog, instruction sources.
+- **Workflow**: `!` shell commands, jobs panel, interactive terminal, Monitor output watching.
+- **Sessions and controls**: session list / resume / rename, context usage, `/compact`, scheduled tasks, subagents.
+- **Models and permissions**: `/model` for model and reasoning effort, `/permission` for permission presets.
 
 ## Requirements
 
 | Item | Requirement |
 | --- | --- |
-| OS / terminal | macOS arm64 + Ghostty (the only verified combination; release acceptance uses fullscreen; evidence screenshots may be window captures; others are untested) |
-| Official dsh | Exactly `0.2.1-rc.2`; unknown versions are refused at startup |
-| Node | Major version ≥ 22 (verified with v24.18.0) |
-| Rust | stable (`rust-version = 1.82`) |
-| Credentials | Resolved by official dsh in `${DSH_HOME:-~/.dsh}`; nano never copies them |
+| OS / terminal | macOS arm64 + Ghostty (manual interaction verified; no 0.2.0 visual screenshots yet; others untested) |
+| Node | ≥ 22.19 (`engines`; the entry checks at runtime and exits with an actionable error below that) |
+| Official dsh | exactly `0.2.1-rc.2`; unknown versions are refused at startup |
+| Credentials | resolved by the official dsh under `${DSH_HOME:-~/.dsh}`; nano never copies or prints credential values |
 
-The first launch installs the nano profile through `dsh plugin`, which invokes pnpm internally.
+The data root defaults to `~/.dsh-tui-nano` (override with `NANO_DATA_ROOT`): the app-owned profile, sessions, runtime data, history and logs live there. In `$DSH_HOME`, nano only writes `.anonymous-user-id` and touches nothing else.
 
-## Quick start
-
-### From source
+## Install, upgrade, uninstall
 
 ```sh
-git clone https://github.com/Strelizialeomon/dsh-tui-nano.git
-cd dsh-tui-nano
+# install / upgrade
+npm install -g dsh-tui-nano
 
-# Bridge dependencies (official public exports)
-npm install --prefix bridge
+# normal uninstall: removes the package and bin, keeps the data root and profile
+npm uninstall -g dsh-tui-nano
 
-# The first launch installs the nano profile automatically
-cargo run -p nano-app
+# remove data too: purge first (while the bin still exists), then uninstall
+nano purge          # interactive confirmation
+nano purge --yes    # skip the prompt in non-interactive environments
+npm uninstall -g dsh-tui-nano
 ```
 
-To pick an initial model (uses official credentials and incurs model usage):
+- A normal uninstall **keeps** the data root and profile; only `nano purge` deletes the profile, sessions, runtime data and history.
+- `nano purge` does not rely on npm lifecycle scripts (npm v7+ does not guarantee uninstall scripts), so the order must be "purge first, uninstall second".
+- The app-owned profile is initialised on first launch and checked per-file on upgrade; corrupt files are backed up and reported, never silently overwritten.
 
-```sh
-cargo run -p nano-app -- --provider deepseek-official --model deepseek-chat
-```
+## Keymap
 
-The first launch installs the profile under `${DSH_HOME:-~/.dsh}/profiles/dsh-tui-nano`; nano's own data lives in `~/.dsh-tui-nano`. See `nano --help` for all options and keys.
-
-### From a local package
-
-There is no GitHub Release yet. Build and install locally:
-
-```sh
-./packaging/build-release.sh
-cd packaging/dist/dsh-tui-nano-0.1.0-arm64
-./install.sh
-```
-
-See [`packaging/README.md`](packaging/README.md) for packaging details. The 0.1.0 release acceptance is not closed; do not redistribute local builds.
-
-## Key bindings
-
-| Key | Action |
+<!-- keymap:start (generated by scripts/keymap-docs.mjs) -->
+| Keys | Action |
 | --- | --- |
-| `Enter` / `Alt+Enter` | Send / queue; steer |
-| `Esc` | Stop the current turn (keeps the queue) |
-| `Ctrl+J` | Newline in the composer |
-| `Ctrl+P` | Command palette |
-| `/model` / `/permission` | Model and effort / permission preset |
-| `Alt+O` / `Alt+C` | Session list / compact context |
-| `Alt+K` / `Alt+R` | Skill catalog / instruction sources |
-| `@` / `Tab` | Reference a file / accept completion |
-| `Alt+A` | Attach an image or file |
-| `Ctrl+T` / `F12` | Jobs / interactive terminal |
-| `Ctrl+G` / `Alt+L` | Schedules / subagents |
-| `PageUp` / `PageDown` / `Ctrl+End` | Scroll / jump to bottom |
-| `Ctrl+C` / `Ctrl+Q` | Quit |
+| `Enter` | Submit the input（Input） |
+| `Shift+Enter / Ctrl+Enter / Alt+Enter` | Insert a newline（Input） |
+| `Ctrl+C` | Stop the current turn (keep the queue)（Running） |
+| `Ctrl+S` | Steer the current turn (applies at the next step)（Running） |
+| `Ctrl+X` | Stop the current turn and clear the queue（Running / Idle） |
+| `Ctrl+C / Ctrl+D` | Exit Nano（Idle） |
+| `Backspace` | Delete the previous character（Input） |
+| `Delete` | Delete the next character（Input） |
+| `Alt+Backspace / Ctrl+W` | Delete the previous word（Input） |
+| `Ctrl+U` | Clear the current input（Input） |
+| `Left / Ctrl+B` | Move the cursor left（Input） |
+| `Right / Ctrl+F` | Move the cursor right（Input） |
+| `Alt+Left / Ctrl+Left` | Move left by one word（Input） |
+| `Alt+Right / Ctrl+Right` | Move right by one word（Input） |
+| `Home / Ctrl+A` | Move to the start of the line（Input） |
+| `End / Ctrl+E` | Move to the end of the line（Input） |
+| `Up` | Previous history entry (this project)（Input） |
+| `Down` | Next history entry（Input） |
+| `PageUp / Shift+Up` | Scroll the transcript up（Any） |
+| `PageDown / Shift+Down` | Scroll the transcript down（Any） |
+| `Ctrl+End` | Jump to the end and stick to the bottom（Any） |
+| `Esc` | Close the current overlay（Overlay） |
+| `Tab` | Switch overlay focus（Overlay） |
+| `Ctrl+I` | Toggle the info panel (skills / model / context)（Idle / Input / Running） |
+| `Ctrl+L` | Toggle the session list（Idle / Input / Running） |
+| `Ctrl+J` | Toggle the jobs panel（Idle / Input / Running） |
+| `Ctrl+T` | Toggle the terminal panel（Idle / Input / Running） |
+<!-- keymap:end -->
 
-`nano --help` lists the full keymap. `!command` runs with your user privileges, not the agent's; its output is injected as synthetic context without waking the model.
+Full keymap and flags: `nano --help`. `!command` runs with your user privileges and is not an agent authorisation; its output is injected as synthetic context but does not wake the model.
 
-## Status
+## Theme and transparency
 
-| Item | Status |
-| --- | --- |
-| Feature components S01–S12 | Implemented |
-| Visual alignment | First batch merged; second batch pending (light diff, questionnaire / approval cards, etc.) |
-| 0.1.0 release | **Unreleased**; release acceptance still has open items |
-| Platform | Only macOS arm64 + Ghostty verified; release acceptance uses fullscreen |
-
-See [`docs/release/0.1.0/`](docs/release/0.1.0/README.md) for blockers, evidence, and exit conditions. The release is blocked by open acceptance items; see the release directory for the specific blockers and evidence.
-
-## Known limitations
-
-- Only macOS arm64 + Ghostty is claimed; release acceptance uses fullscreen, and evidence screenshots may be window captures; other systems, terminals, and architectures are unverified.
-- Only official dsh `0.2.1-rc.2` is accepted; unknown versions are refused at startup, with no field guessing or fallback.
-- Schedules have no pause / resume API; stopping a task means deleting it. Delivery is not exactly-once and may repeat.
-- Monitor `notify` wakes the model and incurs cost; `quiet` does not.
-- `@file` only inserts a path; the model still needs a file tool to read the content.
-- Credentials are resolved only inside official dsh; nano does not copy or modify credentials, global instructions, or `storages/` under `$DSH_HOME`.
-- Descendant processes from hard kills, power loss, or deliberate escapes are not guaranteed to be cleaned up; nano only owns the process group of its own window.
-
-Full list: [`docs/release/0.1.0/known-limitations.md`](docs/release/0.1.0/known-limitations.md).
-
-## Development
-
-```sh
-npm install --prefix bridge   # Bridge dependencies
-npm run test:bridge           # Contract + bridge unit tests (no credentials)
-npm run test:rust             # Rust workspace
-
-# Real-host integration tests: installs the profile, starts real dsh, may incur cost
-cargo test -p nano-runtime --test integration -- --ignored --test-threads=1 \
-  --skip shutdown_budget_is_bounded_when_cleanup_hangs
-```
-
-See [`tests/e2e/README.md`](tests/e2e/README.md) and [`docs/release/0.1.0/README.md`](docs/release/0.1.0/README.md) for cross-feature e2e, real Ghostty acceptance, and release checks. Real PTY evidence scripts for each feature live in `scripts/`; read the header of each script for prerequisites. All integration tests use temporary `DSH_HOME` and data roots; they do not read or write your real sessions.
+- `NANO_THEME=dark|light` picks nano's own palette (default `dark`); read once at startup, restart to apply.
+- Nano's text, borders, status, focus and diff output use fixed RGB values instead of the terminal's ANSI palette or default foreground.
+- The normal background stays the terminal's default: wallpapers, opacity and blur keep working; nano never paints a full-screen solid colour.
+- Diff, selection and hover highlights use nano's own RGB; whether they participate in transparency is up to the terminal (Ghostty's `background-opacity-cells`).
+- The embedded terminal keeps the child program's own colours; no full-screen recolouring.
+- macOS native full screen disables background transparency; use a normal window if you want translucency.
+- Nano never reads or modifies your Ghostty configuration.
 
 ## Architecture
 
 ```text
 Ghostty
-  └─ nano (Rust TUI)
-       └─ dsh CLI + nano profile
-            ├─ bridge (TypeScript): protocol, boundary checks, cleanup
+  └─ nano launcher (fd guard wrapper, no business state)
+       └─ runtime (this package's bin, the only Node host / terminal writer)
+            ├─ self-built Cordis root
+            │    ├─ official core profile (app-owned, dsh-base + official rows)
+            │    └─ nano plugins (UI / input / render, same root)
             └─ official DSH: agent / models / tools / sessions / permissions / persistence
 ```
 
+Top-level layout:
+
 | Path | Contents |
 | --- | --- |
-| `crates/nano-app/` | The `nano` terminal app: keys, rendering, host link, exit |
-| `crates/nano-*` | Feature state and projections (conversation, reading, sessions, schedules, Monitor, etc.) |
-| `bridge/` | Thin TypeScript bridge running inside the official profile |
-| `protocol/` | Machine-checkable versioned protocol contract |
-| `packaging/` | macOS arm64 packaging, install, and uninstall |
-| `docs/specs/` | Specifications and acceptance criteria |
-| `docs/release/` | Release acceptance, evidence, and known limitations |
+| `src/` | all nano implementation: boot / runtime / render / input / conversation / feature surfaces |
+| `scripts/` | keymap documentation and pre-publish checks |
+| `tests/` | unit tests, feature tests, release-level e2e |
+| `packaging/` | npm publishing and install notes (npm is the only install path in the repo) |
+| `docs/specs/` | specs and acceptance criteria |
+| `docs/release/` | release acceptance, evidence and known limitations |
 
-More detail: [`docs/specs/2026-10-20-nano-v1/README.md`](docs/specs/2026-10-20-nano-v1/README.md) and [`protocol/README.md`](protocol/README.md).
+## Status
+
+| Item | State |
+| --- | --- |
+| 0.2.0 release | **not published to the registry**; `npm pack` output installs globally, see `docs/release/0.2.0/` |
+| Platform | macOS arm64 + Ghostty verified by manual interaction; no 0.2.0 visual screenshots yet |
+| First publish | dist-tag `next`; promote to `latest` after the release conclusion passes |
+
+## Known limitations
+
+- **No crash isolation**: UI and business share one Node process; a render or business exception ends both. Recovery relies on official session persistence.
+- **Shared event loop**: rendering, input and the official agent share one event loop, so heavy load affects each other's latency.
+- **Terminal may be left dirty after a hard kill**: `SIGKILL` cannot be caught, so raw mode and the alternate screen can linger; the next launch detects the dirty state and suggests `reset`.
+- **Scheduling has no pause / resume**: stopping a task means deleting it; delivery is **not exactly-once** and may repeat.
+- **Monitor `notify` costs money**: the default is `quiet` (official inject: does not wake the model or start a turn; content rides along with the next request and is billed there). Switching to `notify` wakes the model and incurs charges.
+- **Three behaviours differ from v1** (kept explicitly by the user on 2026-10-28): Monitor defaults to `quiet`; cold session rename takes the write lock (via a controlled restart); a failed permission switch keeps the old value and warns that it may have partially applied, so re-check `/permission`.
+- Only official dsh `0.2.1-rc.2` is accepted; unknown versions are refused, no guessing and no fallback.
+- `@file` only inserts a path, it does not read the file; the model still has to call a file tool.
+- Hard kills, power loss and escaped descendant processes are not guaranteed to be cleaned up; nano only owns the process groups it started.
+
+Full list: [`docs/release/0.2.0/known-limitations.md`](docs/release/0.2.0/known-limitations.md).
+
+## Development and testing
+
+```sh
+npm ci
+npm run build
+npm test           # tests/unit (S01) + tests/feature (S02)
+npm run test:e2e   # release-level install / uninstall / startup e2e (synthetic HOME/DSH_HOME)
+npm run lint
+npm run keymap:docs -- --write   # regenerate the README keymap block after changing bindings
+```
+
+`scripts/keymap-docs.mjs --check` runs from `prepack`: a stale README keymap block makes `npm pack` fail. Pre-publish checks live in `scripts/prepack-check.mjs`.
+
+Real Ghostty screenshot acceptance needs desktop permissions and is run manually; automated regression uses a headless PTY that does not steal focus or touch the clipboard. Every integration test uses a temporary `DSH_HOME` and data root and never reads or writes your real sessions.
 
 ## Contributing
 
-This is an early, individual-led project. Issues and PRs are welcome. Please open an issue to align on scope before a large change.
+This is a personal, early-stage project; issues and PRs are welcome. Please open an issue to agree on scope before large changes.
 
-- Run `npm run test:bridge` and `npm run test:rust` before submitting.
-- Changes touching the real host, terminal, or visuals should include real evidence (command output, screenshots, or recordings).
+- Run at least `npm test` before submitting; also run `npm run test:e2e` if you touched installation or the entry.
+- For real-terminal or visual changes, attach real evidence (command output, screenshots or recordings).
 - There is no CI yet; review is manual. Keep changes small and well explained.
 
 ## License
 
-MIT. The license text currently lives in [`Cargo.toml`](Cargo.toml) (`license = "MIT"`); a standalone `LICENSE` file is still pending. Confirm the license file before reuse or distribution.
+MIT. See [`LICENSE`](LICENSE).
 
 ## Acknowledgements
 
-- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): agent, models, tools, sessions, and persistence.
-- [Ratatui](https://github.com/ratatui/ratatui) / [Crossterm](https://github.com/crossterm-rs/crossterm): Rust terminal rendering and events.
-- The design mockups and real-terminal evidence contributors.
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): agent, models, tools, sessions and persistence.
+- [React](https://react.dev/) / [react-reconciler](https://www.npmjs.com/package/react-reconciler) / [Yoga](https://www.yogajavascript.com/): UI tree and layout.
+- Contributors of design mockups and real terminal evidence.

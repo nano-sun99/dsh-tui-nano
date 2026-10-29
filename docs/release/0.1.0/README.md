@@ -1,3 +1,6 @@
+> **HISTORICAL（2026-10-29 起）**：本目录记录的是已退场的 Rust 实现（v1）的发布验收，不作为 0.2.0 的依据。
+> 代码在 tag `rust-final` 与分支 `archive/rust-v1`；当前发布验收见 [`../0.2.0/`](../0.2.0/README.md)。
+
 # dsh-tui-nano 0.1.0 发布验收
 
 - 规格：`docs/specs/2026-10-20-nano-v1/S13-release.md`；执行单：#16。
@@ -16,18 +19,14 @@
 
 ## 复核方式
 
+旧实现的构建/安装/测试脚本已随 2026-10-29 退场删除，主仓不再保留副本。需要复核时从归档恢复：
+
 ```sh
-./packaging/build-release.sh
-./packaging/verify-install.sh --payload packaging/dist/dsh-tui-nano-0.1.0-arm64
-NANO_BRIDGE_PACKAGE="$PWD/packaging/dist/dsh-tui-nano-0.1.0-arm64/lib/bridge" \
-  NANO_E2E=1 node --test tests/e2e/cross-feature.test.mjs
-cargo test -p nano-runtime --test integration -- --ignored --test-threads=1 \
-  --skip shutdown_budget_is_bounded_when_cleanup_hangs
-python3 tests/e2e/ghostty-acceptance.py --payload packaging/dist/dsh-tui-nano-0.1.0-arm64
-cargo test --workspace
-npm run test:bridge
+git fetch origin archive/rust-v1
+git worktree add /tmp/nano-rust-v1 origin/archive/rust-v1
+# 归档里的 packaging/ 与 tests/e2e/ 仍是 v1 原样，按当时的 README 执行
 ```
 
-前置：`zstd` CLI（读取多帧会话日志）、Pillow（截图差分）、Ghostty 与 macOS 辅助功能/屏幕录制权限。`NANO_BRIDGE_PACKAGE` 让跨功能测试使用发布 payload 而不是仓库源码。
+`rust-final` tag 记录了删除前的 `main` SHA（`f8a7971`）。
 
 Ghostty 验收需要 macOS 辅助功能权限（System Events）与屏幕录制权限（仅窗口级截图）。所有截图来自合成 HOME/workdir；不采集用户真实桌面。

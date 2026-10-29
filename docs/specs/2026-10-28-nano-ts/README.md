@@ -73,7 +73,7 @@ Ghostty
 | 层 | 选型 |
 |---|---|
 | 语言/运行时 | TypeScript + Node ≥22.19（当前官方依赖树最严 `engines`；实施时冻结） |
-| 官方集成 | `@deepseek-ai/dsh-base`、`dsh-app-boot`、`dsh-api-terminal-controller`、`dsh-schedule`、`dsh-tool-ask-user`、`dsh-file-reference-local`；harness 包精确 0.2.1-rc.2，其余 `@deepseek-ai/*` 用 `overrides` 锁官方树版本；不加载官方 session-controller，nano 自提供最小 `resolveAgent` 适配器；Cordis/React 单实例校验，未知 harness 版本拒绝 |
+| 官方集成 | 依赖 `@deepseek-ai/dsh` 整包（精确 0.2.1-rc.2），子包由整包自带的 `node_modules` 解析；`overrides` 锁整包与 cordis 五件到已装官方树版本；不加载官方 session-controller，nano 自提供最小 `resolveAgent` 适配器；Cordis/React 单实例在启动时断言解析到同一路径，未知 harness 版本拒绝 |
 | UI | `react` + `react-reconciler`（React 19） |
 | 布局 | `yoga-layout`（WASM，无平台二进制）；只用 S01 §3.2 子集 |
 | 文本 | `string-width` 或等价显示宽度；CJK/emoji/ZWJ/组合字符自测 |
@@ -108,7 +108,7 @@ Ghostty
 |---|---|---|---|---|---|---|
 | [S01 α](S01-runtime-render-conversation.md) | 自建根/核心组装、pre-boot 首帧、终端独占、渲染/输入、真实对话与阅读决策 | 官方公开导出 | `package.json`、`package-lock.json`、`tsconfig.json`、`vitest.config.ts`、`biome.json`、`src/boot`、`src/runtime`、`src/render`、`src/input`、`src/theme`、`src/conversation`、`src/transcript`、`src/decisions`、`src/app`、`src/types`、`src/main.ts`、`src/bin.ts`、`tests/unit`、`docs/evidence/2026-10-28-nano-ts/alpha` | S02/S03 文件、官方存储 | spec 合并后 / phase-0+α / 由 S03 发布 | A |
 | [S02 β](S02-input-sessions-terminal.md) | 输入/会话/控制/附件/技能、终端/任务/Monitor/调度/子代理 | S01 render/input/transcript/keymap/scene 契约 | `src/attachments`、`src/sessions`、`src/controls`、`src/skills`、`src/terminal`、`src/jobs`、`src/monitor`、`src/schedule`、`src/subagents`、`tests/feature`、`docs/evidence/2026-10-28-nano-ts/beta` | `src/render`、`package.json`、S01/S03 文件 | S01 契约冻结后 / β / 由 S03 发布 | B |
-| [S03 γ](S03-release.md) | npm 包、发布验收、证据、Rust 与 bridge 退场 | 全部成果 | `packaging/`、`tests/e2e/`、`scripts/`（Rust 期证据脚本）、`docs/release/`、`README.md`、`README.en.md`、键位文档；仅删除 `crates/`、`Cargo.*`、`rust-toolchain.toml`、`protocol/`、`bridge/` | 代其他子件补写功能 | S01 包入口 + S02 键位冻结 / γ / 本份发布 | C |
+| [S03 γ](S03-release.md) | npm 包、发布验收、证据、Rust 与 bridge 退场 | 全部成果 | `packaging/`、`tests/e2e/`、`scripts/`（Rust 期证据脚本）、`docs/release/`、`README.md`、`README.en.md`、键位文档、`src/input/keymap-docs.ts`、`src/controls/feature-keys.ts`；入口级例外见 S03 §1；仅删除 `crates/`、`Cargo.*`、`rust-toolchain.toml`、`protocol/`、`bridge/` | 代其他子件补写功能 | S01 包入口 + S02 键位冻结 / γ / 本份发布 | C |
 
 - `package.json` 由 S01 独占；S03 提供 npm manifest 清单（`private` 处置、`version`、`dependencies`、`scripts`、`bin`、`files`、`engines`、`publishConfig`、`prepack`），由 S01 合入。S02/S03 的依赖变更同样经 S01。
 - **接入点例外（2026-10-29 用户拍板，[ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)）**：`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx`、`src/conversation/controller.ts` 这五个文件由 S02 加六处可选接缝——`CoreBootOptions.extraPatches`、`NanoAppOptions.features`、`AppSnapshot.featureBody` 与 `handleKey`/未消费 action 分发、`FeatureContext.input`、`submitContent`/`steerContent`、`requestRestart`；只加可选参数与钩子、不改 α 既有行为，细则见 [S02 §1](S02-input-sessions-terminal.md)。接缝之外的行为 owner 仍是 S01。
@@ -145,7 +145,7 @@ Ghostty
 | protocol/、node_modules/、test/ | S03 | 删除 / 重写 e2e |
 | 未列模块 | — | 必须标注「不承接」及原因，不得静默丢弃 |
 
-- 删除后检查：`git ls-files -z -- src package.json packaging tests scripts README.md README.en.md AGENTS.md .github .gitignore | xargs -0 grep -nE 'cargo|Cargo|nano-protocol|@dsh-tui-nano/bridge|--bridge-package|target/release|nano-bridge'` 为空；`docs/specs/` 历史规格与 `docs/release/0.1.0/`（标 HISTORICAL）豁免。
+- 删除后检查：以 [S03 §4](S03-release.md) 的命令为准（`cargo|Cargo|rust-toolchain|nano-protocol|--bridge-package|target/release|nano-bridge|@dsh-tui-nano/bridge|bridge/`），结果为空；`docs/specs/` 历史规格与 `docs/release/0.1.0/`（标 HISTORICAL）豁免。裸词 `rust`/`bridge` 不进正则，避免误伤语法高亮的语言名。
 - 根 `package.json` 的 cargo/bridge scripts 与 `packaging/` 旧脚本由 S01/S03 重写或删除。
 
 ### 8.3 数据
@@ -176,7 +176,7 @@ Ghostty
 
 - 包名/bin 名沿用 `dsh-tui-nano` / `nano`；v2 版本 `0.2.0`，发布目录 `docs/release/0.2.0/`，首次发布 dist-tag `next`；数据根 `~/.dsh-tui-nano`；应用 profile 放数据根（`profile/`），首次启动自动创建。
 - 目录结构按 §6 owner；新增目录先改总纲地图。
-- 版本：harness 包精确 0.2.1-rc.2；其余 `@deepseek-ai/*` 用 `overrides` 锁官方树版本，Cordis/React 单实例校验；未知 harness 版本拒绝启动。
+- 版本：`@deepseek-ai/dsh` 整包精确 0.2.1-rc.2；`overrides` 锁整包与 cordis 五件到已装官方树版本；Cordis/React 单实例在启动时断言同一路径；未知 harness 版本拒绝启动。
 - 首帧骨架的最小内容由 S01 定；备用屏由 S01 决定，S03 写入 README。根切换 handoff 文件位置由 S01 定，S02 负责写入/读取。
 - 图片协议（Kitty/Sixel）不在本次范围；图片消息仍走官方附件协议。
 
@@ -224,3 +224,5 @@ Ghostty
 | 20 | 高 | handoff 草稿与 input-history ADR 冲突；exec/PTY/claim 失败未定义 | 已改：§3.3 原子写/读后删/失败矩阵，标为受控切根显式例外 |
 | 21 | 高 | 首启来源无人负责；`--purge` 无入口；manifest 落不了盘 | 已改：首启来源（B8）归 S01 验收；`nano purge` 先于 npm 卸载；S03 给完整 manifest |
 | 22 | 高 | 子代理成本是未登记的第四处变更；20 MiB 无依据；`!`/quiet 语义漂移 | 已改：删除成本字段与 20 MiB；`!` 回 step boundary、quiet 回官方 inject |
+| 23 | 高 | S03 manifest 与 S01 已交付结果冲突（bin 文件名、依赖形态）、grep 门禁误伤语法高亮 | 2026-10-29 用户选择「改旧 spec」：S03 §2.1/§4 对齐 `dist/bin.js` 与 `@deepseek-ai/dsh` 整包，门禁改为旧工具链/路径/协议标识；入口级例外同步到 S01 §1/§6 与 §6 owner 地图 |
+| 24 | 高 | 实施期重审发现：`--root purge` 误删数据根、证据假绿、越 owner 改动、旧口径残留 | 2026-10-29 用户选「改」：修代码与 e2e；S03 §1 例外补 `feature-host.ts` / manifest / `biome.json` / 格式化扫尾；purge 提示写 `/dev/tty`；`keymap-docs` 直接读源码；版本矩阵与证据重新绑定 |

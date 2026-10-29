@@ -7,9 +7,10 @@
  * 读取一律用 `readAt` 的绝对偏移，不推进模型的消费游标；真实收件以
  * accepted step / durable user/message 为准，本模块只负责把内容送进 inbox。
  */
+
+import { createElement, type ReactNode } from 'react'
 import type { Key } from '../input/parser.ts'
 import { Box, Text } from '../render/components.ts'
-import { createElement, type ReactNode } from 'react'
 
 export type MonitorMode = 'quiet' | 'notify'
 
@@ -127,7 +128,10 @@ export class Monitor {
         const settled = view ? !['running', 'stopping'].includes(String(view.status)) : true
         if (settled) listener.settled = true
         // 预算耗尽或任务已结束：把攒下的内容投递一次。
-        if (listener.pending.length >= listener.budget.bytes || (settled && listener.pending !== '')) {
+        if (
+          listener.pending.length >= listener.budget.bytes ||
+          (settled && listener.pending !== '')
+        ) {
           const chunk = trimLines(listener.pending, listener.budget.lines)
           listener.pending = ''
           this.deliverListener(listener, chunk.text)
@@ -161,7 +165,10 @@ export class Monitor {
 export function trimLines(text: string, maxLines: number): { text: string; trimmed: boolean } {
   const lines = text.split('\n')
   if (lines.length <= maxLines) return { text, trimmed: false }
-  return { text: `…（已裁剪 ${lines.length - maxLines} 行）\n${lines.slice(-maxLines).join('\n')}`, trimmed: true }
+  return {
+    text: `…（已裁剪 ${lines.length - maxLines} 行）\n${lines.slice(-maxLines).join('\n')}`,
+    trimmed: true,
+  }
 }
 
 /** 面板行：监听中的任务与已投递次数。 */

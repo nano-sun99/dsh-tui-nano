@@ -12,7 +12,9 @@ function ctxWith(selection: any, efforts?: string[]) {
 
 describe('readModelIdentity', () => {
   it('只认 provider + model 同时存在的身份', () => {
-    expect(readModelIdentity(ctxWith({ provider: 'deepseek-official', model: 'deepseek-flash' }))).toEqual({
+    expect(
+      readModelIdentity(ctxWith({ provider: 'deepseek-official', model: 'deepseek-flash' })),
+    ).toEqual({
       provider: 'deepseek-official',
       model: 'deepseek-flash',
     })
@@ -38,9 +40,9 @@ describe('occupancyText', () => {
   it('缺 token 或窗口时显示未知，不混用计费累计', () => {
     expect(occupancyText(undefined, undefined)).toBe('未知')
     const agent = { session: {} }
-    expect(occupancyText(ctxWithPressure({ pressureTokens: 1000, contextWindow: 4000 }), agent)).toBe(
-      '25%（1000/4000）',
-    )
+    expect(
+      occupancyText(ctxWithPressure({ pressureTokens: 1000, contextWindow: 4000 }), agent),
+    ).toBe('25%（1000/4000）')
     expect(occupancyText(ctxWithPressure({ surfaceTokens: 1000 }), agent)).toBe('未知')
   })
 })
