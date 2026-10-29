@@ -46,6 +46,8 @@ def main() -> int:
     parser.add_argument("--send-wait", type=float, default=3.0)
     # 只打字不回车（观察输入框/补全）。
     parser.add_argument("--send-raw", default=None)
+    # 发 Ctrl+C 之前把当前屏幕字节另存一份（用于断言稳定态）。
+    parser.add_argument("--split-out", default=None)
     # 发送后等到这个标记出现再继续（优先于固定 send-wait）。
     parser.add_argument("--send-until", default=None)
     # 按键（逗号分隔：up/down/left/right/enter/esc/tab）。
@@ -180,6 +182,10 @@ def main() -> int:
                 except OSError:
                     pass
                 drain(None, args.click_wait)
+
+    if args.split_out:
+        with open(os.path.abspath(args.split_out), "wb") as handle:
+            handle.write(bytes(collected))
 
     try:
         os.write(master, b"\x03")
