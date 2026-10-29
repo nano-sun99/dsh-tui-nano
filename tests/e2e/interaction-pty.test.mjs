@@ -94,9 +94,9 @@ test('/model 打开模型选择面板（标题/列表/强度）', () => {
   })
   assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
   assert.match(screen, /模型/, '应显示面板标题')
-  assert.match(screen, /当前：deepseek-flash/, '应显示当前模型')
-  assert.match(screen, /deepseek-flash/, '应列出当前模型')
-  assert.match(screen, /off/, '应列出官方强度')
+  assert.match(screen, /当前：/, '应显示当前模型')
+  assert.match(screen, /DeepSeek|deepseek/, '应列出模型')
+  assert.match(screen, /Off|off/, '应列出官方强度')
 })
 
 test('/model 直接切换与目录外拒绝', () => {

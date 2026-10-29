@@ -389,20 +389,36 @@ export class ConversationController {
     }
   }
 
-  /** 解析某个精确 provider/model 的官方元数据与可选强度。 */
-  async resolveModelEfforts(provider: string, model: string): Promise<string[]> {
+  /** 解析某个精确 provider/model 的官方档位（id + 展示名）与默认强度。 */
+  async resolveModelMeta(
+    provider: string,
+    model: string,
+  ): Promise<{ efforts: Array<{ id: string; name: string }>; defaultEffort?: string }> {
     const llm = this.options.ctx.get('llm')
-    if (!llm?.resolveModelInfo) return []
+    if (!llm?.resolveModelInfo) return { efforts: [] }
     try {
       const info = await llm.resolveModelInfo(provider, model)
-      const efforts = info?.reasoning?.efforts
-      if (!Array.isArray(efforts)) return []
-      return efforts
-        .map((effort: any) => String(effort?.id ?? effort?.name ?? effort))
-        .filter(Boolean)
+      const raw = info?.reasoning?.efforts
+      const efforts = Array.isArray(raw)
+        ? raw
+            .map((effort: any) => ({
+              id: String(effort?.id ?? effort?.name ?? effort),
+              name: String(effort?.name ?? effort?.id ?? effort),
+            }))
+            .filter((effort: { id: string }) => effort.id !== '')
+        : []
+      const defaultEffort = info?.reasoning?.defaultEffort
+        ? String(info.reasoning.defaultEffort)
+        : undefined
+      return { efforts, ...(defaultEffort ? { defaultEffort } : {}) }
     } catch {
-      return []
+      return { efforts: [] }
     }
+  }
+
+  async resolveModelEfforts(provider: string, model: string): Promise<string[]> {
+    const meta = await this.resolveModelMeta(provider, model)
+    return meta.efforts.map((effort) => effort.id)
   }
 
   /**

@@ -242,6 +242,13 @@ export class Completions {
     return count
   }
 
+  /** 打开其他面板时收起补全。 */
+  dismiss(): void {
+    if (!this.session.isOpen) return
+    this.session.close()
+    this.options.onChange()
+  }
+
   /** 补全打开时的按键；返回 true 表示已消费。 */
   handleKey(key: Key): boolean {
     if (!this.session.isOpen) return false

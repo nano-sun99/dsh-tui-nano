@@ -153,7 +153,7 @@ export class Features implements FeatureHost {
     this.modelPanel = new ModelPanel({
       conversation: context.conversation,
       onChange: () => context.requestRender(),
-      notice: (text, tone) => context.conversation.model.appendNotice(text, tone),
+      setNotice: (text) => context.setNotice(text),
     })
 
     // 6) 任务面板：官方 jobs 只读。
@@ -334,6 +334,7 @@ export class Features implements FeatureHost {
     const conversation = context.conversation
     const current = conversation.modelSelection
     if (args === '') {
+      this.completions?.dismiss()
       await this.modelPanel?.openPanel()
       return
     }
@@ -496,7 +497,7 @@ export class Features implements FeatureHost {
     const jobs = this.jobs?.visible
       ? this.jobs.render(width, this.innerHeight(), this.monitor?.watching)
       : null
-    const dock = this.dock?.visible ? this.dock.render(width) : null
+    const dock = this.dock?.visible && !this.modelPanel?.open ? this.dock.render(width) : null
     const stack = [pane, info, sessions, jobs, dock].filter(Boolean)
     if (stack.length === 0) return null
     if (stack.length === 1) return stack[0]
@@ -505,7 +506,7 @@ export class Features implements FeatureHost {
 
   /** `/model` 面板占底部输入区；打开时替换输入行与状态行。 */
   modelPanelBody(): ReactNode {
-    return this.modelPanel?.render(this.innerWidth()) ?? null
+    return this.modelPanel?.render(this.context?.terminal.width ?? 80) ?? null
   }
 
   modelPanelRows(): number {
