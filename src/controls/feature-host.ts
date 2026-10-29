@@ -15,6 +15,7 @@ import { ScheduleStorage } from '../schedule/storage.ts'
 import { SessionControllerAdapter } from '../sessions/session-controller-adapter.ts'
 import { TerminalPane } from '../terminal/pane.ts'
 import { assemblePrompt, findReferences } from '../attachments/prompt.ts'
+import { parseBashInput, renderBashInjection, runBash } from './bash-mode.ts'
 import { JobsPanel } from '../jobs/panel.ts'
 import { Completions } from './completions.ts'
 
@@ -122,12 +123,58 @@ export class Features implements FeatureHost {
     // 带图片引用时 Enter 走附件链：持久化 + 官方准入后再提交。
     if (key.name === 'enter' && !key.shift && !key.ctrl && !key.alt) {
       const text = this.context?.input.text ?? ''
+      const bash = parseBashInput(text)
+      if (bash) {
+        void this.runManualCommand(bash.command, bash.inject)
+        return true
+      }
       if (findReferences(text).some((reference) => reference.image)) {
         void this.submitWithAttachments(text)
         return true
       }
     }
     return false
+  }
+
+  /**
+   * 人工命令：单次 danger-full-access，不注册 job、不进任务表。
+   * `inject` 为真时把输出以合成 user 消息注入模型（不新开回合、不当场唤醒）。
+   */
+  private async runManualCommand(command: string, inject: boolean): Promise<void> {
+    const context = this.context
+    if (!context) return
+    const model = context.conversation.model
+    model.appendNotice(`$ ${command}`, 'info')
+    context.input.take()
+    context.requestRender()
+    try {
+      const result = await runBash({ ctx: context.core.ctx, command, workdir: context.cwd })
+      const output = [result.stdout, result.stderr].filter((part) => part !== '').join('\n')
+      if (output !== '') model.appendNotice(output, result.exitCode === 0 ? 'info' : 'danger')
+      model.appendNotice(
+        result.timedOut ? '已超时' : `退出码 ${String(result.exitCode ?? 'null')}`,
+        result.exitCode === 0 ? 'info' : 'warning',
+      )
+      if (inject) {
+        this.injectIntoModel(renderBashInjection(result))
+      }
+    } catch (error) {
+      model.appendNotice(`人工命令失败：${String((error as Error)?.message ?? error)}`, 'danger')
+    }
+    context.requestRender()
+  }
+
+  /** 注入语义：不新开回合、不唤醒；运行中的 Agent 在最近 step boundary 取走。 */
+  private injectIntoModel(text: string): void {
+    const context = this.context
+    const agent = context?.conversation.agent
+    const llm = context?.official?.llm
+    if (!agent || !llm?.createUserMessage) return
+    try {
+      agent.inject(llm.createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
+    } catch (error) {
+      process.stderr.write(`nano: 注入人工命令输出失败：${String((error as Error)?.message ?? error)}\n`)
+    }
   }
 
   /** 附件链提交：失败保留草稿并提示，不静默吞掉。 */
