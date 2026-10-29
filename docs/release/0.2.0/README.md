@@ -2,7 +2,7 @@
 
 - 规格：`docs/specs/2026-10-28-nano-ts/S03-release.md`；执行单：#88。
 - **结论：不发布。** 打包、安装链与 Rust/bridge 退场已完成，但 §3.3 仍有必测项没有 0.2.0 证据；按 §3.2 口径构成阻断。详见 [`release-conclusion.md`](release-conclusion.md)。
-- 产物：`packaging/dist/dsh-tui-nano-0.2.0.tgz`，SHA-256 `c5f2ab57…`（完整值见 [`version-matrix.md`](version-matrix.md)）。
+- 产物：`packaging/dist/dsh-tui-nano-0.2.0.tgz`，SHA-256 `1a2d5357…`（完整值见 [`version-matrix.md`](version-matrix.md)）。
 
 ## 目录
 

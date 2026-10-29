@@ -5,11 +5,12 @@
 // 字体与窗口观感；后者仍需要真机截图，不能由本文件替代。
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
+import stringWidth from 'string-width'
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 const nodeBin = process.execPath
@@ -19,41 +20,49 @@ function runInPty(theme, cols) {
   const dshHome = path.join(home, '.dsh')
   mkdirSync(dshHome, { recursive: true })
   const out = path.join(home, 'screen.bin')
-  const result = spawnSync(
-    'python3',
-    [
-      'tests/e2e/pty-start.py',
-      '--out',
-      out,
-      '--wait',
-      '6',
-      '--cols',
-      String(cols),
-      '--rows',
-      '30',
-      '--',
-      nodeBin,
-      'dist/bin.js',
-      '--root',
-      'vision',
-    ],
-    {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      timeout: 90000,
-      env: {
-        ...process.env,
-        HOME: home,
-        DSH_HOME: dshHome,
-        NANO_DATA_ROOT: path.join(home, '.dsh-tui-nano'),
-        NANO_THEME: theme,
-        TERM: 'xterm-256color',
+  try {
+    const result = spawnSync(
+      'python3',
+      [
+        'tests/e2e/pty-start.py',
+        '--out',
+        out,
+        '--wait',
+        '8',
+        '--until',
+        '输入消息',
+        '--cols',
+        String(cols),
+        '--rows',
+        '30',
+        '--',
+        nodeBin,
+        'dist/bin.js',
+        '--root',
+        'vision',
+      ],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        timeout: 90000,
+        env: {
+          ...process.env,
+          HOME: home,
+          DSH_HOME: dshHome,
+          NANO_DATA_ROOT: path.join(home, '.dsh-tui-nano'),
+          NANO_THEME: theme,
+          TERM: 'xterm-256color',
+        },
       },
-    },
-  )
-  assert.equal(result.status, 0, `pty-start.py 失败：${result.stderr}`)
-  const code = Number.parseInt(result.stdout.trim().split('\n').at(-1) ?? '', 10)
-  return { code, screen: readFileSync(out, 'utf8') }
+    )
+    assert.equal(result.status, 0, `pty-start.py 失败：${result.stderr}`)
+    const code = Number.parseInt(result.stdout.trim().split('\n').at(-1) ?? '', 10)
+    const screen = readFileSync(out, 'utf8')
+    // 屏幕里带着临时 HOME 路径；比较主题时必须先归一化，否则换目录就会「不同」。
+    return { code, screen: screen.replaceAll(home, '<home>') }
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
 }
 
 /** 拆出每个 SGR 的参数列表；`38;2;r;g;b` 的 RGB 数值不算独立颜色码。 */
@@ -109,25 +118,51 @@ function firstNamedColor(blocks) {
   return undefined
 }
 
-test('深色主题：只发真彩色，不发 ANSI 命名色', () => {
+/** 骨架按整行输出，每行以 `ESC[K` 收尾；取这些行的显示宽度。 */
+function skeletonLineWidths(screen) {
+  const widths = []
+  for (const chunk of screen.split('\r\n')) {
+    if (!chunk.includes('\x1b[K')) continue
+    if (/\x1b\[\d+;\d+H/.test(chunk)) continue // 后面带光标定位的是正式 UI 片段，不是整行
+    // 去掉 CSI（含 `ESC[>1u` 这类 kitty 协议）与行尾残留的 `\r`。
+    const text = chunk.replace(/\x1b\[[0-9;?>]*[A-Za-z]/g, '').replace(/\r+$/, '')
+    widths.push(stringWidth(text))
+  }
+  return widths
+}
+
+test('深色主题：真彩色 token 命中深色盘，且不带 ANSI 命名色', () => {
   const { code, screen } = runInPty('dark', 100)
   assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
   const blocks = sgrParams(screen)
   assert.ok(hasTruecolor(blocks), '应出现 38;2 / 48;2 真彩色')
+  assert.ok(screen.includes('38;2;125;211;252'), '深色强调色应为 125,211,252')
+  assert.ok(screen.includes('38;2;226;232;240'), '深色前景色应为 226,232,240')
   assert.equal(firstNamedColor(blocks), undefined, '不应出现 ANSI 命名色')
 })
 
-test('浅色主题与深色主题的像素字节不同', () => {
-  const dark = runInPty('dark', 100).screen
-  const light = runInPty('light', 100).screen
-  assert.notEqual(dark, light, 'NANO_THEME=light 的输出应与 dark 不同')
-  assert.ok(hasTruecolor(sgrParams(light)), '浅色主题也应使用真彩色')
+test('浅色主题：真彩色 token 命中浅色盘，且不带 ANSI 命名色', () => {
+  const { code, screen } = runInPty('light', 100)
+  assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
+  const blocks = sgrParams(screen)
+  assert.ok(screen.includes('38;2;3;105;161'), '浅色强调色应为 3,105,161')
+  assert.ok(screen.includes('38;2;30;41;59'), '浅色前景色应为 30,41,59')
+  assert.equal(firstNamedColor(blocks), undefined, '浅色主题也不应出现 ANSI 命名色')
+  // 主题确实生效：浅色盘与深色盘的关键 token 不能同时出现。
+  assert.ok(!screen.includes('38;2;125;211;252'), '浅色主题不应出现深色强调色')
 })
 
-test('60 列与 100 列都能起界面', () => {
+test('60 与 100 列：骨架行不超过列宽，且有一行铺满', () => {
   for (const cols of [60, 100]) {
     const { code, screen } = runInPty('dark', cols)
     assert.ok(code === 0 || code === 130, `${cols} 列退出码异常：${code}`)
-    assert.match(screen, /nano/, `${cols} 列应出现界面内容`)
+    const widths = skeletonLineWidths(screen)
+    assert.ok(widths.length > 0, `${cols} 列应能解析出骨架行`)
+    const widest = Math.max(...widths)
+    assert.ok(
+      widths.every((width) => width <= cols),
+      `${cols} 列存在超宽行：${widths.filter((width) => width > cols).join(', ')}`,
+    )
+    assert.equal(widest, cols, `${cols} 列应有一行铺满到 ${cols}，实际最宽 ${widest}`)
   }
 })

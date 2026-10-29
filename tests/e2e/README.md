@@ -23,7 +23,7 @@ NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 | `启动冒烟`                             | 真 PTY 下出现 pre-boot 骨架、Ctrl+C 干净退出；`$DSH_HOME` 只允许新增 `.anonymous-user-id`                |
 | `未知 harness 版本拒绝启动`            | `loadOfficial` 对非 `0.2.1-rc.2` 的锚点报「版本不受支持」                                                |
 | `强杀残留提示 reset`                   | 预置陈旧挂载锁（不存在的 pid），下次启动界面出现 `reset` 提示                                            |
-| `核心加载失败有可见错误`               | 给已安装包注入不支持的 harness 版本，PTY 上可见「版本不受支持」并以 1 退出                               |
+| `骨架后核心加载失败`                   | 把已安装包的 `startCore` 换成抛错 shim：骨架可见、错误可见、退出 1、安装前缀恢复原状                     |
 | `Node 22.19（下限）里能启动`           | 先断言 `NANO_NODE_22` 真是 22.19.0 且 PATH 解析一致，再跑启动冒烟                                        |
 | `低于 22.19 拒绝启动并给可操作错误`    | 20.20 在入口打印可操作错误并退出 1                                                                       |
 | `升级`                                 | 装 0.2.1 后 `--version` 跟着变，再装回 0.2.0                                                             |
@@ -35,7 +35,7 @@ NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 
 ## `vision-pty.test.mjs`（3）
 
-真 PTY 无头跑 nano，解析它发出的 SGR 字节：深/浅主题只发 `38;2`/`48;2` 真彩色、不含 ANSI 命名色；60 列与 100 列都能起界面。
+真 PTY 无头跑 nano，解析它发出的 SGR 字节：深/浅主题分别命中各自色盘的 RGB、均不含 ANSI 命名色；60/100 列骨架行不超宽且有一行铺满。该套件跑仓库 `dist/`，不安装 tarball。
 
 **边界**：PTY 只证明 nano 发了什么颜色，不证明 Ghostty 的合成、透明、字体与窗口观感；后者仍要真机截图，不能用本文件替代。
 

@@ -38,7 +38,7 @@
     "yoga-layout": "^3.2.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.4",
+    "@biomejs/biome": "2.6.3",
     "@types/node": "^24.3.0",
     "@types/prismjs": "^1.26.5",
     "@types/react": "^19.1.12",
