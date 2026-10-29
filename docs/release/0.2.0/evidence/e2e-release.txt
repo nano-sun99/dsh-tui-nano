@@ -8,32 +8,32 @@ STEP before-install {"dataRoot":{"files":0,"digest":"44136fa355b3678a"},"dshHome
 STEP after-install {"dataRoot":{"files":0,"digest":"44136fa355b3678a"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"17b457183d9b1643"}}
 STEP before-purge-refused {"dataRoot":{"files":1,"digest":"6324d2abd503280e"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"17b457183d9b1643"}}
 STEP after-purge-refused {"dataRoot":{"files":1,"digest":"6324d2abd503280e"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"17b457183d9b1643"}}
-STEP before-purge {"dataRoot":{"files":4,"digest":"fd4733c786b71e25"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"17b457183d9b1643"}}
+STEP before-purge {"dataRoot":{"files":4,"digest":"ce7a41c354599eca"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"17b457183d9b1643"}}
 STEP after-purge {"dataRoot":{"files":0,"digest":"44136fa355b3678a"},"dshHome":{"files":0,"digest":"44136fa355b3678a"},"installed":{"files":64617,"digest":"17b457183d9b1643"}}
-STEP before-upgrade {"dataRoot":{"files":12,"digest":"3eaa2f0384d5a88a"},"dshHome":{"files":1,"digest":"ff511594ea5561aa"},"installed":{"files":64617,"digest":"17b457183d9b1643"}}
-STEP after-upgrade {"dataRoot":{"files":12,"digest":"3eaa2f0384d5a88a"},"dshHome":{"files":1,"digest":"ff511594ea5561aa"},"installed":{"files":64617,"digest":"e44cbe5eb6dfb56e"}}
-STEP before-uninstall {"dataRoot":{"files":13,"digest":"96d397f2b5f29a92"},"dshHome":{"files":1,"digest":"ff511594ea5561aa"},"installed":{"files":64617,"digest":"17b457183d9b1643"}}
-STEP after-uninstall {"dataRoot":{"files":13,"digest":"96d397f2b5f29a92"},"dshHome":{"files":1,"digest":"ff511594ea5561aa"},"installed":{"files":0,"digest":"44136fa355b3678a"}}
-STEP after-reinstall {"dataRoot":{"files":13,"digest":"96d397f2b5f29a92"},"dshHome":{"files":1,"digest":"ff511594ea5561aa"},"installed":{"files":64617,"digest":"17b457183d9b1643"}}
-✔ pack 产物可复现且与版本矩阵一致 (0.3305ms)
-✔ 全新安装后 nano --version 可用 (45696.453125ms)
-✔ --help 含用法与键位段 (139.958667ms)
-✔ purge 无 --yes 且非交互时拒绝并保留数据根 (3684.621292ms)
-✔ --root purge 不会被当成 purge 子命令（回归：数据丢失） (559.755625ms)
-✔ purge --yes 删除数据根 (3711.938416ms)
-✔ 启动冒烟：真 PTY 下起骨架并干净退出，$DSH_HOME 只允许官方标识变化 (7275.3575ms)
-✔ 未知 harness 版本拒绝启动 (28.116417ms)
-✔ 强杀残留：陈旧挂载锁让下次启动提示 reset (7298.416042ms)
-✔ 核心加载失败：装入不支持的 harness 版本后有可见错误且非零退出 (369.814459ms)
-✔ Node 22.19（下限）里能启动 (7570.087375ms)
-✔ 低于 22.19 拒绝启动并给可操作错误 (239.4685ms)
-✔ 升级：安装更高版本后 --version 跟着变 (28938.97325ms)
-✔ 普通卸载保留数据根，重装后能真正启动 (22842.913666ms)
-✔ keymap 文档与源码一致 (48.385292ms)
-✔ 架构门禁：仓库内无旧工具链/桥接引用 (88.981084ms)
-✔ 深色主题：只发真彩色，不发 ANSI 命名色 (6188.920167ms)
-✔ 浅色主题与深色主题的像素字节不同 (12332.341958ms)
-✔ 60 列与 100 列都能起界面 (12317.644625ms)
+STEP before-upgrade {"dataRoot":{"files":12,"digest":"b3c6325ec1ae52ef"},"dshHome":{"files":1,"digest":"ac1680391963bf6b"},"installed":{"files":64617,"digest":"17b457183d9b1643"}}
+STEP after-upgrade {"dataRoot":{"files":12,"digest":"b3c6325ec1ae52ef"},"dshHome":{"files":1,"digest":"ac1680391963bf6b"},"installed":{"files":64617,"digest":"e44cbe5eb6dfb56e"}}
+STEP before-uninstall {"dataRoot":{"files":13,"digest":"33f4ec7e9ac25b54"},"dshHome":{"files":1,"digest":"ac1680391963bf6b"},"installed":{"files":64617,"digest":"17b457183d9b1643"}}
+STEP after-uninstall {"dataRoot":{"files":13,"digest":"33f4ec7e9ac25b54"},"dshHome":{"files":1,"digest":"ac1680391963bf6b"},"installed":{"files":0,"digest":"44136fa355b3678a"}}
+STEP after-reinstall {"dataRoot":{"files":13,"digest":"33f4ec7e9ac25b54"},"dshHome":{"files":1,"digest":"ac1680391963bf6b"},"installed":{"files":64617,"digest":"17b457183d9b1643"}}
+✔ pack 产物可复现且与版本矩阵一致 (0.320542ms)
+✔ 全新安装后 nano --version 可用 (11654.36325ms)
+✔ --help 含用法与键位段 (140.405125ms)
+✔ purge 无 --yes 且非交互时拒绝并保留数据根 (3665.354875ms)
+✔ --root purge 不会被当成 purge 子命令（回归：数据丢失） (558.814958ms)
+✔ purge --yes 删除数据根 (3721.893875ms)
+✔ 启动冒烟：真 PTY 下起骨架并干净退出，$DSH_HOME 只允许官方标识变化 (7242.259458ms)
+✔ 未知 harness 版本拒绝启动 (27.649709ms)
+✔ 强杀残留：陈旧挂载锁让下次启动提示 reset (7271.715125ms)
+✔ 核心加载失败：装入不支持的 harness 版本后有可见错误且非零退出 (367.032292ms)
+✔ Node 22.19（下限）里能启动 (7457.00725ms)
+✔ 低于 22.19 拒绝启动并给可操作错误 (164.570167ms)
+✔ 升级：安装更高版本后 --version 跟着变 (29138.995958ms)
+✔ 普通卸载保留数据根，重装后能真正启动 (82796.030333ms)
+✔ keymap 文档与源码一致 (45.903333ms)
+✔ 架构门禁：仓库内无旧工具链/桥接引用 (58.447417ms)
+✔ 深色主题：只发真彩色，不发 ANSI 命名色 (6197.521125ms)
+✔ 浅色主题与深色主题的像素字节不同 (12507.619291ms)
+✔ 60 列与 100 列都能起界面 (12297.194542ms)
 ℹ tests 19
 ℹ suites 0
 ℹ pass 19
@@ -41,4 +41,4 @@ STEP after-reinstall {"dataRoot":{"files":13,"digest":"96d397f2b5f29a92"},"dshHo
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 161788.96825
+ℹ duration_ms 187702.563875
