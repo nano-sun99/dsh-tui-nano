@@ -70,3 +70,33 @@ describe('assemblePrompt', () => {
     )
   })
 })
+
+describe('attachFile', () => {
+  it('按流交给官方存储，超过旧 20MiB 参考值也不拒绝，且每次都是新回执', async () => {
+    const { attachFile, filePart } = await import('../../src/attachments/files.ts')
+    const dir = mkdtempSync(join(tmpdir(), 'nano-file-'))
+    const file = join(dir, 'big.bin')
+    // 21 MiB：旧 v1 的 20 MiB 本地上限已删除，这里仍应通过。
+    writeFileSync(file, Buffer.alloc(21 * 1024 * 1024, 7))
+    let sequence = 0
+    const ctx = {
+      get: (name: string) =>
+        name === 'attachments'
+          ? {
+              saveFileStream: async ({ data, name }: { data: AsyncIterable<Uint8Array>; name: string }) => {
+                let bytes = 0
+                for await (const chunk of data) bytes += chunk.byteLength
+                sequence += 1
+                return { attachmentId: `file-${sequence}`, name, bytes }
+              },
+            }
+          : undefined,
+    }
+    const first = await attachFile(ctx, file)
+    const second = await attachFile(ctx, file)
+    expect(first.bytes).toBe(21 * 1024 * 1024)
+    expect(first.attachment.attachmentId).toBe('file-1')
+    expect(second.attachment.attachmentId).toBe('file-2')
+    expect(filePart(first)).toEqual({ type: 'file', attachment: first.attachment })
+  })
+})

@@ -15,13 +15,21 @@ import { ScheduleStorage } from '../schedule/storage.ts'
 import { SessionControllerAdapter } from '../sessions/session-controller-adapter.ts'
 import { TerminalPane } from '../terminal/pane.ts'
 import { assemblePrompt, findReferences } from '../attachments/prompt.ts'
+import { JobsPanel } from '../jobs/panel.ts'
 import { Completions } from './completions.ts'
 
 /** 终端面板开关（owner s02）：Ctrl+T。 */
 export const TERMINAL_TOGGLE_ACTION = 'terminal.toggle'
 
+/** 任务面板开关（owner s02）：Ctrl+J。 */
+export const JOBS_TOGGLE_ACTION = 'jobs.toggle'
+
 function isTerminalToggle(key: Key): boolean {
   return key.name === 'char' && key.ctrl === true && key.text === 't'
+}
+
+function isJobsToggle(key: Key): boolean {
+  return key.name === 'char' && key.ctrl === true && key.text === 'j'
 }
 
 export class Features implements FeatureHost {
@@ -30,6 +38,7 @@ export class Features implements FeatureHost {
   private schedule: ScheduleRuntime | undefined
   private terminal: TerminalPane | undefined
   private completions: Completions | undefined
+  private jobs: JobsPanel | undefined
   private disposeKeys: (() => void)[] = []
 
   async start(context: FeatureContext): Promise<void> {
@@ -78,7 +87,22 @@ export class Features implements FeatureHost {
     })
     this.completions.install()
 
+    // 6) 任务面板：官方 jobs 只读。
+    this.jobs = new JobsPanel({
+      ctx,
+      sessionId: context.rootId,
+      onChange: () => context.requestRender(),
+      writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
+    })
+
     this.disposeKeys.push(
+      registerKeybinding({
+        id: JOBS_TOGGLE_ACTION,
+        keys: [{ name: 'char', text: 'j', ctrl: true }],
+        scopes: ['idle', 'input', 'running'],
+        description: '打开/关闭任务面板',
+        owner: 's02',
+      }),
       registerKeybinding({
         id: TERMINAL_TOGGLE_ACTION,
         keys: [{ name: 'char', text: 't', ctrl: true }],
@@ -91,8 +115,9 @@ export class Features implements FeatureHost {
 
   handleKey(key: Key): boolean {
     // 开关必须交回 keymap：否则面板聚焦时会把 Ctrl+T 当成终端输入吃掉。
-    if (isTerminalToggle(key)) return false
+    if (isTerminalToggle(key) || isJobsToggle(key)) return false
     if (this.completions?.handleKey(key)) return true
+    if (this.jobs?.handleKey(key)) return true
     if (this.terminal?.visible && this.terminal.handleKey(key, false)) return true
     // 带图片引用时 Enter 走附件链：持久化 + 官方准入后再提交。
     if (key.name === 'enter' && !key.shift && !key.ctrl && !key.alt) {
@@ -126,6 +151,10 @@ export class Features implements FeatureHost {
   }
 
   dispatchAction(action: string): boolean {
+    if (action === JOBS_TOGGLE_ACTION) {
+      this.jobs?.toggle()
+      return true
+    }
     if (action === 'focus.next' && this.completions?.open) {
       this.completions.accept()
       return true
@@ -141,9 +170,12 @@ export class Features implements FeatureHost {
     this.completions?.maybeSync()
     const width = this.innerWidth()
     const pane = this.terminal?.visible ? this.terminal.render(width, this.innerHeight()) : null
+    const jobs = this.jobs?.render(width, this.innerHeight()) ?? null
     const popup = this.completions?.render(width) ?? null
-    if (pane && popup) return createElement(Box, { flexDirection: 'column', width }, pane, popup)
-    return pane ?? popup
+    const stack = [pane, jobs, popup].filter(Boolean)
+    if (stack.length === 0) return null
+    if (stack.length === 1) return stack[0]
+    return createElement(Box, { flexDirection: 'column', width }, ...stack)
   }
 
   private innerWidth(): number {
@@ -157,6 +189,7 @@ export class Features implements FeatureHost {
   async dispose(): Promise<void> {
     this.completions?.dispose()
     this.completions = undefined
+    this.jobs = undefined
     for (const dispose of this.disposeKeys) dispose()
     this.disposeKeys = []
     await this.terminal?.close().catch?.(() => {})
