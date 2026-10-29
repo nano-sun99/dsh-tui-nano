@@ -16,6 +16,7 @@ import {
   type CompletionProvider,
 } from '../input/completion.ts'
 import type { Key } from '../input/parser.ts'
+import { graphemes } from '../render/text.ts'
 import { Box, Text } from '../render/components.ts'
 
 export interface CompletionsOptions {
@@ -115,10 +116,10 @@ export class Completions {
             const summaries = (snapshot?.skills ?? []) as Array<{
               name: string
               description: string
-              invocation?: { user?: boolean }
+              userInvocable?: boolean
             }>
             return summaries
-              .filter((skill) => skill.invocation?.user !== false)
+              .filter((skill) => skill.userInvocable !== false)
               .filter((skill) => skill.name.toLowerCase().includes(query.toLowerCase()))
               .map((skill) => ({
                 label: `/${skill.name}`,
@@ -273,8 +274,8 @@ export class Completions {
 
 /** 从光标往回找触发符：`@` 在开头或空白后；`/` 只在整行开头。 */
 export function detectTrigger(text: string, cursor: number): Trigger | undefined {
-  const graphemes = [...text]
-  const before = graphemes.slice(0, cursor)
+  const cells = graphemes(text)
+  const before = cells.slice(0, cursor)
   const head = before.join('')
   // 命令只在整行以 `/` 开头且还没打字到空白时触发。
   if (head.startsWith('/') && !/\s/u.test(head)) {

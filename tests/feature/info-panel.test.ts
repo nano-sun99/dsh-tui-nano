@@ -27,13 +27,20 @@ describe('readModelIdentity', () => {
 })
 
 describe('occupancyText', () => {
-  it('缺 token 或窗口时显示未知，不混用计费累计', () => {
-    expect(occupancyText(undefined)).toBe('未知')
-    const agent = {
-      session: { projection: () => ({ projectedTokens: 1000, contextWindow: 4000 }) },
+  function ctxWithPressure(state: any) {
+    return {
+      get: (name: string) =>
+        name === 'sessionProjections'
+          ? { snapshot: () => ({ values: { contextPressure: state } }) }
+          : undefined,
     }
-    expect(occupancyText(agent)).toBe('25%（1000/4000）')
-    const noWindow = { session: { projection: () => ({ projectedTokens: 1000 }) } }
-    expect(occupancyText(noWindow)).toBe('未知')
+  }
+  it('缺 token 或窗口时显示未知，不混用计费累计', () => {
+    expect(occupancyText(undefined, undefined)).toBe('未知')
+    const agent = { session: {} }
+    expect(occupancyText(ctxWithPressure({ pressureTokens: 1000, contextWindow: 4000 }), agent)).toBe(
+      '25%（1000/4000）',
+    )
+    expect(occupancyText(ctxWithPressure({ surfaceTokens: 1000 }), agent)).toBe('未知')
   })
 })

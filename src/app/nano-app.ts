@@ -557,6 +557,20 @@ export class NanoApp {
   /** 记录重启意图并走既有关停；关停里写 handoff，start() 结束时抛 AppRestart。 */
   private requestRestart(request: RestartRequest): void {
     if (this.pendingRestart) return
+    try {
+      // 先落盘 handoff：写不成就取消重启，应用继续跑，草稿留在输入框。
+      writeHandoff(this.options.dataRoot, {
+        rootId: request.rootId,
+        sessionId: this.options.rootId,
+        reason: request.reason ?? 'root-switch',
+        ...(request.payload ? { payload: request.payload } : {}),
+      })
+    } catch (error) {
+      this.notice = `切换失败（handoff 写入失败）：${String((error as Error)?.message ?? error)}`
+      this.options.writeDiagnostic(`nano: handoff 写入失败，取消重启`)
+      this.scheduleRender()
+      return
+    }
     this.pendingRestart = request
     this.exitCode = 0
     void this.shutdown(`restart ${request.rootId}`)
@@ -574,22 +588,6 @@ export class NanoApp {
     this.stopping = true
     this.shutdownStartedAt = Date.now()
     this.options.writeDiagnostic(`nano: 开始关停（${reason}）`)
-    if (this.pendingRestart) {
-      // 冻结输入之后、drain 之前：handoff 先落地，失败就放弃重启并报错。
-      try {
-        writeHandoff(this.options.dataRoot, {
-          rootId: this.pendingRestart.rootId,
-          sessionId: this.options.rootId,
-          reason: this.pendingRestart.reason ?? 'root-switch',
-          ...(this.pendingRestart.payload ? { payload: this.pendingRestart.payload } : {}),
-        })
-      } catch (error) {
-        this.pendingRestart = undefined
-        this.options.writeDiagnostic(
-          `nano: handoff 写入失败，取消重启：${String((error as Error)?.message ?? error)}`,
-        )
-      }
-    }
     const { core, conversation, claim, terminal } = this.options
     this.lifecycle.register('drain', 'features', async () => {
       try {
@@ -653,6 +651,11 @@ export class NanoApp {
     this.removeProcessListeners()
     const failed = report.results.some((result) => result.status !== 'stopped')
     if (failed) this.exitCode = this.exitCode || 1
+    if (failed && this.pendingRestart) {
+      // 清理失败时不换根：claim 没释放，新进程只会报「被占用」。
+      this.pendingRestart = undefined
+      this.options.writeDiagnostic('nano: 清理未完成，取消受控重启')
+    }
     this.options.writeDiagnostic(formatShutdownReport(report))
     this.finishResolve?.(this.exitCode)
   }

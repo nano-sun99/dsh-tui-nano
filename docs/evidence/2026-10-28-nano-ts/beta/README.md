@@ -49,7 +49,7 @@ DSH_HOME=/tmp/nano-spike-0b/home NANO_DATA_ROOT=/tmp/nano-spike-0b/data \
 关键发现（写进实现约束）：
 
 1. **路由会让 `storageDomain` 整体延后激活**。`storage-domain` 的 `routes` 指向命名后端时，官方 facility 会等该后端的 service key；boot 期间 `session-projection-cache` 报 `pending (waiting for service: storageDomain)`。所以后端注册 + 服务键必须在 boot 后**最靠前**完成，任一失败即启动失败——与 spec §3.5 的单一结论一致，且影响面比 schedule 本身更大。
-2. 探针域路径就是 `<数据根>/runtime-data/<root>/schedule-storage/nano_probe.json`；schedule 任务表同目录 `schedule.json`，per-root 隔离由 root 本身提供。
+2. 探针域路径就是 `<数据根>/runtime-data/<root>/storage/nano_probe.json`；schedule 任务表同目录 `schedule.json`，per-root 隔离由 root 本身提供。
 3. 终端 `create` 需要 `AbortSignal` 第三参；`setup` 回调必须返回 `undefined`（否则 agent-loop 会把它当 `{commit}` 用）。
 
 ## 1. 终端附着（in-process Remote）

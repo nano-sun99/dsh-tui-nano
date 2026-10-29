@@ -40,6 +40,8 @@ export class TerminalPane {
   private wake: (() => void) | undefined
   private sequence = 0
   private closing = false
+  private expectedSequence = 0
+  private gapReported = false
   private state: 'closed' | 'opening' | 'open' | 'failed' | 'exited' = 'closed'
   private error: string | undefined
   private cols = 80
@@ -75,13 +77,21 @@ export class TerminalPane {
     }
     this.state = 'opening'
     this.error = undefined
-    this.grid = new CellGrid(this.cols, this.rows)
+    // 重新打开时复用同一个 terminal id 与网格：不新建 PTY，避免配额与画面串台。
+    if (!this.info) this.grid = new CellGrid(this.cols, this.rows)
     this.options.onChange()
     try {
       const terminal = this.options.ctx.get('terminalController')
       if (!terminal) throw new Error('terminalController 不可用')
-      const id = `nano-term-${this.options.sessionId}-${Date.now()}`
+      const id = this.info?.id ?? `nano-term-${this.options.sessionId}`
       const control = new AbortController()
+      // 先断旧流/旧 Peer，再附着；未确认输入不回放。
+      this.abort?.abort()
+      await this.peer?.dispose?.().catch?.(() => {})
+      this.uplinkQueue = []
+      this.sequence = 0
+      this.expectedSequence = 0
+      this.gapReported = false
       this.abort = control
       this.info = await terminal.create(agent, { id, cols: this.cols, rows: this.rows }, control.signal)
       await this.attach(id, agent, control.signal)
@@ -129,7 +139,18 @@ export class TerminalPane {
         if (frame.type === 'snapshot') {
           if (typeof frame.screen === 'string' && frame.screen !== '') this.grid.feed(frame.screen)
         } else if (frame.type === 'output' && typeof frame.data === 'string') {
-          this.grid.feed(frame.data)
+          // 序号缺口：结束该附件并报错，不丢弃单条继续。
+          const sequence = typeof frame.sequence === 'number' ? frame.sequence : undefined
+          if (sequence !== undefined && sequence !== this.expectedSequence + 1 && !this.gapReported) {
+            this.gapReported = true
+            this.state = 'failed'
+            this.error = `序列缺口（期望 ${this.expectedSequence + 1}，收到 ${sequence}）`
+            this.options.writeDiagnostic(`nano: 终端序列缺口，已结束附件：${this.error}`)
+            this.abort?.abort()
+          } else {
+            if (sequence !== undefined) this.expectedSequence = sequence
+            this.grid.feed(frame.data)
+          }
         } else if (frame.type === 'state') {
           const state = (frame as any).state
           if (state === 'exited' || state === 'failed') this.state = 'exited'
@@ -146,8 +167,15 @@ export class TerminalPane {
     }
   }
 
-  /** 隐藏但保留 PTY（重新打开时重新附着）。 */
+  /** 隐藏但保留 PTY：断开输出流，重新打开时用同一 id 重新附着。 */
   hide(): void {
+    this.abort?.abort()
+    this.abort = undefined
+    void this.peer?.dispose?.().catch?.(() => {})
+    this.peer = undefined
+    this.stream = undefined
+    this.uplinkQueue = []
+    this.sequence = 0
     this.state = 'closed'
     this.options.onChange()
   }

@@ -46,18 +46,44 @@ describe('assemblePrompt', () => {
     expect(assembled.rejected).toEqual([])
   })
 
-  it('图片引用先持久化，再按文本 + 图片顺序交给官方准入', async () => {
+  it('图片以 base64 data 进 prompt，准入由官方完成（无预上传）', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'nano-att-'))
     const file = join(dir, 'shot.png')
     writeFileSync(file, png)
     const ctx = fakeContext()
     const assembled = await assemblePrompt({ ctx, cwd: dir, text: `look @${file}` })
-    expect(ctx.saved).toHaveLength(1)
-    expect(ctx.saved[0]?.mediaType).toBe('image/png')
-    expect(assembled.content).toEqual([
-      { type: 'text', text: `look @${file}` },
-      { type: 'image', attachment: { id: 'img-0', mediaType: 'image/png' } },
-    ])
+    // 不再调用 saveImages：图片只作为 base64 段交给 admitPromptContent。
+    expect(ctx.saved).toHaveLength(0)
+    expect(assembled.content[1]).toMatchObject({ type: 'image', mediaType: 'image/png' })
+    expect(typeof (assembled.content[1] as any).data).toBe('string')
+    expect((assembled.content[1] as any).data).toBe(png.toString('base64'))
+  })
+
+  it('通用文件引用走 saveFileStream 并作为 file 段提交', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nano-att-'))
+    const file = join(dir, 'notes.md')
+    writeFileSync(file, '# hi')
+    const saved: any[] = []
+    const ctx = {
+      get: (name: string) =>
+        name === 'attachments'
+          ? {
+              saveFileStream: async ({ data, name }: any) => {
+                let bytes = 0
+                for await (const chunk of data) bytes += chunk.byteLength
+                saved.push({ name, bytes })
+                return { attachmentId: 'file-1', name, bytes }
+              },
+              admitPromptContent: async (parts: any[]) => parts,
+            }
+          : undefined,
+    }
+    const assembled = await assemblePrompt({ ctx, cwd: dir, text: `read @${file}` })
+    expect(saved).toHaveLength(1)
+    expect(assembled.content[1]).toEqual({
+      type: 'file',
+      attachment: { attachmentId: 'file-1', name: 'notes.md', bytes: 4 },
+    })
   })
 
   it('准入失败把错误抛给调用方，不产出半成品', async () => {

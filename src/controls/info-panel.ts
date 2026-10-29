@@ -80,6 +80,10 @@ export class InfoPanel {
       this.options.writeDiagnostic(`nano: 技能目录读取失败：${this.loadFailed}`)
     }
     this.model = readModelIdentity(ctx)
+    if (this.model) {
+      const efforts = await readEfforts(ctx, this.model)
+      if (efforts.length > 0) this.model = { ...this.model, efforts }
+    }
     this.options.onChange()
   }
 
@@ -111,7 +115,7 @@ export class InfoPanel {
     if (model?.efforts && model.efforts.length > 0) {
       lines.push(createElement(Text, { dim: true }, `  可选强度：${model.efforts.join(' / ')}`))
     }
-    lines.push(createElement(Text, { dim: true }, `  上下文：${occupancyText(this.options.getAgent())}`))
+    lines.push(createElement(Text, { dim: true }, `  上下文：${occupancyText(this.options.ctx, this.options.getAgent())}`))
     lines.push(
       createElement(
         Text,
@@ -147,11 +151,38 @@ export function readModelIdentity(ctx: any): ModelIdentity | undefined {
   }
 }
 
-/** 占用 = projectedTokens / contextWindow；缺一显示「未知」。 */
-export function occupancyText(agent: any): string {
-  const projected = agent?.session?.projection?.('tokenUsage')
-  const used = Number(projected?.projectedTokens ?? projected?.totalTokens ?? NaN)
-  const window = Number(projected?.contextWindow ?? projected?.maxTokens ?? NaN)
+/**
+ * 占用 = contextPressure 的 pressureTokens / contextWindow；缺一显示「未知」。
+ * `tokenUsage` 是计费累计，按 spec 不混用。
+ */
+export function occupancyText(ctx: any, agent: any): string {
+  const session = agent?.session
+  const registry = ctx?.get?.('sessionProjections')
+  if (!session || !registry?.snapshot) return '未知'
+  let snapshot: any
+  try {
+    snapshot = registry.snapshot(session, ['contextPressure'])
+  } catch {
+    return '未知'
+  }
+  const state = snapshot?.values?.contextPressure ?? snapshot?.contextPressure
+  const used = Number(state?.pressureTokens ?? state?.surfaceTokens ?? NaN)
+  const window = Number(state?.contextWindow ?? NaN)
   if (!Number.isFinite(used) || !Number.isFinite(window) || window <= 0) return '未知'
   return `${Math.round((used / window) * 100)}%（${used}/${window}）`
+}
+
+/** 强度列表：官方 `llm.resolveModelInfo(provider, model)` 的 reasoning.efforts。 */
+export async function readEfforts(ctx: any, identity: ModelIdentity | undefined): Promise<string[]> {
+  if (!identity) return []
+  const llm = ctx?.get?.('llm')
+  if (!llm?.resolveModelInfo) return []
+  try {
+    const info = await llm.resolveModelInfo(identity.provider, identity.model)
+    const efforts = info?.reasoning?.efforts
+    if (!Array.isArray(efforts)) return []
+    return efforts.map((effort: any) => String(effort?.id ?? effort?.name ?? effort)).filter(Boolean)
+  } catch {
+    return []
+  }
 }

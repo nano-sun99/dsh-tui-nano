@@ -1,16 +1,15 @@
 /**
  * 附件两条链（S02 spec §2）。
  *
- * - 图片：提交时读本地文件 → `saveImages` 持久化 → 与文本一起
- *   `admitPromptContent` 校验（官方准入：上限、模型是否支持图片）；
+ * - 图片：按 spec「以 base64 data 进入 prompt，官方准入时校验/规范化/持久化」——
+ *   这里只把本地文件读成 base64 段，交给 `admitPromptContent` 完成准入与持久化；
  *   任何一张被拒整条消息失败。
- * - 通用文件：走 `saveFileStream`，回执一次性、绑定会话；本地不设大小上限。
- *
- * 本模块只组装官方 content 段，不自己造协议；失败一律抛给调用方，
- * 由它决定保留草稿。
+ * - 通用文件：走官方 `saveFileStream`（`src/attachments/files.ts`），结果是
+ *   一次性回执，作为 `file` 段随消息提交；本地不设大小上限。
  */
 import { readFile } from 'node:fs/promises'
 import { basename, extname, resolve } from 'node:path'
+import { attachFile, filePart } from './files.ts'
 
 const IMAGE_TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -60,11 +59,12 @@ export interface AssembleOptions {
 
 /**
  * 把文本 + `@` 引用组装成可直接提交的官方 content 段。
- * 没有图片引用时原样返回纯文本段；有图片时先持久化再走官方准入。
+ * 没有引用时原样返回纯文本段；有图片时以 base64 段走官方准入；有通用文件时
+ * 先 `saveFileStream` 拿一次性回执再作为 `file` 段提交。
  */
 export async function assemblePrompt(options: AssembleOptions): Promise<PromptAssembly> {
   const { ctx, cwd, text } = options
-  const references = findReferences(text).filter((reference) => reference.image)
+  const references = findReferences(text)
   if (references.length === 0) {
     return { content: [{ type: 'text', text }], displayText: text, rejected: [] }
   }
@@ -72,16 +72,23 @@ export async function assemblePrompt(options: AssembleOptions): Promise<PromptAs
   if (!attachments) {
     return { content: [{ type: 'text', text }], displayText: text, rejected: ['附件服务不可用'] }
   }
-  const images: any[] = []
+  const parts: any[] = [{ type: 'text', text }]
   for (const reference of references) {
     const absolute = resolve(cwd, reference.path)
-    const data = await readFile(absolute)
-    const refs = await attachments.saveImages([
-      { data, mediaType: reference.mediaType, name: basename(reference.path) },
-    ])
-    for (const ref of refs) images.push({ type: 'image', attachment: ref })
+    if (reference.image) {
+      const data = await readFile(absolute)
+      parts.push({
+        type: 'image',
+        mediaType: reference.mediaType,
+        data: data.toString('base64'),
+        name: basename(reference.path),
+      })
+      continue
+    }
+    // 通用文件：官方存储给出一次性回执，作为 file 段提交。
+    const attached = await attachFile(ctx, absolute)
+    parts.push(filePart(attached))
   }
-  const parts = [{ type: 'text', text }, ...images]
   const admitted = await attachments.admitPromptContent(parts)
   return { content: admitted, displayText: text, rejected: [] }
 }

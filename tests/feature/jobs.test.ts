@@ -11,10 +11,10 @@ describe('statusWord', () => {
 
 describe('classifyStop', () => {
   it('区分已请求停止、已结束与任务不存在', () => {
-    const live = { stop: () => 'requested' }
-    const finished = { stop: () => 'already-finished' }
+    const live = { kill: () => 'requested' }
+    const finished = { kill: () => 'already-finished' }
     const missing = {
-      stop: () => {
+      kill: () => {
         throw new Error('job not found')
       },
     }

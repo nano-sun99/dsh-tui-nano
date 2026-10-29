@@ -15,12 +15,14 @@ import { ScheduleRuntime } from '../schedule/service.ts'
 import { ScheduleStorage } from '../schedule/storage.ts'
 import { SessionControllerAdapter } from '../sessions/session-controller-adapter.ts'
 import { TerminalPane } from '../terminal/pane.ts'
+import { INPUT_BYTE_LIMIT } from '../input/segments.ts'
 import { assemblePrompt, findReferences } from '../attachments/prompt.ts'
 import { parseBashInput, renderBashInjection, runBash } from './bash-mode.ts'
 import { JobsPanel } from '../jobs/panel.ts'
 import { SessionsPanel } from '../sessions/list.ts'
 import { SubagentDock } from '../subagents/dock.ts'
 import { Monitor, renderMonitorLines } from '../monitor/monitor.ts'
+import { MONITOR_SOURCE } from '../monitor/source.ts'
 import { Completions } from './completions.ts'
 import { InfoPanel } from './info-panel.ts'
 
@@ -106,7 +108,8 @@ export class Features implements FeatureHost {
             const title = context.core.ctx.get('sessionTitle')
             if (session && title) title.rename(session, renameTo)
           } catch (error) {
-            throw new Error(`nano: 改名失败：${String((error as Error)?.message ?? error)}`)
+            // 改名失败不杀启动：草稿已在输入框，报原因即可。
+            context.setNotice(`改名失败：${String((error as Error)?.message ?? error)}`)
           }
         }
       }
@@ -246,6 +249,11 @@ export class Features implements FeatureHost {
     // 带图片引用时 Enter 走附件链：持久化 + 官方准入后再提交。
     if (key.name === 'enter' && !key.shift && !key.ctrl && !key.alt) {
       const text = this.context?.input.text ?? ''
+      // 所有 S02 提交路径共用 S01 的 32 KiB 上限（含附件引用文本）。
+      if (Buffer.byteLength(text, 'utf8') > INPUT_BYTE_LIMIT) {
+        this.context?.setNotice('超过 32 KiB 上限，未发送（草稿保留）')
+        return true
+      }
       if (text.trimStart().startsWith('/')) {
         void this.runSlashCommand(text)
         return true
@@ -274,7 +282,6 @@ export class Features implements FeatureHost {
     const agent = context.conversation.agent
     const commands = context.core.ctx.get('commands')
     const name = (text.trim().slice(1).split(/\s+/u)[0] ?? '').toLowerCase()
-    context.input.take()
     context.requestRender()
     const definition = agent && commands ? commands.find(agent, name) : undefined
     if (!definition) {
@@ -291,6 +298,7 @@ export class Features implements FeatureHost {
       const execution = await commands.execute(agent, text, [], new AbortController().signal)
       const result = execution?.result
       if (result?.kind === 'success') {
+        context.input.take()
         if (result.text) model.appendNotice(result.text, 'info')
       } else if (result?.kind === 'error') {
         model.appendNotice(`命令失败：${result.text}`, 'danger')
@@ -348,7 +356,7 @@ export class Features implements FeatureHost {
     model?.appendNotice(text, 'info')
     context?.requestRender()
     if (!agent || !llm?.createUserMessage) return
-    const message = llm.createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
+    const message = llm.createUserMessage({ content: [{ type: 'text', text }], source: MONITOR_SOURCE })
     try {
       if (mode === 'notify') agent.followup(message)
       else agent.inject(message)

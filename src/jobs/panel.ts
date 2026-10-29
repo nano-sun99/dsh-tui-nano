@@ -30,7 +30,7 @@ export type StopOutcome = 'requested' | 'already-finished' | 'job/not-found'
 
 export function classifyStop(id: string, caller: string, jobs: any): StopOutcome {
   try {
-    const outcome = jobs.stop(id, caller)
+    const outcome = jobs.kill(id, caller, 'nano 任务面板')
     return outcome === 'requested' ? 'requested' : 'already-finished'
   } catch (error) {
     const message = String((error as Error)?.message ?? error)
@@ -140,7 +140,12 @@ export class JobsPanel {
       const row = this.rows[this.selected]
       if (row && this.options.watch) {
         const mode = key.text === 'M' ? 'notify' : 'quiet'
-        this.options.watch(row.id, mode)
+        try {
+          this.options.watch(row.id, mode)
+        } catch (error) {
+          this.notice = `监听失败：${String((error as Error)?.message ?? error)}`
+          return true
+        }
         this.notice =
           mode === 'notify'
             ? '已开启 Monitor（notify：会唤醒模型并计费）'

@@ -63,6 +63,15 @@ export function statusLight(status: DockStatus): string {
   }
 }
 
+/** 官方 `subagent/end` 事件的终态映射；未知终态并入「未运行」。 */
+export function endStatus(info: any): DockStatus {
+  const raw = String(info?.status ?? info?.result?.status ?? info?.cause ?? '')
+  if (/kill|cancel|interrupt/i.test(raw)) return 'killed'
+  if (/fail|error/i.test(raw)) return 'error'
+  if (/complet|done|success|end/i.test(raw)) return 'done'
+  return 'idle'
+}
+
 /** 从官方子代理视角推出 dock 状态。 */
 export function deriveStatus(view: any): DockStatus {
   const status = String(view?.status ?? '')
@@ -83,6 +92,8 @@ export class SubagentDock {
   private rows: DockRow[] = []
   private timer: NodeJS.Timeout | undefined
   private refreshing = false
+  private readonly disposers: Array<() => void> = []
+  private readonly ended = new Map<string, DockStatus>()
 
   constructor(options: DockOptions) {
     this.options = options
@@ -94,6 +105,24 @@ export class SubagentDock {
 
   start(): void {
     if (this.timer) return
+    // 终态来自官方事件：Agent.status 只有 idle/running，无法区分完成/终止/错误。
+    const on = this.options.ctx.on?.bind(this.options.ctx)
+    if (on) {
+      this.disposers.push(
+        on('subagent/end', (info: any) => {
+          const id = String(info?.childSessionId ?? info?.child?.id ?? info?.id ?? '')
+          if (id === '') return
+          this.ended.set(id, endStatus(info))
+          void this.refresh()
+        }),
+      )
+      this.disposers.push(
+        on('subagent/start', (info: any) => {
+          const id = String(info?.childSessionId ?? info?.child?.id ?? info?.id ?? '')
+          if (id !== '') this.ended.delete(id)
+        }),
+      )
+    }
     const interval = this.options.pollMs ?? 2000
     void this.refresh()
     this.timer = setInterval(() => void this.refresh(), interval)
@@ -101,6 +130,8 @@ export class SubagentDock {
   }
 
   stop(): void {
+    for (const dispose of this.disposers) dispose()
+    this.disposers.length = 0
     if (!this.timer) return
     clearInterval(this.timer)
     this.timer = undefined
@@ -122,19 +153,19 @@ export class SubagentDock {
       const next: DockRow[] = []
       for (const entry of entries) {
         if (entry.mode === 'external') continue
-        const live = this.options.ctx.get('agents')?.get?.(entry.id)
-        const status: DockStatus = live
-          ? deriveStatus(live)
-          : 'idle'
-        const previous = this.rows.find((row) => row.id === String(entry.id))
+        const id = String(entry.id)
+        const live = this.options.ctx.get('agents')?.get?.(id)
+        const previous = this.rows.find((row) => row.id === id)
+        const ended = this.ended.get(id)
+        let status: DockStatus = live ? deriveStatus(live) : 'idle'
+        if (ended) status = ended
+        else if (!live && previous && previous.status === 'running') status = 'done'
         const terminal = status === 'done' || status === 'killed' || status === 'error'
         next.push({
-          id: String(entry.id),
+          id,
           name: String(entry.label ?? entry.id).slice(0, 40),
           status,
-          ...(terminal
-            ? { finishedAt: previous?.finishedAt ?? now }
-            : {}),
+          ...(terminal ? { finishedAt: previous?.finishedAt ?? now } : {}),
         })
       }
       this.rows = pruneRows(next, now)

@@ -36,9 +36,12 @@ export interface ScheduleStorageOptions {
   readonly rootId: string
 }
 
-/** 命名后端 `nano-schedule-json` 的根：与默认存储根分开，按根隔离。 */
+/**
+ * 命名后端 `nano-schedule-json` 的根（spec §3.5）：与 `storage-json` 行同一目录，
+ * 靠后端名 + 路由隔离表，不再另开一层。
+ */
 export function scheduleStorageRoot(dataRoot: string, rootId: string): string {
-  return join(dataRoot, 'runtime-data', rootId, 'schedule-storage')
+  return join(dataRoot, 'runtime-data', rootId, 'storage')
 }
 
 export class ScheduleStorage {

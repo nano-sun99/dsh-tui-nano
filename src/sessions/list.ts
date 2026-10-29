@@ -75,7 +75,7 @@ export class SessionsPanel {
         let title = ''
         try {
           const snapshot = await query.readTitle?.(record.id)
-          title = String((snapshot as any)?.title ?? '')
+          title = typeof snapshot === 'string' ? snapshot : String((snapshot as any)?.title ?? '')
         } catch {
           title = ''
         }
