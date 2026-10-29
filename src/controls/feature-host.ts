@@ -18,6 +18,7 @@ import { assemblePrompt, findReferences } from '../attachments/prompt.ts'
 import { parseBashInput, renderBashInjection, runBash } from './bash-mode.ts'
 import { JobsPanel } from '../jobs/panel.ts'
 import { SessionsPanel } from '../sessions/list.ts'
+import { SubagentDock } from '../subagents/dock.ts'
 import { Monitor, renderMonitorLines } from '../monitor/monitor.ts'
 import { Completions } from './completions.ts'
 
@@ -51,6 +52,7 @@ export class Features implements FeatureHost {
   private jobs: JobsPanel | undefined
   private monitor: Monitor | undefined
   private sessions: SessionsPanel | undefined
+  private dock: SubagentDock | undefined
   private disposeKeys: (() => void)[] = []
 
   async start(context: FeatureContext): Promise<void> {
@@ -118,6 +120,13 @@ export class Features implements FeatureHost {
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
       deliver: (text, mode) => this.deliverMonitor(text, mode),
     })
+    this.dock = new SubagentDock({
+      ctx,
+      rootId: context.rootId,
+      onChange: () => context.requestRender(),
+      writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
+    })
+    this.dock.start()
     this.sessions = new SessionsPanel({
       ctx,
       rootId: context.rootId,
@@ -333,7 +342,8 @@ export class Features implements FeatureHost {
       ? this.jobs.render(width, this.innerHeight(), this.monitor?.watching)
       : null
     const popup = this.completions?.render(width) ?? null
-    const stack = [pane, sessions, jobs, popup].filter(Boolean)
+    const dock = this.dock?.visible ? this.dock.render(width) : null
+    const stack = [pane, sessions, jobs, popup, dock].filter(Boolean)
     if (stack.length === 0) return null
     if (stack.length === 1) return stack[0]
     return createElement(Box, { flexDirection: 'column', width }, ...stack)
@@ -350,6 +360,8 @@ export class Features implements FeatureHost {
   async dispose(): Promise<void> {
     this.completions?.dispose()
     this.completions = undefined
+    this.dock?.stop()
+    this.dock = undefined
     this.sessions = undefined
     this.monitor?.dispose()
     this.monitor = undefined
