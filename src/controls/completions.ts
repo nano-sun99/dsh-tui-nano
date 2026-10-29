@@ -17,7 +17,7 @@ import {
 } from '../input/completion.ts'
 import type { Key } from '../input/parser.ts'
 import { Box, Text } from '../render/components.ts'
-import { graphemes } from '../render/text.ts'
+import { displayWidth, graphemes } from '../render/text.ts'
 
 export interface CompletionsOptions {
   readonly ctx: any
@@ -43,6 +43,7 @@ export class Completions {
   private failures: string[] = []
   private catalogIncomplete = false
   private requestToken = 0
+  private skillCache: { at: number; items: CompletionItem[]; complete: boolean } | undefined
 
   constructor(options: CompletionsOptions) {
     this.options = options
@@ -90,8 +91,12 @@ export class Completions {
       complete: (query) => {
         const agent = this.options.getAgent()
         const commands = agent ? (this.options.ctx.get('commands')?.list(agent) ?? []) : []
-        return (commands as Array<{ name: string; description: string }>)
+        const builtins = [{ name: 'model', description: '切换模型与推理强度' }]
+        const merged = [...builtins, ...(commands as Array<{ name: string; description: string }>)]
+        const seen = new Set<string>()
+        return merged
           .filter((command) => command.name.startsWith(query.toLowerCase()))
+          .filter((command) => (seen.has(command.name) ? false : (seen.add(command.name), true)))
           .map((command) => ({
             label: `/${command.name}`,
             insert: `/${command.name} `,
@@ -107,34 +112,69 @@ export class Completions {
       provider: {
         id: 'nano.skills',
         kind: 'skill',
-        complete: async (query) => {
-          const skills = this.options.ctx.get('skills')
-          if (!skills) return []
-          try {
-            const snapshot = await skills.snapshot()
-            this.catalogIncomplete = snapshot?.complete === false
-            const summaries = (snapshot?.skills ?? []) as Array<{
-              name: string
-              description: string
-              userInvocable?: boolean
-            }>
-            return summaries
-              .filter((skill) => skill.userInvocable !== false)
-              .filter((skill) => skill.name.toLowerCase().includes(query.toLowerCase()))
-              .map((skill) => ({
-                label: `/${skill.name}`,
-                insert: `/${skill.name} `,
-                kind: 'skill' as const,
-                description: skill.description,
-              }))
-          } catch (error) {
-            // 发现失败保留上次目录：这里不清空已显示的条目，只记录失败。
-            this.failures.push(String((error as Error)?.message ?? error))
-            return []
-          }
+        complete: (query) => {
+          // 目录缓存 2s：每次按键都打一次官方 snapshot 会让补全闪烁、手感发飘。
+          void this.refreshSkillCache()
+          const q = query.toLowerCase()
+          const items = this.skillCache?.items ?? []
+          return items.filter(
+            (item) =>
+              item.label.toLowerCase().includes(q) ||
+              (item.description ?? '').toLowerCase().includes(q),
+          )
         },
       },
     }
+  }
+
+  private refreshingSkills: Promise<void> | undefined
+
+  private refreshSkillCache(): Promise<void> {
+    const now = Date.now()
+    if (this.skillCache && now - this.skillCache.at < 2000) return Promise.resolve()
+    if (this.refreshingSkills) return this.refreshingSkills
+    this.refreshingSkills = (async () => {
+      const skills = this.options.ctx.get('skills')
+      if (!skills) {
+        this.skillCache = { at: now, items: [], complete: true }
+        return
+      }
+      try {
+        const snapshot = await skills.snapshot()
+        const summaries = (snapshot?.skills ?? []) as Array<{
+          name: string
+          description: string
+          userInvocable?: boolean
+        }>
+        this.skillCache = {
+          at: Date.now(),
+          complete: snapshot?.complete !== false,
+          items: summaries
+            .filter((skill) => skill.userInvocable !== false)
+            .map((skill) => ({
+              label: `/${skill.name}`,
+              insert: `/${skill.name} `,
+              kind: 'skill' as const,
+              description: skill.description,
+            })),
+        }
+        this.catalogIncomplete = this.skillCache.complete === false
+      } catch (error) {
+        // 发现失败保留上次目录：只刷新时间戳，不清空已显示的条目。
+        this.failures.push(String((error as Error)?.message ?? error))
+        this.skillCache = this.skillCache
+          ? { ...this.skillCache, at: Date.now() }
+          : { at: Date.now(), items: [], complete: true }
+      } finally {
+        this.refreshingSkills = undefined
+        // 异步目录回来后重跑当前查询，否则空闲后的首个 `/` 会一直空到下一次按键。
+        if (this.session.isOpen && this.lastTrigger) {
+          const token = ++this.requestToken
+          void this.refresh(this.lastTrigger, token)
+        }
+      }
+    })()
+    return this.refreshingSkills
   }
 
   private lastText = ''
@@ -194,6 +234,28 @@ export class Completions {
     return this.session.isOpen
   }
 
+  get kind(): CompletionKind | undefined {
+    return this.session.kind
+  }
+
+  /** 补全弹层占用的行数；关闭时为 0。 */
+  rows(): number {
+    if (!this.session.isOpen) return 0
+    let count = 1 // 标题/提示行
+    const items = this.session.items.slice(0, 5)
+    if (items.length === 0) count += 1
+    count += items.length
+    if (this.failures.length > 0) count += 1
+    return count
+  }
+
+  /** 打开其他面板时收起补全。 */
+  dismiss(): void {
+    if (!this.session.isOpen) return
+    this.session.close()
+    this.options.onChange()
+  }
+
   /** 补全打开时的按键；返回 true 表示已消费。 */
   handleKey(key: Key): boolean {
     if (!this.session.isOpen) return false
@@ -242,34 +304,59 @@ export class Completions {
   /** 正文区底部的补全面板；没开补全时不出。 */
   render(width: number): ReactNode {
     if (!this.session.isOpen) return null
-    const items = this.session.items
+    const file = this.session.kind === 'file'
+    const items = this.session.items.slice(0, 5)
     const lines: ReactNode[] = []
-    const title = this.session.kind === 'file' ? '@ 引用' : '命令 / 技能'
+    const title = file ? '@ 引用' : '命令 / 技能'
+    const accept = file ? 'Enter 插入' : 'Enter 运行'
     lines.push(
       createElement(
         Text,
         { dim: true },
-        `${title} · ↑↓ 选择 · Tab 插入 · Enter 接受 · Esc 关闭${this.catalogIncomplete ? ' · 技能目录可能不完整' : ''}`,
+        `${title} · ↑↓ 选择 · Tab 补全 · ${accept} · Esc 关闭${this.catalogIncomplete ? ' · 技能目录可能不完整' : ''}`,
       ),
     )
     if (items.length === 0) {
       lines.push(createElement(Text, { dim: true }, '  （没有匹配）'))
     }
-    items.slice(0, 8).forEach((item, index) => {
+    const nameWidth = Math.min(
+      Math.max(0, ...items.map((item) => displayWidth(item.label))) + 2,
+      Math.max(12, Math.floor(width * 0.4)),
+    )
+    items.forEach((item, index) => {
       const selected = index === this.session.selectedIndex
+      const pad = ' '.repeat(Math.max(1, nameWidth - displayWidth(item.label)))
+      const desc = item.description
+        ? ` – ${truncateWidth(item.description, Math.max(8, width - nameWidth - 6))}`
+        : ''
       lines.push(
         createElement(
           Text,
-          { ...(selected ? { reverse: true } : {}) },
-          `  ${item.label}${item.description ? `  ${item.description}` : ''}`,
+          { ...(selected ? { reverse: true } : { dim: true }) },
+          `  ${item.label}${pad}${desc}`,
         ),
       )
     })
-    for (const failure of this.failures.slice(0, 2)) {
+    for (const failure of this.failures.slice(0, 1)) {
       lines.push(createElement(Text, { dim: true }, `  补全失败：${failure}`))
     }
     return createElement(Box, { flexDirection: 'column', width }, ...lines)
   }
+}
+
+/** 按显示宽度截断，避免补全描述换行把列表挤爆。 */
+function truncateWidth(text: string, max: number): string {
+  if (displayWidth(text) <= max) return text
+  const cells = graphemes(text)
+  let out = ''
+  let used = 0
+  for (const cell of cells) {
+    const width = displayWidth(cell)
+    if (used + width > Math.max(1, max - 1)) break
+    out += cell
+    used += width
+  }
+  return `${out}…`
 }
 
 /** 从光标往回找触发符：`@` 在开头或空白后；`/` 只在整行开头。 */

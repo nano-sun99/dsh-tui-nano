@@ -278,6 +278,9 @@ export class Renderer {
           })
         : clip
     if (node.kind === 'box') {
+      if (node.props.clear) {
+        clearRect(screen, node.left, node.top, node.width, node.height, clip)
+      }
       if (node.props.backgroundColor) {
         fillRect(
           screen,
@@ -444,6 +447,28 @@ function intersect(a: Rect, b: Rect): Rect {
     y1: Math.min(a.y1, b.y1),
   }
   return rect
+}
+
+/** Erase to the terminal default (no bg colour) so an overlay is opaque to text. */
+function clearRect(
+  screen: Screen,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  clip: Rect,
+): void {
+  const y0 = Math.max(0, Math.floor(y), clip.y0)
+  const y1 = Math.min(screen.height, Math.floor(y + height), clip.y1)
+  const x0 = Math.max(0, Math.floor(x), clip.x0)
+  const x1 = Math.min(screen.width, Math.floor(x + width), clip.x1)
+  for (let row = y0; row < y1; row++) {
+    const line = screen.rows[row]
+    if (!line) continue
+    for (let col = x0; col < x1; col++) {
+      line[col] = { grapheme: ' ', style: {} }
+    }
+  }
 }
 
 function fillRect(

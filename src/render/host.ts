@@ -55,6 +55,8 @@ export interface BoxProps {
   readonly bottom?: number
   readonly overflow?: 'hidden' | 'visible'
   readonly backgroundColor?: Rgb
+  /** Erase the node's rectangle to the terminal default before painting children. */
+  readonly clear?: boolean
   readonly display?: 'flex' | 'none'
   readonly children?: unknown
 }

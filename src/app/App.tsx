@@ -29,13 +29,21 @@ export interface AppSnapshot {
   readonly rootId: string
   readonly modelLabel: string
   readonly status: 'idle' | 'running'
+  readonly cwd?: string
   readonly expanded: ReadonlySet<string>
   readonly scrollOffset: number
   readonly stickBottom: boolean
   readonly notice?: string
   readonly userName: string
+  /** 上下文占用 0..1；缺失时不画占比色。 */
+  readonly contextRatio?: number
   /** 接线接缝（S02 spec §1）：S02 的正文区内容；没有 features 时为空。 */
   readonly featureBody?: ReactNode
+  /** 补全弹层（正文与状态行之间）。 */
+  readonly completionBody?: ReactNode
+  readonly completionRows?: number
+  readonly modelPanelBody?: ReactNode
+  readonly modelPanelRows?: number
 }
 
 export function toneColor(tone: Tone, theme: Theme): [number, number, number] {
@@ -66,6 +74,8 @@ export function toneColor(tone: Tone, theme: Theme): [number, number, number] {
       return [...theme.diffAdd]
     case 'diffDel':
       return [...theme.diffDel]
+    case 'rule':
+      return [...theme.rule]
     default:
       return [...theme.fg]
   }
@@ -123,7 +133,7 @@ function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
       : snapshot.text !== ''
         ? 'Enter 发送 · Shift+Enter 换行'
         : 'Enter 发送 · Ctrl+C 退出'
-  const left = `nano 0.2.0 · ${snapshot.modelLabel} · ${state}`
+  const left = displayCwd(snapshot.cwd)
   const right = hint
   const available = Math.max(1, props.width - 2 * EDGE)
   const showRight = displayWidth(left) + displayWidth(right) < available
@@ -142,13 +152,16 @@ function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
   )
 }
 
-function InputLine(props: { snapshot: AppSnapshot; width: number }) {
-  const { snapshot } = props
+function inputInnerWidth(width: number): number {
+  return Math.max(1, width - EDGE * 2 - 2)
+}
+
+/** 输入区内容（提示符右侧）；InputLine 与高度计算共用。 */
+function buildInputSpans(snapshot: AppSnapshot): Span[] {
   const disabled = snapshot.decisions.hasDecision
   const chars = graphemes(snapshot.text)
   const before = chars.slice(0, snapshot.cursor).join('')
   const after = chars.slice(snapshot.cursor).join('')
-  const innerWidth = Math.max(1, props.width - EDGE * 2 - 2)
   const spans: Span[] = []
   if (disabled) {
     spans.push({ text: '等待你处理上面的确认…', tone: 'faint' })
@@ -161,26 +174,91 @@ function InputLine(props: { snapshot: AppSnapshot; width: number }) {
     spans.push({ text: after, tone: 'normal' })
   }
   if (snapshot.notice) spans.push({ text: `  ${snapshot.notice}`, tone: 'faint' })
-  const rows = wrapSpans(spans, innerWidth)
+  return spans
+}
+
+function inputLineCount(snapshot: AppSnapshot, width: number): number {
+  const rows = wrapSpans(buildInputSpans(snapshot), inputInnerWidth(width))
+  return Math.min(4, Math.max(1, rows.length))
+}
+
+/** 输入块上/下边框：左侧按上下文占比着色，右侧为普通边框色。 */
+function ContextRule(props: { theme: Theme; width: number; ratio?: number }) {
+  const bar = Math.max(1, props.width - EDGE * 2)
+  const line = '─'
+  const filled =
+    props.ratio === undefined ? 0 : Math.max(0, Math.min(bar, Math.round(props.ratio * bar)))
+  const tone: Tone =
+    props.ratio === undefined
+      ? 'rule'
+      : props.ratio >= 0.95
+        ? 'danger'
+        : props.ratio >= 0.8
+          ? 'warning'
+          : 'accent'
+  const spans: Span[] = [
+    ...(filled > 0 ? [{ text: line.repeat(filled), tone }] : []),
+    { text: line.repeat(bar - filled), tone: 'rule' },
+  ]
+  return (
+    <Box flexDirection="row" paddingX={EDGE} width={props.width} height={1} flexShrink={0}>
+      <RowView row={{ spans }} theme={props.theme} width={bar} />
+    </Box>
+  )
+}
+
+/** 顶部标题头（design-contract §1）：应用名 + 模型 + 回合状态。 */
+function Header(props: { snapshot: AppSnapshot; width: number }) {
+  const state = props.snapshot.status === 'running' ? '运行中' : '空闲'
+  return (
+    <Box flexDirection="row" height={1} flexShrink={0} paddingX={EDGE} width={props.width}>
+      <Text color={props.snapshot.theme.fg} bold wrap={false}>
+        nano
+      </Text>
+      <Text color={props.snapshot.theme.muted} wrap={false}>
+        {'  '}
+        {props.snapshot.modelLabel} · {state}
+      </Text>
+    </Box>
+  )
+}
+
+function shortenHome(cwd: string | undefined): string {
+  if (!cwd) return ''
+  const home = process.env.HOME
+  if (home && cwd.startsWith(home)) return `~${cwd.slice(home.length)}`
+  return cwd
+}
+
+/** 底部状态行的目录：优先 ~，太长只留最后两段，保证右侧提示不被挤掉。 */
+function displayCwd(cwd: string | undefined, max = 44): string {
+  const short = shortenHome(cwd)
+  if (displayWidth(short) <= max) return short
+  const parts = short.split('/').filter(Boolean)
+  return `…/${parts.slice(-2).join('/')}`
+}
+
+function InputLine(props: { snapshot: AppSnapshot; width: number }) {
+  const { snapshot } = props
+  const innerWidth = inputInnerWidth(props.width)
+  const rows = wrapSpans(buildInputSpans(snapshot), innerWidth)
   const lineCount = Math.min(4, Math.max(1, rows.length))
   return (
-    <Box
-      flexDirection="column"
-      paddingX={EDGE}
-      paddingTop={1}
-      width={props.width}
-      height={lineCount + 1}
-    >
-      <Box flexDirection="row">
-        <Text color={snapshot.theme.accent} bold>
-          {'› '}
-        </Text>
-        <Box flexDirection="column" width={innerWidth}>
-          {rows.slice(0, lineCount).map((row, index) => (
-            <RowView key={`input-${index}`} row={row} theme={snapshot.theme} width={innerWidth} />
-          ))}
+    <Box flexDirection="column" width={props.width}>
+      <ContextRule theme={snapshot.theme} width={props.width} ratio={snapshot.contextRatio} />
+      <Box flexDirection="column" paddingX={EDGE} width={props.width} height={lineCount}>
+        <Box flexDirection="row">
+          <Text color={snapshot.theme.accent} bold>
+            {'› '}
+          </Text>
+          <Box flexDirection="column" width={innerWidth}>
+            {rows.slice(0, lineCount).map((row, index) => (
+              <RowView key={`input-${index}`} row={row} theme={snapshot.theme} width={innerWidth} />
+            ))}
+          </Box>
         </Box>
       </Box>
+      <ContextRule theme={snapshot.theme} width={props.width} ratio={snapshot.contextRatio} />
     </Box>
   )
 }
@@ -200,12 +278,7 @@ function DecisionOverlay(props: { snapshot: AppSnapshot; width: number; height: 
           width={props.width}
           height={props.height}
         >
-          <Box
-            flexDirection="column"
-            width={panelWidth}
-            backgroundColor={snapshot.theme.overlayBg}
-            padding={2}
-          >
+          <Box flexDirection="column" width={panelWidth} padding={2} clear>
             <Text color={snapshot.theme.warning} bold>
               {`需要确认：${prompt.toolName}`}
             </Text>
@@ -275,12 +348,7 @@ function QuestionOverlay(props: {
         width={props.width}
         height={props.height}
       >
-        <Box
-          flexDirection="column"
-          width={panelWidth}
-          backgroundColor={snapshot.theme.overlayBg}
-          padding={2}
-        >
+        <Box flexDirection="column" width={panelWidth} padding={2} clear>
           <Text color={snapshot.theme.info} bold>
             {question.header ?? (prompt.planReview ? '计划审阅' : '需要你的回答')}
             {prompt.questions.length > 1
@@ -350,16 +418,31 @@ export function App(props: { snapshot: AppSnapshot }) {
   const { snapshot } = props
   const width = snapshot.width
   const height = snapshot.height
-  const inputHeight = 5
-  const bodyHeight = Math.max(1, height - 1 - inputHeight)
+  // 跟 Claude Code 的输入区高度：上方一行留白 + 输入行 + 一条下边框。
+  const inputHeight = inputLineCount(snapshot, width) + 2
+  const completionRows = snapshot.completionRows ?? 0
+  const modelRows = snapshot.modelPanelRows ?? 0
+  const headerHeight = 3
+  const bottomRows = modelRows > 0 ? modelRows : inputHeight + 1
+  const bodyHeight = Math.max(1, height - bottomRows - completionRows - headerHeight)
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box flexDirection="column" flexGrow={0} height={bodyHeight} paddingX={EDGE} width={width}>
-        <Transcript snapshot={snapshot} bodyHeight={bodyHeight} width={width - EDGE * 2} />
+      <Box height={1} />
+      <Header snapshot={snapshot} width={width} />
+      <Box height={1} />
+      <Box flexDirection="column" flexGrow={0} height={bodyHeight} width={width}>
+        <Transcript snapshot={snapshot} bodyHeight={bodyHeight} width={width} />
         {snapshot.featureBody}
       </Box>
-      <StatusLine snapshot={snapshot} width={width} />
-      <InputLine snapshot={snapshot} width={width} />
+      {snapshot.completionBody}
+      {modelRows > 0 ? (
+        snapshot.modelPanelBody
+      ) : (
+        <>
+          <InputLine snapshot={snapshot} width={width} />
+          <StatusLine snapshot={snapshot} width={width} />
+        </>
+      )}
       <DecisionOverlay snapshot={snapshot} width={width} height={height} />
     </Box>
   )

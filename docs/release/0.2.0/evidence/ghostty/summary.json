@@ -1,0 +1,42 @@
+[
+  {
+    "scenario": "01-dark-100-response",
+    "path": "<repo>/docs/release/0.2.0/evidence/ghostty/01-dark-100-response.png",
+    "size": [
+      1796,
+      1424
+    ],
+    "unique_colors": 884,
+    "non_black_ratio": 0.9997
+  },
+  {
+    "scenario": "02-light-60",
+    "path": "<repo>/docs/release/0.2.0/evidence/ghostty/02-light-60.png",
+    "size": [
+      1116,
+      1238
+    ],
+    "unique_colors": 762,
+    "non_black_ratio": 0.9994
+  },
+  {
+    "scenario": "03-dark-diff",
+    "path": "<repo>/docs/release/0.2.0/evidence/ghostty/03-dark-diff.png",
+    "size": [
+      1796,
+      1424
+    ],
+    "unique_colors": 778,
+    "non_black_ratio": 0.9997
+  },
+  {
+    "scenario": "04-dark-transparency",
+    "path": "<repo>/docs/release/0.2.0/evidence/ghostty/04-dark-transparency.png",
+    "size": [
+      1796,
+      1424
+    ],
+    "unique_colors": 664,
+    "non_black_ratio": 0.9997
+  }
+]

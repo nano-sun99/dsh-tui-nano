@@ -12,7 +12,7 @@
 
 不碰：业务功能实现；发现功能缺失时报告并退回对应子件。`package.json` 在 α/β 期由 S01 独占；γ 发布期 S01 已交付，manifest 由本份落盘，内容以 §2.1 为准。
 
-入口级例外（2026-10-29 用户拍板，改旧 spec）：S03 可改 `src/bin.ts`、`src/main.ts`、`src/input/keymap.ts` 与 `src/controls/feature-host.ts` 的入口/文档接缝——Node 下限检查、`nano purge` 交互确认与 `--yes`、`--help` 的键位段生成、功能键改为从静态清单注册；除本句记录的 `!` 提示外，不改 α/β 的业务行为，回归由 S01 单测、S02 功能测试与 S03 e2e 覆盖。新增 `src/input/keymap-docs.ts`（键位文档渲染）与 `src/controls/feature-keys.ts`（S02 功能键静态清单，运行时与文档共用）归本份。用户 2026-10-29 指示补 `!` 首次使用权限提示（S08 §2.2）；实现落在 `feature-host.ts`，属于本次授权的 S02 行为补缺。发布期 manifest 落盘会改 `package.json` / `package-lock.json`；`biome.json` 的检查范围扩到 `tests/**`、`scripts/**`，并做一次只含格式与 import 排序的扫尾（无行为变化）。
+入口级例外（2026-10-29 用户拍板，改旧 spec）：S03 可改 `src/bin.ts`、`src/main.ts`、`src/input/keymap.ts` 与 `src/controls/feature-host.ts` 的入口/文档接缝——Node 下限检查、`nano purge` 交互确认与 `--yes`、`--help` 的键位段生成、功能键改为从静态清单注册；除本句记录的 `!` 提示外，不改 α/β 的业务行为，回归由 S01 单测、S02 功能测试与 S03 e2e 覆盖。新增 `src/input/keymap-docs.ts`（键位文档渲染）与 `src/controls/feature-keys.ts`（S02 功能键静态清单，运行时与文档共用）归本份。用户 2026-10-29 指示补 `!` 首次使用权限提示（S08 §2.2）；实现落在 `feature-host.ts`，属于本次授权的 S02 行为补缺。用户同日对照设计稿发现 v2 色板偏离冻结色表，指示按主题 spec §3.2 修正 `src/theme/theme.ts` 并去掉覆盖层实色背景。用户随后指出 `/model` 与输入框上下文线缺失，指示一并补：`/model` 走官方模型目录与 selection ref，输入块补上下边框与占比线。发布期 manifest 落盘会改 `package.json` / `package-lock.json`；`biome.json` 的检查范围扩到 `tests/**`、`scripts/**`，并做一次只含格式与 import 排序的扫尾（无行为变化）。
 
 ## 2. 包结构与安装
 
@@ -162,7 +162,11 @@ git ls-files -z -- src package.json packaging tests scripts README.md README.en.
 - 2026-10-28 轻审修订：npm manifest 完整清单、harness 精确/其余跟随口径、普通卸载保留 profile 与 `--purge` 区分、B1–B8 阻断表、发布审计档位、Rust 退场 grep 限定范围与旧 packaging 文件清单。
 - 2026-10-28 二次轻审修订：manifest 可直接落盘（全名/版本/devDeps/type/license/bin/files/overrides）、`nano purge` 作为可执行入口且不依赖 npm 生命周期、版本 `0.2.0` 与 `docs/release/0.2.0`、B1–B8 逐条覆盖 v1 S13 并补首启来源、B8 改由 S01 实现、grep 用 `git ls-files` 避免假绿与 fatal、p50 删除、Node 22.19 运行时检查、`npm pack` 命令与 integrity、发布档位由用户当场选择。
 - 2026-10-29 实施发现修订（用户选择「改旧 spec」）：bin 对齐 S01 已交付的 `dist/bin.js`（新增 `src/bin.ts` 入口级例外）；依赖对齐已实现的 `@deepseek-ai/dsh` 整包并保留 cordis 五件 overrides；`test` 覆盖 `tests/feature`、新增 `test:e2e`；grep 门禁去掉会误伤语法高亮的裸词 `rust`/`bridge`，改为旧工具链/路径/协议标识；`rust-final` tag 在删除前补打；§5 写明 `keymap:docs` 的 `--write`/`--check` 与 `--help` 渲染来源。
+- 2026-10-29 真 Ghostty 视觉采集：新增 `tests/e2e/ghostty-visual.py`，深/浅、60/100 列、CJK、diff 工具行、0.8 透明度各一张；每场景独立实例并即时关闭。
+- 2026-10-29 用户指示补 `/model` 与输入框上下文线：控制器保留可变 selection ref；`/model` 列官方目录、校验后切换；输入块补上下 `rule` 边框，左段按 `contextPressure` 占比着色。
+- 2026-10-29 用户指示按设计稿修正 v2 色板：`src/theme/theme.ts` 改用主题 spec §3.2 的全套 RGB；覆盖层去掉 `overlayBg` 实色底；视觉 e2e 断言同步。
 - 2026-10-29 用户指示补主链路 e2e：本地 Anthropic Messages SSE mock，覆盖 read→edit（差异）→完成与 bash 提权→审批（默认拒绝→允许一次）→完成；不触真实网络/凭据。
 - 2026-10-29 用户指示补 `!` 首次使用权限提示（S08 §2.2）：`feature-host.ts` 首条人工命令前显示「以用户权限运行，不是 Agent 授权」，e2e 断言。
 - 2026-10-29 补证据两轮（用户选「轻审」并选「改」）：新增视觉/能力/交互/跨会话 e2e；修掉真实 `~/.dsh` 读写、凭据环境变量继承、跨会话无正控与同根竞态。
 - 2026-10-29 实施期重审修订（用户选「重审」并选「改」）：入口级例外补 `feature-host.ts` / `package.json` / `package-lock.json` / `biome.json` 与格式化扫尾；`dist/bin.js` 只断言 shebang（可执行位由 npm 设置）；`test:watch` / `start` 进 manifest；purge 补 `-y` 别名、非 TTY 必须显式跳过、提示写 `/dev/tty`；`keymap-docs` 改为直接 import 源码；pi-ai 版本更正为 1.4.0。
+- 2026-10-29 实施期轻审修订（用户选「轻审」并选「改」，随后「全部修复」）：修 #1 覆盖层卡片透字、#2 `/model` 重开保留显式强度、#4 面板内显示切换失败、#5 >8 模型焦点跟随滚动、#6 面板独占 Ctrl+T/J/L/I、#8 目录/强度读取失败原因显示、#9 强度色并入 `theme.ts`、#10 截断预算、#12 技能缓存异步刷新与失败保留、#13 面板计时器释放与空行 token、#14 发布文档矛盾与证据脱敏；#7 按新 tarball 重建发布证据；#3 扫光 0.68s 空窗按用户 2026-10-29「以设计稿为准」保留；#11 补全 Enter 按 2026-10-24 §3.3.4 执行命令，S02 旧「只接受」口径由该条取代，不改历史正文。完整清单与范围外对账在 PR #99 评论。

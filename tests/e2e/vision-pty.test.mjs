@@ -138,8 +138,8 @@ test('深色主题：真彩色 token 命中深色盘，且不带 ANSI 命名色'
   assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
   const blocks = sgrParams(screen)
   assert.ok(hasTruecolor(blocks), '应出现 38;2 / 48;2 真彩色')
-  assert.ok(screen.includes('38;2;125;211;252'), '深色强调色应为 125,211,252')
-  assert.ok(screen.includes('38;2;226;232;240'), '深色前景色应为 226,232,240')
+  assert.ok(screen.includes('38;2;125;161;222'), '深色强调色应为设计稿 125,161,222')
+  assert.ok(screen.includes('38;2;232;230;224'), '深色前景色应为设计稿 232,230,224')
   assert.equal(firstNamedColor(blocks), undefined, '不应出现 ANSI 命名色')
 })
 
@@ -147,11 +147,11 @@ test('浅色主题：真彩色 token 命中浅色盘，且不带 ANSI 命名色'
   const { code, screen } = runInPty('light', 100)
   assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
   const blocks = sgrParams(screen)
-  assert.ok(screen.includes('38;2;3;105;161'), '浅色强调色应为 3,105,161')
-  assert.ok(screen.includes('38;2;30;41;59'), '浅色前景色应为 30,41,59')
+  assert.ok(screen.includes('38;2;54;95;157'), '浅色强调色应为设计稿 54,95,157')
+  assert.ok(screen.includes('38;2;52;57;69'), '浅色前景色应为设计稿 52,57,69')
   assert.equal(firstNamedColor(blocks), undefined, '浅色主题也不应出现 ANSI 命名色')
   // 主题确实生效：浅色盘与深色盘的关键 token 不能同时出现。
-  assert.ok(!screen.includes('38;2;125;211;252'), '浅色主题不应出现深色强调色')
+  assert.ok(!screen.includes('38;2;125;161;222'), '浅色主题不应出现深色强调色')
 })
 
 test('60 与 100 列：骨架行不超过列宽，且有一行铺满', () => {

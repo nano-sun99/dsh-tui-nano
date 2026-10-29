@@ -32,7 +32,7 @@ function childEnv(home, dshHome) {
   return env
 }
 
-function runInteractive(send, { sendWait = 6 } = {}) {
+function runInteractive(send, { sendWait = 6, extraEnv = {} } = {}) {
   const home = mkdtempSync(path.join(os.tmpdir(), 'nano-interaction-'))
   const dshHome = path.join(home, '.dsh')
   mkdirSync(dshHome, { recursive: true })
@@ -66,7 +66,7 @@ function runInteractive(send, { sendWait = 6 } = {}) {
         cwd: repoRoot,
         encoding: 'utf8',
         timeout: 90000,
-        env: childEnv(home, dshHome),
+        env: { ...childEnv(home, dshHome), ...extraEnv },
       },
     )
     assert.equal(result.status, 0, `pty-start.py 失败：${result.stderr}`)
@@ -82,6 +82,37 @@ test('官方调用失败：界面显示回合出错且进程不崩', () => {
   assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
   assert.match(screen, /回合出错/, '应显示回合出错')
   assert.match(screen, /no API key for provider route/, '应带出官方 missing-credential 原文')
+})
+
+test('/model 打开模型选择面板（标题/列表/强度）', () => {
+  const { code, screen } = runInteractive('/model', {
+    sendWait: 4,
+    extraEnv: {
+      DEEPSEEK_API_KEY: 'sk-test-00000000000000000000000000000000',
+      DEEPSEEK_BASE_URL: 'http://127.0.0.1:9',
+    },
+  })
+  assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
+  assert.match(screen, /模型/, '应显示面板标题')
+  assert.match(screen, /当前：/, '应显示当前模型')
+  assert.match(screen, /DeepSeek|deepseek/, '应列出模型')
+  assert.match(screen, /Off|off/, '应列出官方强度')
+})
+
+test('/model 直接切换与目录外拒绝', () => {
+  const { code, screen } = runInteractive(
+    '/model deepseek-official/deepseek-flash\n/model deepseek-official/nope-model',
+    {
+      sendWait: 3,
+      extraEnv: {
+        DEEPSEEK_API_KEY: 'sk-test-00000000000000000000000000000000',
+        DEEPSEEK_BASE_URL: 'http://127.0.0.1:9',
+      },
+    },
+  )
+  assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
+  assert.match(screen, /模型已切换：deepseek-official\/deepseek-flash/, '应切换成功')
+  assert.match(screen, /模型不在目录/, '目录外模型应被拒绝')
 })
 
 test('!! 与 ! 各自提示，文案区分是否注入', () => {

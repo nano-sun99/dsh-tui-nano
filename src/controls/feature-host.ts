@@ -32,6 +32,7 @@ import {
   TERMINAL_TOGGLE_ACTION,
 } from './feature-keys.ts'
 import { InfoPanel } from './info-panel.ts'
+import { ModelPanel } from './model-panel.ts'
 
 function isTerminalToggle(key: Key): boolean {
   return key.name === 'char' && key.ctrl === true && key.text === 't'
@@ -55,6 +56,7 @@ export class Features implements FeatureHost {
   private schedule: ScheduleRuntime | undefined
   private terminal: TerminalPane | undefined
   private completions: Completions | undefined
+  private modelPanel: ModelPanel | undefined
   private jobs: JobsPanel | undefined
   private monitor: Monitor | undefined
   private sessions: SessionsPanel | undefined
@@ -148,6 +150,11 @@ export class Features implements FeatureHost {
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
     })
     this.completions.install()
+    this.modelPanel = new ModelPanel({
+      conversation: context.conversation,
+      onChange: () => context.requestRender(),
+      setNotice: (text) => context.setNotice(text),
+    })
 
     // 6) 任务面板：官方 jobs 只读。
     this.monitor = new Monitor({
@@ -214,9 +221,29 @@ export class Features implements FeatureHost {
   }
 
   handleKey(key: Key): boolean {
+    // 面板打开时先独占按键：否则 Ctrl+T/J/L/I 会在它上面再叠开别的面板。
+    if (this.modelPanel?.open && this.modelPanel.handleKey(key)) return true
     // 开关必须交回 keymap：否则面板聚焦时会把 Ctrl+T 当成终端输入吃掉。
     if (isTerminalToggle(key) || isJobsToggle(key) || isSessionsToggle(key) || isInfoToggle(key))
       return false
+    // 命令补全里按 Enter 直接运行（Claude Code 的手感）；技能/文件只插入。
+    if (
+      key.name === 'enter' &&
+      !key.shift &&
+      !key.ctrl &&
+      !key.alt &&
+      this.completions?.open &&
+      this.completions.kind === 'command'
+    ) {
+      this.completions.accept()
+      const text = this.context?.input.text ?? ''
+      const name = (text.trim().slice(1).split(/\s+/u)[0] ?? '').toLowerCase()
+      const agent = this.context?.conversation.agent
+      const commands = this.context?.core.ctx.get('commands')
+      const official = agent && commands ? commands.find(agent, name) : undefined
+      if (name === 'model' || official) void this.runSlashCommand(text)
+      return true
+    }
     if (this.completions?.handleKey(key)) return true
     if (this.info?.handleKey(key)) return true
     if (this.sessions?.handleKey(key)) return true
@@ -259,6 +286,11 @@ export class Features implements FeatureHost {
     const commands = context.core.ctx.get('commands')
     const name = (text.trim().slice(1).split(/\s+/u)[0] ?? '').toLowerCase()
     context.requestRender()
+    if (name === 'model') {
+      context.input.take()
+      await this.runModelCommand(text.trim().split(/\s+/u).slice(1).join(' '))
+      return
+    }
     const definition = agent && commands ? commands.find(agent, name) : undefined
     if (!definition) {
       model.appendNotice(`未知命令 /${name}：按普通消息发送（未注入命令）`, 'warning')
@@ -288,6 +320,46 @@ export class Features implements FeatureHost {
       if (name === 'permission') {
         model.appendNotice('可能已部分生效，请重开 /permission 核对', 'warning')
       }
+    }
+    context.requestRender()
+  }
+
+  /**
+   * `/model`：查看或切换模型与推理强度。目录与强度都来自官方 adapter；
+   * 切换成功才写回 selection，下一次请求生效。
+   */
+  private async runModelCommand(args: string): Promise<void> {
+    const context = this.context
+    if (!context) return
+    const model = context.conversation.model
+    const conversation = context.conversation
+    const current = conversation.modelSelection
+    if (args === '') {
+      this.completions?.dismiss()
+      await this.modelPanel?.openPanel()
+      return
+    }
+    const parts = args.split(/\s+/u)
+    const target = parts[0] ?? ''
+    const effort = parts[1]
+    const slash = target.indexOf('/')
+    if (slash <= 0 || slash === target.length - 1) {
+      model.appendNotice('格式：/model <provider>/<model> [effort]', 'warning')
+      context.requestRender()
+      return
+    }
+    try {
+      const next = await conversation.selectModel(
+        target.slice(0, slash),
+        target.slice(slash + 1),
+        effort,
+      )
+      model.appendNotice(
+        `模型已切换：${next.provider}/${next.model}${next.reasoningEffort ? ` · 强度 ${next.reasoningEffort}` : ''}（下一次请求生效）`,
+        'info',
+      )
+    } catch (error) {
+      model.appendNotice(`模型切换失败：${String((error as Error)?.message ?? error)}`, 'danger')
     }
     context.requestRender()
   }
@@ -426,12 +498,30 @@ export class Features implements FeatureHost {
     const jobs = this.jobs?.visible
       ? this.jobs.render(width, this.innerHeight(), this.monitor?.watching)
       : null
-    const popup = this.completions?.render(width) ?? null
-    const dock = this.dock?.visible ? this.dock.render(width) : null
-    const stack = [pane, info, sessions, jobs, popup, dock].filter(Boolean)
+    const dock = this.dock?.visible && !this.modelPanel?.open ? this.dock.render(width) : null
+    const stack = [pane, info, sessions, jobs, dock].filter(Boolean)
     if (stack.length === 0) return null
     if (stack.length === 1) return stack[0]
     return createElement(Box, { flexDirection: 'column', width }, ...stack)
+  }
+
+  /** `/model` 面板占底部输入区；打开时替换输入行与状态行。 */
+  modelPanelBody(): ReactNode {
+    return this.modelPanel?.render(this.context?.terminal.width ?? 80) ?? null
+  }
+
+  modelPanelRows(): number {
+    return this.modelPanel?.rows() ?? 0
+  }
+
+  /** 补全弹层单独占正文与状态行之间的槽位，避免被 transcript 裁掉。 */
+  completionBody(): ReactNode {
+    this.completions?.maybeSync()
+    return this.completions?.render(this.innerWidth()) ?? null
+  }
+
+  completionRows(): number {
+    return this.completions?.rows() ?? 0
   }
 
   private innerWidth(): number {
@@ -443,6 +533,8 @@ export class Features implements FeatureHost {
   }
 
   async dispose(): Promise<void> {
+    this.modelPanel?.dispose()
+    this.modelPanel = undefined
     this.completions?.dispose()
     this.completions = undefined
     this.info = undefined

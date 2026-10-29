@@ -194,6 +194,7 @@ describe('layout regressions', () => {
           rootId: 'r',
           modelLabel: 'deepseek-official/deepseek-chat',
           status: 'idle',
+          cwd: '/tmp/project',
           expanded: new Set<string>(),
           scrollOffset: 0,
           stickBottom: true,
@@ -202,9 +203,12 @@ describe('layout regressions', () => {
       }),
     )
     renderer.flushFrame()
-    const status = renderer.snapshotLines()[18] ?? ''
+    const lines = renderer.snapshotLines()
+    const status = lines.find((line) => line.trimEnd().endsWith('退出')) ?? ''
     expect(status.trimEnd().endsWith('退出')).toBe(true)
-    expect(status).toContain('nano 0.2.0')
+    expect(status).toContain('/tmp/project')
+    const header = lines.find((line) => line.includes('deepseek-official/deepseek-chat')) ?? ''
+    expect(header).toContain('nano')
     renderer.unmount()
   })
 })
