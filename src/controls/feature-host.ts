@@ -221,6 +221,8 @@ export class Features implements FeatureHost {
   }
 
   handleKey(key: Key): boolean {
+    // 面板打开时先独占按键：否则 Ctrl+T/J/L/I 会在它上面再叠开别的面板。
+    if (this.modelPanel?.open && this.modelPanel.handleKey(key)) return true
     // 开关必须交回 keymap：否则面板聚焦时会把 Ctrl+T 当成终端输入吃掉。
     if (isTerminalToggle(key) || isJobsToggle(key) || isSessionsToggle(key) || isInfoToggle(key))
       return false
@@ -242,7 +244,6 @@ export class Features implements FeatureHost {
       if (name === 'model' || official) void this.runSlashCommand(text)
       return true
     }
-    if (this.modelPanel?.open && this.modelPanel.handleKey(key)) return true
     if (this.completions?.handleKey(key)) return true
     if (this.info?.handleKey(key)) return true
     if (this.sessions?.handleKey(key)) return true
@@ -532,6 +533,8 @@ export class Features implements FeatureHost {
   }
 
   async dispose(): Promise<void> {
+    this.modelPanel?.dispose()
+    this.modelPanel = undefined
     this.completions?.dispose()
     this.completions = undefined
     this.info = undefined

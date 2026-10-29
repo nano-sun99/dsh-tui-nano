@@ -19,11 +19,15 @@ function key(name: Key['name'], extra: Partial<Key> = {}): Key {
   } as Key
 }
 
-function fakeConversation(modelName = 'M1') {
+function fakeConversation(modelName = 'M1', currentEffort?: string, failApply = false) {
   const calls: Array<{ provider: string; model: string; effort?: string }> = []
   return {
     calls,
-    modelSelection: { provider: 'p', model: 'm1' },
+    modelSelection: {
+      provider: 'p',
+      model: 'm1',
+      ...(currentEffort ? { reasoningEffort: currentEffort } : {}),
+    },
     listModels: async () => [
       { id: 'm1', name: modelName },
       { id: 'm2', name: 'M2' },
@@ -41,6 +45,7 @@ function fakeConversation(modelName = 'M1') {
           }
         : { efforts: [{ id: 'low', name: 'Low' }] },
     selectModel: async (provider: string, model: string, effort?: string) => {
+      if (failApply) throw new Error('目录切换被拒绝')
       calls.push({ provider, model, ...(effort ? { effort } : {}) })
       return { provider, model, ...(effort ? { reasoningEffort: effort } : {}) }
     },
@@ -101,8 +106,13 @@ function brightestFraction(cells: Array<[number, number, number]>, limit: number
   return index / Math.max(1, limit - 1)
 }
 
-async function open(notices: string[] = [], modelName = 'M1') {
-  const conversation = fakeConversation(modelName)
+async function open(
+  notices: string[] = [],
+  modelName = 'M1',
+  currentEffort?: string,
+  failApply = false,
+) {
+  const conversation = fakeConversation(modelName, currentEffort, failApply)
   const panel = new ModelPanel({
     conversation: conversation as never,
     onChange: () => {},
@@ -112,6 +122,45 @@ async function open(notices: string[] = [], modelName = 'M1') {
   })
   await panel.openPanel()
   return { panel, conversation, notices }
+}
+
+async function openMany(count: number) {
+  const conversation = {
+    modelSelection: { provider: 'p', model: 'm0' },
+    listModels: async () =>
+      Array.from({ length: count }, (_, index) => ({ id: `m${index}`, name: `M${index}` })),
+    resolveModelMeta: async () => ({
+      efforts: [
+        { id: 'off', name: 'Off' },
+        { id: 'low', name: 'Low' },
+        { id: 'high', name: 'High' },
+        { id: 'max', name: 'Max' },
+      ],
+      defaultEffort: 'high',
+    }),
+    selectModel: async (provider: string, model: string, effort?: string) => ({
+      provider,
+      model,
+      ...(effort ? { reasoningEffort: effort } : {}),
+    }),
+  }
+  const panel = new ModelPanel({
+    conversation: conversation as never,
+    onChange: () => {},
+    setNotice: () => {},
+  })
+  await panel.openPanel()
+  return panel
+}
+
+async function openConversation(conversation: any) {
+  const panel = new ModelPanel({
+    conversation,
+    onChange: () => {},
+    setNotice: () => {},
+  })
+  await panel.openPanel()
+  return panel
 }
 
 afterEach(() => {
@@ -236,6 +285,75 @@ describe('/model panel', () => {
     const values = colors(JSON.stringify(panel.render(100)))
     expect(values.some(([r, g, b]) => r === 93 && g === 127 && b === 173)).toBe(true)
     expect(values.some(([r, g, b]) => r > 130 && b > 200)).toBe(false)
+    panel.handleKey(key('escape'))
+  })
+
+  it('目录读取失败时显示原因并阻止提交', async () => {
+    let called = false
+    const panel = await openConversation({
+      modelSelection: { provider: 'p', model: 'm1' },
+      listModelsResult: async () => ({ models: [], error: '目录服务不可用' }),
+      resolveModelMetaResult: async () => ({ efforts: [{ id: 'high', name: 'High' }] }),
+      selectModel: async () => {
+        called = true
+        return { provider: 'p', model: 'm1' }
+      },
+    })
+    const json = JSON.stringify(panel.render(100))
+    expect(json).toContain('目录读取失败')
+    expect(json).toContain('目录服务不可用')
+    panel.handleKey(key('enter'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(called).toBe(false)
+    panel.handleKey(key('escape'))
+  })
+
+  it('强度读取失败时显示原因', async () => {
+    const panel = await openConversation({
+      modelSelection: { provider: 'p', model: 'm1' },
+      listModelsResult: async () => ({ models: [{ id: 'm1', name: 'M1' }] }),
+      resolveModelMetaResult: async () => ({ efforts: [], error: '强度服务不可用' }),
+    })
+    const json = JSON.stringify(panel.render(100))
+    expect(json).toContain('强度：—')
+    expect(json).toContain('强度服务不可用')
+    panel.handleKey(key('escape'))
+  })
+
+  it('模型超过 8 项时焦点跟随滚动', async () => {
+    const panel = await openMany(12)
+    for (let index = 0; index < 10; index++) panel.handleKey(key('down'))
+    const renderer = new Renderer({
+      write: () => {},
+      width: 100,
+      height: 30,
+      defaultFg: darkTheme.fg,
+    })
+    renderer.mount(box({ width: 100, height: 30 }, panel.render(100)))
+    renderer.flushFrame()
+    const lines = renderer.snapshotLines()
+    expect(lines.some((line) => /▶\s*M10/u.test(line))).toBe(true)
+    expect(lines.some((line) => line.includes('M0'))).toBe(false)
+    panel.handleKey(key('escape'))
+    renderer.unmount()
+  })
+
+  it('面板内切换失败时错误在面板内可见', async () => {
+    const { panel } = await open([], 'M1', undefined, true)
+    panel.handleKey(key('enter'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(panel.open).toBe(true)
+    expect(JSON.stringify(panel.render(100))).toContain('模型切换失败')
+    panel.handleKey(key('escape'))
+  })
+
+  it('重开面板保留已显式选择的强度', async () => {
+    const { panel, conversation } = await open([], 'M1', 'max')
+    const summary = spans(panel.render(100)).find((span) => span.text.startsWith('当前：'))
+    expect(summary?.text).toContain('· Max')
+    panel.handleKey(key('enter'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(conversation.calls.at(-1)).toEqual({ provider: 'p', model: 'm1', effort: 'max' })
     panel.handleKey(key('escape'))
   })
 

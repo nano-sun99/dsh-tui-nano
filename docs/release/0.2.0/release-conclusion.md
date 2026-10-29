@@ -43,7 +43,7 @@
 | 异常 | 断网、官方异常、SIGTERM、SIGKILL、终端残留、reset 提示 | 未验证 | SIGTERM/SIGHUP/3s 与前次强杀 `reset` 提示通过；e2e「官方调用失败」证明模型调用失败时界面显示回合出错且不崩；断网（真实网络不可达）未模拟 |
 | 安全 | 审批无答即拒、Monitor `notify` 默认关闭且计费提示、`!` 权限提示、terminal 不进 Agent 工具表 | 通过 | 审批 waterfall/默认焦点/无答即拒有单测；Monitor `notify` 行显示「会唤醒模型并计费」且默认 `quiet`；`!` 首次使用提示在界面出现并有用例（S08 §2.2）；能力探针证明 terminal 不在 Agent 工具表、`ask_user_question` 存在 |
 | 跨会话 | 九面隔离；双窗口同根拒绝、双 root 并发 | 未验证 | e2e：同根第二窗口被拒、双 root 并发；sessions 根共享、叶子目录按 root 分开，runtime-data/<root>/storage 各自独立；root-b 界面与会话日志都不含 root-a 的输入；九面（草稿/队列/附件/审批/问卷/终端/Monitor/调度）的内容隔离仍未逐面取证 |
-| 安装 | 全新安装 → 启动 → 升级 → `nano purge` → 卸载 → 重装；每步前后文件清单/哈希 | 通过 | e2e 29 个用例（安装 16 + 视觉 3 + 能力 1 + 交互 4 + 跨会话 2 + 主链路 2 + Monitor 1）；每步 `snapshot` 记录数据根 / `$DSH_HOME` / 安装目录的文件数与摘要哈希；卸载后重装再跑一次真 PTY 启动 |
+| 安装 | 全新安装 → 启动 → 升级 → `nano purge` → 卸载 → 重装；每步前后文件清单/哈希 | 通过 | e2e 32 个用例（安装 16 + 视觉 3 + 能力 1 + 交互 5 + 输入 2 + 跨会话 2 + 主链路 2 + Monitor 1）；每步 `snapshot` 记录数据根 / `$DSH_HOME` / 安装目录的文件数与摘要哈希；卸载后重装再跑一次真 PTY 启动 |
 | 架构 | 单一运行时宿主（ADR-20261029-single-process-fd-guard）、无 `nano.*` 协议、无第二宿主；fd 级守护 | 通过 | ADR + `src/bin.ts` / `src/runtime/fd-guard.ts`；alpha §5 启动期 stdout 写入 0；e2e「架构门禁」为空（门禁只覆盖旧工具链/路径字符串，不替代结构审查） |
 | 证据 | 合成 HOME/DSH_HOME/数据根；脱敏；绑定发布产物 | 通过 | 安装链 e2e 用合成 HOME / DSH_HOME / 数据根 / 安装前缀；视觉 PTY 套件跑仓库 `dist/`（不装 tarball）；npm cache 固定在本机临时目录，不写 `~/.npm`；证据文件已脱敏；tarball SHA-256 与 `version-matrix.md` 双向绑定 |
 
@@ -93,7 +93,7 @@
 | 项 | 结果 | 证据 |
 | --- | --- | --- |
 | npm 包结构与 manifest | `private:false`、`files:["dist"]`、`bin: nano → dist/bin.js`、`publishConfig`、精确官方依赖与 overrides | `package.json`；`scripts/prepack-check.mjs` |
-| 打包检查 | `npm pack` 自动跑 build + keymap `--check` + packlist 断言 | `prepack`；tarball 116 个文件、入口带 shebang |
+| 打包检查 | `npm pack` 自动跑 build + keymap `--check` + packlist 断言 | `prepack`；tarball 118 个文件、入口带 shebang |
 | 安装链 | 全新安装 → 启动 → 升级 → purge → 卸载 → 重装 → 再启动 | `docs/release/0.2.0/evidence/e2e-release.txt` |
 | Node 下限 | 22.19 启动通过；20.20 入口拒绝并给可操作错误 | 同上 |
 | 键位文档 | README 中英区块与 `--help` 都从源码单一源生成，`--check` 挂 `prepack` | `scripts/keymap-docs.mjs`；e2e |

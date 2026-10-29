@@ -160,11 +160,18 @@ export class Completions {
         }
         this.catalogIncomplete = this.skillCache.complete === false
       } catch (error) {
-        // 发现失败保留上次目录：这里不清空已显示的条目，只记录失败。
+        // 发现失败保留上次目录：只刷新时间戳，不清空已显示的条目。
         this.failures.push(String((error as Error)?.message ?? error))
-        this.skillCache = { at: Date.now(), items: [], complete: true }
+        this.skillCache = this.skillCache
+          ? { ...this.skillCache, at: Date.now() }
+          : { at: Date.now(), items: [], complete: true }
       } finally {
         this.refreshingSkills = undefined
+        // 异步目录回来后重跑当前查询，否则空闲后的首个 `/` 会一直空到下一次按键。
+        if (this.session.isOpen && this.lastTrigger) {
+          const token = ++this.requestToken
+          void this.refresh(this.lastTrigger, token)
+        }
       }
     })()
     return this.refreshingSkills

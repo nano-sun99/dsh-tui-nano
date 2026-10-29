@@ -380,12 +380,17 @@ export class ConversationController {
 
   /** 当前 provider 的官方模型目录（adapter 自报，可能为空）。 */
   async listModels(provider: string): Promise<any[]> {
+    return (await this.listModelsResult(provider)).models
+  }
+
+  /** 目录读取失败要能显示在面板里，所以把失败原因一并带回。 */
+  async listModelsResult(provider: string): Promise<{ models: any[]; error?: string }> {
     const llm = this.options.ctx.get('llm')
-    if (!llm?.listModels) return []
+    if (!llm?.listModels) return { models: [], error: '模型服务不提供目录' }
     try {
-      return await llm.listModels(provider)
-    } catch {
-      return []
+      return { models: await llm.listModels(provider) }
+    } catch (error) {
+      return { models: [], error: String((error as Error)?.message ?? error) }
     }
   }
 
@@ -394,8 +399,24 @@ export class ConversationController {
     provider: string,
     model: string,
   ): Promise<{ efforts: Array<{ id: string; name: string }>; defaultEffort?: string }> {
+    const result = await this.resolveModelMetaResult(provider, model)
+    return {
+      efforts: result.efforts,
+      ...(result.defaultEffort ? { defaultEffort: result.defaultEffort } : {}),
+    }
+  }
+
+  /** 强度读取失败要能显示在面板里，所以把失败原因一并带回。 */
+  async resolveModelMetaResult(
+    provider: string,
+    model: string,
+  ): Promise<{
+    efforts: Array<{ id: string; name: string }>
+    defaultEffort?: string
+    error?: string
+  }> {
     const llm = this.options.ctx.get('llm')
-    if (!llm?.resolveModelInfo) return { efforts: [] }
+    if (!llm?.resolveModelInfo) return { efforts: [], error: '模型服务不提供强度信息' }
     try {
       const info = await llm.resolveModelInfo(provider, model)
       const raw = info?.reasoning?.efforts
@@ -411,8 +432,8 @@ export class ConversationController {
         ? String(info.reasoning.defaultEffort)
         : undefined
       return { efforts, ...(defaultEffort ? { defaultEffort } : {}) }
-    } catch {
-      return { efforts: [] }
+    } catch (error) {
+      return { efforts: [], error: String((error as Error)?.message ?? error) }
     }
   }
 

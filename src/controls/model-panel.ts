@@ -12,7 +12,7 @@ import type { ConversationController } from '../conversation/controller.ts'
 import type { Key } from '../input/parser.ts'
 import { Box, Text } from '../render/components.ts'
 import { displayWidth, graphemes } from '../render/text.ts'
-import { EDGE, NESTED } from '../theme/spacing.ts'
+import { EDGE, GapRole, NESTED } from '../theme/spacing.ts'
 import { activeTheme, type Rgb } from '../theme/theme.ts'
 
 interface Effort {
@@ -35,17 +35,9 @@ export interface ModelPanelOptions {
   readonly setNotice: (text: string | undefined) => void
 }
 
-const BASE = {
-  low: null,
-  high: [129, 144, 168] as Rgb,
-  xhigh: [93, 127, 173] as Rgb,
-  max: [54, 95, 157] as Rgb,
-}
-const SWEEP_BASE: Rgb = [93, 127, 173]
-const SWEEP_HIGHLIGHT: Rgb = [155, 184, 223]
-const MAX_BRIGHT: Rgb = [74, 129, 216]
-const MAX_LABEL = [111, 156, 221] as Rgb
 const TICK_MS = 50
+/** 面板内的空行也走间距角色，避免裸空行。 */
+const BLANK_LINE = ' '.repeat(GapRole.Block)
 /**
  * 设计稿扫光：1.4s 线性循环，`background-size:220%`、`background-position`
  * 从 100% 走到 -120%。换到填充区坐标，高光中心从 -0.1 个填充宽走到 2.54 个，
@@ -92,6 +84,8 @@ export class ModelPanel {
   private effortIndex = 0
   private phaseStart = Date.now()
   private timer: NodeJS.Timeout | undefined
+  private error: string | undefined
+  private catalogError: string | undefined
 
   constructor(options: ModelPanelOptions) {
     this.options = options
@@ -109,8 +103,9 @@ export class ModelPanel {
       return
     }
     this.provider = current.provider
-    const catalog = await conversation.listModels(this.provider)
-    const entries: Entry[] = catalog
+    const catalog = await this.readCatalog()
+    this.catalogError = catalog.error
+    const entries: Entry[] = catalog.models
       .map((entry: any) => ({
         id: String(entry?.id ?? entry?.model ?? ''),
         name: String(entry?.name ?? entry?.id ?? entry?.model ?? ''),
@@ -135,10 +130,16 @@ export class ModelPanel {
       entries.findIndex((entry) => entry.id === current.model),
     )
     this.effortIndex = 0
+    this.error = undefined
     this.visible = true
     this.phaseStart = Date.now()
     this.options.setNotice(undefined)
     await this.loadFocus()
+    // 重开时回到当前显式强度；没有显式强度才停在「默认」。
+    if (current.reasoningEffort && this.focus?.id === current.model) {
+      const index = this.levels.findIndex((level) => level.id === current.reasoningEffort)
+      if (index >= 0) this.effortIndex = index + 1
+    }
     this.ensureTick()
     this.options.onChange()
   }
@@ -151,17 +152,32 @@ export class ModelPanel {
     return this.focus?.levels ?? []
   }
 
+  private async readCatalog(): Promise<{ models: any[]; error?: string }> {
+    const conversation = this.options.conversation as any
+    if (typeof conversation.listModelsResult === 'function') {
+      return conversation.listModelsResult(this.provider)
+    }
+    return { models: await conversation.listModels(this.provider) }
+  }
+
+  private async readMeta(
+    model: string,
+  ): Promise<{ efforts: Effort[]; defaultEffort?: string; error?: string }> {
+    const conversation = this.options.conversation as any
+    if (typeof conversation.resolveModelMetaResult === 'function') {
+      return conversation.resolveModelMetaResult(this.provider, model)
+    }
+    return conversation.resolveModelMeta(this.provider, model)
+  }
+
   private async loadFocus(): Promise<void> {
     const entry = this.focus
     if (!entry || entry.loaded) return
     entry.loaded = true
-    try {
-      const meta = await this.options.conversation.resolveModelMeta(this.provider, entry.id)
-      entry.levels = meta.efforts
-      if (meta.defaultEffort) entry.defaultEffort = meta.defaultEffort
-    } catch (error) {
-      entry.error = String((error as Error)?.message ?? error)
-    }
+    const meta = await this.readMeta(entry.id)
+    entry.levels = meta.efforts
+    if (meta.defaultEffort) entry.defaultEffort = meta.defaultEffort
+    if (meta.error) entry.error = meta.error
     this.options.onChange()
   }
 
@@ -203,6 +219,13 @@ export class ModelPanel {
     this.options.onChange()
   }
 
+  /** 释放 50ms 扫光计时器；面板销毁 / 进程退出时调用。 */
+  dispose(): void {
+    this.visible = false
+    if (this.timer) clearInterval(this.timer)
+    this.timer = undefined
+  }
+
   handleKey(key: Key): boolean {
     if (!this.visible) return false
     if (key.name === 'escape') {
@@ -216,6 +239,7 @@ export class ModelPanel {
       if (next !== this.modelIndex) {
         this.modelIndex = next
         this.effortIndex = 0
+        this.error = undefined
         this.phaseStart = Date.now()
         void this.loadFocus().then(() => {
           this.ensureTick()
@@ -229,6 +253,7 @@ export class ModelPanel {
       if (count > 1) {
         const delta = key.name === 'left' ? -1 : 1
         this.effortIndex = (this.effortIndex + delta + count) % count
+        this.error = undefined
         this.phaseStart = Date.now()
         this.ensureTick()
         this.options.onChange()
@@ -248,6 +273,11 @@ export class ModelPanel {
   private async apply(): Promise<void> {
     const entry = this.focus
     if (!entry) return
+    if (this.catalogError) {
+      this.error = `目录读取失败：${this.catalogError}`
+      this.options.onChange()
+      return
+    }
     const effort = this.effortIndex > 0 ? this.levels[this.effortIndex - 1]?.id : undefined
     try {
       const next = await this.options.conversation.selectModel(this.provider, entry.id, effort)
@@ -255,7 +285,8 @@ export class ModelPanel {
       this.options.setNotice(`已选择 ${next.model} · ${effortName}。`)
       this.close()
     } catch (error) {
-      this.options.setNotice(`模型切换失败：${String((error as Error)?.message ?? error)}`)
+      this.error = `模型切换失败：${String((error as Error)?.message ?? error)}`
+      this.options.setNotice(this.error)
       this.options.onChange()
     }
   }
@@ -274,9 +305,10 @@ export class ModelPanel {
   }
 
   private fillColor(index: number, fillWidth: number): Rgb {
+    const theme = activeTheme()
     if (this.reducedMotion) {
-      if (this.sweepActive) return SWEEP_BASE
-      if (this.maxActive) return BASE.max!
+      if (this.sweepActive) return theme.effortXhigh
+      if (this.maxActive) return theme.effortMax
     }
     if (this.sweepActive) {
       const radius = Math.max(2, fillWidth * SWEEP_RADIUS)
@@ -284,18 +316,18 @@ export class ModelPanel {
       const phase = ((elapsed % SWEEP_PERIOD_MS) + SWEEP_PERIOD_MS) % SWEEP_PERIOD_MS
       const center = (SWEEP_START + SWEEP_TRAVEL * (phase / SWEEP_PERIOD_MS)) * fillWidth
       const intensity = Math.max(0, 1 - Math.abs(index - center) / radius)
-      return mix(SWEEP_BASE, SWEEP_HIGHLIGHT, intensity)
+      return mix(theme.effortXhigh, theme.effortXhighHighlight, intensity)
     }
     if (this.maxActive) {
       const wave = 0.5 - 0.5 * Math.cos(this.phase(1200) * Math.PI * 2)
-      return mix(BASE.max!, MAX_BRIGHT, wave)
+      return mix(theme.effortMax, theme.effortMaxBright, wave)
     }
     const id = this.levels[this.effortIndex - 1]?.id
-    if (id === 'low') return activeTheme().muted
-    if (id === 'high') return BASE.high!
-    if (id === 'xhigh') return BASE.xhigh!
-    if (id === 'max') return BASE.max!
-    return activeTheme().muted
+    if (id === 'low') return theme.muted
+    if (id === 'high') return theme.effortHigh
+    if (id === 'xhigh') return theme.effortXhigh
+    if (id === 'max') return theme.effortMax
+    return theme.muted
   }
 
   private barCells(fillWidth: number, barWidth: number): Array<{ color: Rgb; count: number }> {
@@ -336,7 +368,7 @@ export class ModelPanel {
       const wave =
         isMax && !this.reducedMotion ? 0.5 - 0.5 * Math.cos(this.phase(1200) * Math.PI * 2) : 0
       const color = isMax
-        ? mix(MAX_LABEL, SWEEP_HIGHLIGHT, wave)
+        ? mix(theme.effortMaxLabel, theme.effortXhighHighlight, wave)
         : active
           ? theme.accent
           : theme.muted
@@ -363,11 +395,26 @@ export class ModelPanel {
     )
   }
 
+  /** 可见窗口起点：焦点始终留在 8 行窗口内。 */
+  private windowStart(): number {
+    const max = 8
+    if (this.entries.length <= max) return 0
+    return Math.max(0, Math.min(this.modelIndex - max + 1, this.entries.length - max))
+  }
+
   rows(): number {
     if (!this.visible) return 0
     const models = Math.min(8, this.entries.length)
-    // 两条边距各占一个垂直单位（1 行）。
-    return 2 + 1 + models + 1 + (this.levels.length > 0 ? 3 : 1)
+    // 两条边距各占一个垂直单位（1 行）；错误行与目录失败行按需各占 1 行。
+    return (
+      2 +
+      (this.error ? 1 : 0) +
+      (this.catalogError ? 1 : 0) +
+      1 +
+      models +
+      1 +
+      (this.levels.length > 0 ? 3 : 1)
+    )
   }
 
   render(width: number): ReturnType<typeof createElement> | null {
@@ -386,14 +433,37 @@ export class ModelPanel {
         { flexDirection: 'row', paddingX: EDGE, width },
         createElement(Text, { color: theme.accent, bold: true }, '模型'),
         createElement(Box, { flexGrow: 1 }),
-        createElement(Text, { color: theme.muted }, truncate(summary, Math.max(10, barWidth - 4))),
+        createElement(Text, { color: theme.muted }, truncate(summary, Math.max(10, barWidth - 5))),
       ),
     ]
+    if (this.error) {
+      lines.push(
+        createElement(
+          Box,
+          { flexDirection: 'row', paddingX: EDGE, width },
+          createElement(Text, { color: theme.danger }, truncate(this.error, Math.max(8, barWidth))),
+        ),
+      )
+    }
+    if (this.catalogError) {
+      lines.push(
+        createElement(
+          Box,
+          { flexDirection: 'row', paddingX: EDGE, width },
+          createElement(
+            Text,
+            { color: theme.warning },
+            truncate(`目录读取失败：${this.catalogError}`, Math.max(8, barWidth)),
+          ),
+        ),
+      )
+    }
     // 模型列表：在面板内容的基础上再缩进一个水平单位，上下各留一个垂直单位。
-    lines.push(createElement(Text, {}, ' '))
-    const visible = this.entries.slice(0, 8)
+    lines.push(createElement(Text, {}, BLANK_LINE))
+    const start = this.windowStart()
+    const visible = this.entries.slice(start, start + 8)
     visible.forEach((entry, index) => {
-      const selected = index === this.modelIndex
+      const selected = start + index === this.modelIndex
       lines.push(
         createElement(
           Box,
@@ -412,19 +482,21 @@ export class ModelPanel {
           createElement(
             Text,
             { ...(selected ? { color: theme.accent, bold: true } : {}) },
-            truncate(entry.name, Math.max(8, barWidth - 4)),
+            truncate(entry.name, Math.max(8, barWidth - 5)),
           ),
         ),
       )
     })
-    lines.push(createElement(Text, {}, ' '))
+    lines.push(createElement(Text, {}, BLANK_LINE))
     if (this.levels.length === 0) {
-      const text = this.focus?.error ? '强度：—' : '强度：该模型未声明（不可调）'
+      const text = this.focus?.error
+        ? `强度：—（${this.focus.error}）`
+        : '强度：该模型未声明（不可调）'
       lines.push(
         createElement(
           Box,
           { flexDirection: 'row', paddingX: EDGE, width },
-          createElement(Text, { color: theme.muted }, text),
+          createElement(Text, { color: theme.muted }, truncate(text, Math.max(8, barWidth))),
         ),
       )
     } else {

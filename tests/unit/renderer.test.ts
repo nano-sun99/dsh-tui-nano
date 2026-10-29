@@ -1,3 +1,4 @@
+import { createElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { box, Renderer, text } from '../../src/render/renderer.ts'
 import { darkTheme } from '../../src/theme/theme.ts'
@@ -54,6 +55,20 @@ describe('renderer', () => {
     const second = chunks[1] ?? ''
     expect(second).toContain('two')
     expect(second.length).toBeLessThan(firstLength)
+    renderer.unmount()
+  })
+
+  it('clears cells under an overlay so the layer is opaque to text', () => {
+    const { renderer } = createRenderer(6, 2)
+    renderer.mount(
+      box(
+        { width: 6, height: 2, flexDirection: 'column' },
+        text('AAAAAA'),
+        createElement('overlay', { clear: true }, text('X')),
+      ),
+    )
+    renderer.flushFrame()
+    expect(renderer.snapshotLines()[0]).toBe('X')
     renderer.unmount()
   })
 

@@ -1,7 +1,7 @@
 [
   {
     "scenario": "01-dark-100-response",
-    "path": "/Users/sunchongsheng/code/dsh-tui-nano/.claude/worktrees/issue-88/docs/release/0.2.0/evidence/ghostty/01-dark-100-response.png",
+    "path": "<repo>/docs/release/0.2.0/evidence/ghostty/01-dark-100-response.png",
     "size": [
       1796,
       1424
@@ -11,32 +11,32 @@
   },
   {
     "scenario": "02-light-60",
-    "path": "/Users/sunchongsheng/code/dsh-tui-nano/.claude/worktrees/issue-88/docs/release/0.2.0/evidence/ghostty/02-light-60.png",
+    "path": "<repo>/docs/release/0.2.0/evidence/ghostty/02-light-60.png",
     "size": [
       1116,
       1238
     ],
-    "unique_colors": 714,
+    "unique_colors": 762,
     "non_black_ratio": 0.9994
   },
   {
     "scenario": "03-dark-diff",
-    "path": "/Users/sunchongsheng/code/dsh-tui-nano/.claude/worktrees/issue-88/docs/release/0.2.0/evidence/ghostty/03-dark-diff.png",
+    "path": "<repo>/docs/release/0.2.0/evidence/ghostty/03-dark-diff.png",
     "size": [
       1796,
       1424
     ],
-    "unique_colors": 919,
+    "unique_colors": 778,
     "non_black_ratio": 0.9997
   },
   {
     "scenario": "04-dark-transparency",
-    "path": "/Users/sunchongsheng/code/dsh-tui-nano/.claude/worktrees/issue-88/docs/release/0.2.0/evidence/ghostty/04-dark-transparency.png",
+    "path": "<repo>/docs/release/0.2.0/evidence/ghostty/04-dark-transparency.png",
     "size": [
       1796,
       1424
     ],
-    "unique_colors": 811,
+    "unique_colors": 664,
     "non_black_ratio": 0.9997
   }
 ]

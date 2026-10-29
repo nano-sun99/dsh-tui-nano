@@ -278,7 +278,7 @@ function DecisionOverlay(props: { snapshot: AppSnapshot; width: number; height: 
           width={props.width}
           height={props.height}
         >
-          <Box flexDirection="column" width={panelWidth} padding={2}>
+          <Box flexDirection="column" width={panelWidth} padding={2} clear>
             <Text color={snapshot.theme.warning} bold>
               {`需要确认：${prompt.toolName}`}
             </Text>
@@ -348,7 +348,7 @@ function QuestionOverlay(props: {
         width={props.width}
         height={props.height}
       >
-        <Box flexDirection="column" width={panelWidth} padding={2}>
+        <Box flexDirection="column" width={panelWidth} padding={2} clear>
           <Text color={snapshot.theme.info} bold>
             {question.header ?? (prompt.planReview ? '计划审阅' : '需要你的回答')}
             {prompt.questions.length > 1

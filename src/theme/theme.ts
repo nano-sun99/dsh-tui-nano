@@ -33,6 +33,13 @@ export interface Theme {
   readonly selectionBg: Rgb
   readonly focusBg: Rgb
   readonly rule: Rgb
+  /** `/model` 强度条：High / XHigh / Max 的档位色与动效端点。 */
+  readonly effortHigh: Rgb
+  readonly effortXhigh: Rgb
+  readonly effortMax: Rgb
+  readonly effortXhighHighlight: Rgb
+  readonly effortMaxBright: Rgb
+  readonly effortMaxLabel: Rgb
 }
 
 const dark: Theme = {
@@ -56,6 +63,12 @@ const dark: Theme = {
   selectionBg: [59, 74, 102], // #3b4a66
   focusBg: [36, 43, 53], // #242b35
   rule: [66, 73, 83], // #424953
+  effortHigh: [129, 144, 168], // #8190a8
+  effortXhigh: [93, 127, 173], // #5d7fad
+  effortMax: [54, 95, 157], // #365f9d
+  effortXhighHighlight: [155, 184, 223], // #9bb8df
+  effortMaxBright: [74, 131, 216], // #4a83d8
+  effortMaxLabel: [111, 156, 221], // #6f9cdd
 }
 
 const light: Theme = {
@@ -79,6 +92,13 @@ const light: Theme = {
   selectionBg: [213, 222, 242], // #d5def2
   focusBg: [232, 232, 229], // #e8e8e5
   rule: [196, 198, 201], // #c4c6c9
+  // 设计稿的强度色按固定 RGB 给出，深浅主题共用同一组。
+  effortHigh: [129, 144, 168], // #8190a8
+  effortXhigh: [93, 127, 173], // #5d7fad
+  effortMax: [54, 95, 157], // #365f9d
+  effortXhighHighlight: [155, 184, 223], // #9bb8df
+  effortMaxBright: [74, 131, 216], // #4a83d8
+  effortMaxLabel: [111, 156, 221], // #6f9cdd
 }
 
 let cached: Theme | undefined
