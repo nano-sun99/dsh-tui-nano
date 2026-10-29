@@ -5,14 +5,16 @@
  * 阶段调用。这里按顺序把 S02 的功能面挂上官方根——顺序本身是约束：
  * 命名后端 + 服务键要在 `storageDomain` 之前，探针要在 schedule 之前。
  */
-import type { ReactNode } from 'react'
+import { createElement, type ReactNode } from 'react'
 import type { FeatureContext, FeatureHost } from '../app/nano-app.ts'
 import { registerKeybinding } from '../input/keymap.ts'
 import type { Key } from '../input/parser.ts'
+import { Box } from '../render/components.ts'
 import { ScheduleRuntime } from '../schedule/service.ts'
 import { ScheduleStorage } from '../schedule/storage.ts'
 import { SessionControllerAdapter } from '../sessions/session-controller-adapter.ts'
 import { TerminalPane } from '../terminal/pane.ts'
+import { Completions } from './completions.ts'
 
 /** 终端面板开关（owner s02）：Ctrl+T。 */
 export const TERMINAL_TOGGLE_ACTION = 'terminal.toggle'
@@ -26,6 +28,7 @@ export class Features implements FeatureHost {
   private storage: ScheduleStorage | undefined
   private schedule: ScheduleRuntime | undefined
   private terminal: TerminalPane | undefined
+  private completions: Completions | undefined
   private disposeKeys: (() => void)[] = []
 
   async start(context: FeatureContext): Promise<void> {
@@ -63,6 +66,17 @@ export class Features implements FeatureHost {
         : undefined,
     })
     this.terminal = pane
+
+    // 5) 补全与 @ 引用：三类 provider 注册到 D01 注册表。
+    this.completions = new Completions({
+      ctx,
+      input: context.input,
+      getAgent: () => context.conversation.agent,
+      onChange: () => context.requestRender(),
+      writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
+    })
+    this.completions.install()
+
     this.disposeKeys.push(
       registerKeybinding({
         id: TERMINAL_TOGGLE_ACTION,
@@ -75,13 +89,18 @@ export class Features implements FeatureHost {
   }
 
   handleKey(key: Key): boolean {
-    if (!this.terminal) return false
     // 开关必须交回 keymap：否则面板聚焦时会把 Ctrl+T 当成终端输入吃掉。
     if (isTerminalToggle(key)) return false
+    if (this.completions?.handleKey(key)) return true
+    if (!this.terminal) return false
     return this.terminal.handleKey(key, false)
   }
 
   dispatchAction(action: string): boolean {
+    if (action === 'focus.next' && this.completions?.open) {
+      this.completions.accept()
+      return true
+    }
     if (action !== TERMINAL_TOGGLE_ACTION) return false
     if (!this.terminal) return false
     if (this.terminal.visible) this.terminal.hide()
@@ -90,8 +109,12 @@ export class Features implements FeatureHost {
   }
 
   body(): ReactNode {
-    if (!this.terminal?.visible) return null
-    return this.terminal.render(this.innerWidth(), this.innerHeight())
+    this.completions?.maybeSync()
+    const width = this.innerWidth()
+    const pane = this.terminal?.visible ? this.terminal.render(width, this.innerHeight()) : null
+    const popup = this.completions?.render(width) ?? null
+    if (pane && popup) return createElement(Box, { flexDirection: 'column', width }, pane, popup)
+    return pane ?? popup
   }
 
   private innerWidth(): number {
@@ -103,6 +126,8 @@ export class Features implements FeatureHost {
   }
 
   async dispose(): Promise<void> {
+    this.completions?.dispose()
+    this.completions = undefined
     for (const dispose of this.disposeKeys) dispose()
     this.disposeKeys = []
     await this.terminal?.close().catch?.(() => {})
