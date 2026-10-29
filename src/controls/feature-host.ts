@@ -17,6 +17,7 @@ import { TerminalPane } from '../terminal/pane.ts'
 import { assemblePrompt, findReferences } from '../attachments/prompt.ts'
 import { parseBashInput, renderBashInjection, runBash } from './bash-mode.ts'
 import { JobsPanel } from '../jobs/panel.ts'
+import { Monitor, renderMonitorLines } from '../monitor/monitor.ts'
 import { Completions } from './completions.ts'
 
 /** 终端面板开关（owner s02）：Ctrl+T。 */
@@ -40,6 +41,7 @@ export class Features implements FeatureHost {
   private terminal: TerminalPane | undefined
   private completions: Completions | undefined
   private jobs: JobsPanel | undefined
+  private monitor: Monitor | undefined
   private disposeKeys: (() => void)[] = []
 
   async start(context: FeatureContext): Promise<void> {
@@ -89,11 +91,19 @@ export class Features implements FeatureHost {
     this.completions.install()
 
     // 6) 任务面板：官方 jobs 只读。
+    this.monitor = new Monitor({
+      ctx,
+      sessionId: context.rootId,
+      onChange: () => context.requestRender(),
+      writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
+      deliver: (text, mode) => this.deliverMonitor(text, mode),
+    })
     this.jobs = new JobsPanel({
       ctx,
       sessionId: context.rootId,
       onChange: () => context.requestRender(),
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
+      watch: (jobId, mode) => this.monitor?.watch(jobId, mode),
     })
 
     this.disposeKeys.push(
@@ -164,6 +174,27 @@ export class Features implements FeatureHost {
     context.requestRender()
   }
 
+  /**
+   * Monitor 收件：quiet 走 inject（不唤醒、不新建回合）；notify 走 followup
+   * （会唤醒并计费，开启时已提示）。
+   */
+  private deliverMonitor(text: string, mode: 'quiet' | 'notify'): void {
+    const context = this.context
+    const agent = context?.conversation.agent
+    const llm = context?.official?.llm
+    const model = context?.conversation.model
+    model?.appendNotice(text, 'info')
+    context?.requestRender()
+    if (!agent || !llm?.createUserMessage) return
+    const message = llm.createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
+    try {
+      if (mode === 'notify') agent.followup(message)
+      else agent.inject(message)
+    } catch (error) {
+      process.stderr.write(`nano: Monitor 投递失败：${String((error as Error)?.message ?? error)}\n`)
+    }
+  }
+
   /** 注入语义：不新开回合、不唤醒；运行中的 Agent 在最近 step boundary 取走。 */
   private injectIntoModel(text: string): void {
     const context = this.context
@@ -217,7 +248,9 @@ export class Features implements FeatureHost {
     this.completions?.maybeSync()
     const width = this.innerWidth()
     const pane = this.terminal?.visible ? this.terminal.render(width, this.innerHeight()) : null
-    const jobs = this.jobs?.render(width, this.innerHeight()) ?? null
+    const jobs = this.jobs?.visible
+      ? this.jobs.render(width, this.innerHeight(), this.monitor?.watching)
+      : null
     const popup = this.completions?.render(width) ?? null
     const stack = [pane, jobs, popup].filter(Boolean)
     if (stack.length === 0) return null
@@ -236,6 +269,8 @@ export class Features implements FeatureHost {
   async dispose(): Promise<void> {
     this.completions?.dispose()
     this.completions = undefined
+    this.monitor?.dispose()
+    this.monitor = undefined
     this.jobs = undefined
     for (const dispose of this.disposeKeys) dispose()
     this.disposeKeys = []

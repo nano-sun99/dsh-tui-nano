@@ -13,6 +13,8 @@ export interface JobsPanelOptions {
   readonly sessionId: string
   readonly onChange: () => void
   readonly writeDiagnostic: (line: string) => void
+  /** `m` = quiet、`M` = notify；由 Features 接到 Monitor。 */
+  readonly watch?: (jobId: string, mode: 'quiet' | 'notify') => void
 }
 
 export interface JobRow {
@@ -134,6 +136,18 @@ export class JobsPanel {
       this.options.onChange()
       return true
     }
+    if (key.name === 'char' && (key.text === 'm' || key.text === 'M') && !key.ctrl) {
+      const row = this.rows[this.selected]
+      if (row && this.options.watch) {
+        const mode = key.text === 'M' ? 'notify' : 'quiet'
+        this.options.watch(row.id, mode)
+        this.notice =
+          mode === 'notify'
+            ? '已开启 Monitor（notify：会唤醒模型并计费）'
+            : '已开启 Monitor（quiet：不唤醒，内容随下次请求计费）'
+      }
+      return true
+    }
     if (key.name === 'char' && key.text === 's' && !key.ctrl) {
       const row = this.rows[this.selected]
       const jobs = this.options.ctx.get('jobs')
@@ -152,11 +166,11 @@ export class JobsPanel {
     return false
   }
 
-  render(width: number, height: number): ReactNode {
+  render(width: number, height: number, watching: readonly any[] = []): ReactNode {
     if (!this.open) return null
     const lines: ReactNode[] = []
     lines.push(
-      createElement(Text, { dim: true }, `任务 · ↑↓ 选择 · s 停止 · Esc 关闭${this.lossy ? ' · 输出已裁剪' : ''}`),
+      createElement(Text, { dim: true }, `任务 · ↑↓ 选择 · s 停止 · m 监听(quiet) · M 监听(notify) · Esc 关闭${this.lossy ? ' · 输出已裁剪' : ''}`),
     )
     if (this.rows.length === 0) {
       lines.push(createElement(Text, { dim: true }, '  （没有任务）'))
@@ -173,6 +187,15 @@ export class JobsPanel {
       )
     })
     if (this.notice) lines.push(createElement(Text, { dim: true }, `  ${this.notice}`))
+    for (const listener of watching) {
+      lines.push(
+        createElement(
+          Text,
+          { dim: true },
+          `  Monitor ${listener.jobId} · ${listener.mode}${listener.mode === 'notify' ? '（会唤醒模型并计费）' : ''} · 已投递 ${listener.delivered}`,
+        ),
+      )
+    }
     for (const line of this.output.slice(0, 4)) {
       lines.push(createElement(Text, {}, `  ${line}`))
     }
