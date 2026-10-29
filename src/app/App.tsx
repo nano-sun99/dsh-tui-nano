@@ -384,8 +384,19 @@ export function App(props: { snapshot: AppSnapshot }) {
   const bodyHeight = Math.max(1, height - 1 - inputHeight)
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box flexDirection="column" flexGrow={0} height={bodyHeight} paddingX={EDGE} width={width}>
-        <Transcript snapshot={snapshot} bodyHeight={bodyHeight} width={width - EDGE * 2} />
+      <Box
+        flexDirection="column"
+        flexGrow={0}
+        height={bodyHeight}
+        paddingX={EDGE}
+        paddingTop={1}
+        width={width}
+      >
+        <Transcript
+          snapshot={snapshot}
+          bodyHeight={Math.max(1, bodyHeight - 1)}
+          width={width - EDGE * 2}
+        />
         {snapshot.featureBody}
       </Box>
       <StatusLine snapshot={snapshot} width={width} />

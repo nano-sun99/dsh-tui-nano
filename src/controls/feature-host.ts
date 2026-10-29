@@ -217,6 +217,24 @@ export class Features implements FeatureHost {
     // 开关必须交回 keymap：否则面板聚焦时会把 Ctrl+T 当成终端输入吃掉。
     if (isTerminalToggle(key) || isJobsToggle(key) || isSessionsToggle(key) || isInfoToggle(key))
       return false
+    // 命令补全里按 Enter 直接运行（Claude Code 的手感）；技能/文件只插入。
+    if (
+      key.name === 'enter' &&
+      !key.shift &&
+      !key.ctrl &&
+      !key.alt &&
+      this.completions?.open &&
+      this.completions.kind === 'command'
+    ) {
+      this.completions.accept()
+      const text = this.context?.input.text ?? ''
+      const name = (text.trim().slice(1).split(/\s+/u)[0] ?? '').toLowerCase()
+      const agent = this.context?.conversation.agent
+      const commands = this.context?.core.ctx.get('commands')
+      const official = agent && commands ? commands.find(agent, name) : undefined
+      if (name === 'model' || official) void this.runSlashCommand(text)
+      return true
+    }
     if (this.completions?.handleKey(key)) return true
     if (this.info?.handleKey(key)) return true
     if (this.sessions?.handleKey(key)) return true
