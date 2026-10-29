@@ -3,6 +3,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ModelPanel } from '../../src/controls/model-panel.ts'
 import type { Key } from '../../src/input/parser.ts'
+import { box, Renderer } from '../../src/render/renderer.ts'
+import { darkTheme } from '../../src/theme/theme.ts'
 
 function key(name: Key['name'], extra: Partial<Key> = {}): Key {
   return {
@@ -124,7 +126,8 @@ describe('/model panel', () => {
     const json = JSON.stringify(panel.render(100))
     expect(json).toContain('模型')
     expect(json).toContain('当前：M1')
-    expect(json).toContain('▶ M1')
+    expect(json).toContain('▶')
+    expect(json).toContain('M1')
     expect(json).toContain('Off')
     expect(json).toContain('Max')
     expect(json).toContain('█')
@@ -172,6 +175,48 @@ describe('/model panel', () => {
     expect(summary?.text).toContain('默认（模型默认：High）')
     expect(summary?.text).not.toContain('…')
     panel.handleKey(key('escape'))
+  })
+
+  it('模型列表缩进一个单位，上下各留一个单位', async () => {
+    const { panel } = await open()
+    const renderer = new Renderer({
+      write: () => {},
+      width: 100,
+      height: 30,
+      defaultFg: darkTheme.fg,
+    })
+    renderer.mount(box({ width: 100, height: 30 }, panel.render(100)))
+    renderer.flushFrame()
+    const lines = renderer.snapshotLines()
+    const header = lines.findIndex((line) => line.includes('模型'))
+    expect(header).toBeGreaterThanOrEqual(0)
+    expect(lines[header]?.startsWith('  模型')).toBe(true)
+    expect(lines[header + 1]?.trim()).toBe('')
+    expect(lines[header + 2]?.startsWith('    ▶ M1')).toBe(true)
+    expect(lines[header + 3]?.startsWith('       M2')).toBe(true)
+    expect(lines[header + 4]?.trim()).toBe('')
+    expect(lines[header + 5]?.startsWith('  ─')).toBe(true)
+    expect(panel.rows()).toBe(9)
+    panel.handleKey(key('escape'))
+    renderer.unmount()
+  })
+
+  it('模型行显式绘制指针间隙，清掉上一帧残留', async () => {
+    const { panel } = await open()
+    const chunks: string[] = []
+    const renderer = new Renderer({
+      write: (bytes) => chunks.push(bytes),
+      width: 100,
+      height: 30,
+      defaultFg: darkTheme.fg,
+    })
+    renderer.mount(box({ width: 100, height: 30 }, panel.render(100)))
+    renderer.flushFrame()
+    const output = chunks.join('')
+    expect(output).toContain('▶ ')
+    expect(output).toContain('   M2')
+    panel.handleKey(key('escape'))
+    renderer.unmount()
   })
 
   it('Max 脉冲：颜色在深蓝与亮蓝之间', async () => {

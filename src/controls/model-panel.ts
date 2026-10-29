@@ -12,7 +12,7 @@ import type { ConversationController } from '../conversation/controller.ts'
 import type { Key } from '../input/parser.ts'
 import { Box, Text } from '../render/components.ts'
 import { displayWidth, graphemes } from '../render/text.ts'
-import { EDGE } from '../theme/spacing.ts'
+import { EDGE, NESTED } from '../theme/spacing.ts'
 import { activeTheme, type Rgb } from '../theme/theme.ts'
 
 interface Effort {
@@ -366,7 +366,8 @@ export class ModelPanel {
   rows(): number {
     if (!this.visible) return 0
     const models = Math.min(8, this.entries.length)
-    return 2 + models + (this.levels.length > 0 ? 3 : 1)
+    // 两条边距各占一个垂直单位（1 行）。
+    return 2 + 1 + models + 1 + (this.levels.length > 0 ? 3 : 1)
   }
 
   render(width: number): ReturnType<typeof createElement> | null {
@@ -388,21 +389,35 @@ export class ModelPanel {
         createElement(Text, { color: theme.muted }, truncate(summary, Math.max(10, barWidth - 4))),
       ),
     ]
+    // 模型列表：在面板内容的基础上再缩进一个水平单位，上下各留一个垂直单位。
+    lines.push(createElement(Text, {}, ' '))
     const visible = this.entries.slice(0, 8)
     visible.forEach((entry, index) => {
       const selected = index === this.modelIndex
       lines.push(
         createElement(
           Box,
-          { flexDirection: 'row', paddingX: EDGE, width },
+          { flexDirection: 'row', paddingLeft: NESTED, paddingRight: EDGE, width },
+          // `▶` 在渲染器里按 2 格计宽；再留 1 格间隙，和设计稿的 1ch 指针 + 1ch gap 对齐。
+          // `wrap:false` 让间隙格也显式落一个空格，清掉上一帧可能留下的字符。
+          createElement(
+            Box,
+            { width: 3 },
+            createElement(
+              Text,
+              { wrap: false, ...(selected ? { color: theme.accent, bold: true } : {}) },
+              selected ? '▶ ' : '   ',
+            ),
+          ),
           createElement(
             Text,
             { ...(selected ? { color: theme.accent, bold: true } : {}) },
-            `${selected ? '▶ ' : '  '}${truncate(entry.name, Math.max(8, barWidth - 4))}`,
+            truncate(entry.name, Math.max(8, barWidth - 4)),
           ),
         ),
       )
     })
+    lines.push(createElement(Text, {}, ' '))
     if (this.levels.length === 0) {
       const text = this.focus?.error ? '强度：—' : '强度：该模型未声明（不可调）'
       lines.push(
