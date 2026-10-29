@@ -17,6 +17,7 @@ import { TerminalPane } from '../terminal/pane.ts'
 import { assemblePrompt, findReferences } from '../attachments/prompt.ts'
 import { parseBashInput, renderBashInjection, runBash } from './bash-mode.ts'
 import { JobsPanel } from '../jobs/panel.ts'
+import { SessionsPanel } from '../sessions/list.ts'
 import { Monitor, renderMonitorLines } from '../monitor/monitor.ts'
 import { Completions } from './completions.ts'
 
@@ -26,12 +27,19 @@ export const TERMINAL_TOGGLE_ACTION = 'terminal.toggle'
 /** 任务面板开关（owner s02）：Ctrl+J。 */
 export const JOBS_TOGGLE_ACTION = 'jobs.toggle'
 
+/** 会话列表面板开关（owner s02）：Ctrl+L。 */
+export const SESSIONS_TOGGLE_ACTION = 'sessions.toggle'
+
 function isTerminalToggle(key: Key): boolean {
   return key.name === 'char' && key.ctrl === true && key.text === 't'
 }
 
 function isJobsToggle(key: Key): boolean {
   return key.name === 'char' && key.ctrl === true && key.text === 'j'
+}
+
+function isSessionsToggle(key: Key): boolean {
+  return key.name === 'char' && key.ctrl === true && key.text === 'l'
 }
 
 export class Features implements FeatureHost {
@@ -42,6 +50,7 @@ export class Features implements FeatureHost {
   private completions: Completions | undefined
   private jobs: JobsPanel | undefined
   private monitor: Monitor | undefined
+  private sessions: SessionsPanel | undefined
   private disposeKeys: (() => void)[] = []
 
   async start(context: FeatureContext): Promise<void> {
@@ -98,6 +107,12 @@ export class Features implements FeatureHost {
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
       deliver: (text, mode) => this.deliverMonitor(text, mode),
     })
+    this.sessions = new SessionsPanel({
+      ctx,
+      rootId: context.rootId,
+      onChange: () => context.requestRender(),
+      writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
+    })
     this.jobs = new JobsPanel({
       ctx,
       sessionId: context.rootId,
@@ -107,6 +122,13 @@ export class Features implements FeatureHost {
     })
 
     this.disposeKeys.push(
+      registerKeybinding({
+        id: SESSIONS_TOGGLE_ACTION,
+        keys: [{ name: 'char', text: 'l', ctrl: true }],
+        scopes: ['idle', 'input', 'running'],
+        description: '打开/关闭会话列表',
+        owner: 's02',
+      }),
       registerKeybinding({
         id: JOBS_TOGGLE_ACTION,
         keys: [{ name: 'char', text: 'j', ctrl: true }],
@@ -126,8 +148,9 @@ export class Features implements FeatureHost {
 
   handleKey(key: Key): boolean {
     // 开关必须交回 keymap：否则面板聚焦时会把 Ctrl+T 当成终端输入吃掉。
-    if (isTerminalToggle(key) || isJobsToggle(key)) return false
+    if (isTerminalToggle(key) || isJobsToggle(key) || isSessionsToggle(key)) return false
     if (this.completions?.handleKey(key)) return true
+    if (this.sessions?.handleKey(key)) return true
     if (this.jobs?.handleKey(key)) return true
     if (this.terminal?.visible && this.terminal.handleKey(key, false)) return true
     // 带图片引用时 Enter 走附件链：持久化 + 官方准入后再提交。
@@ -229,6 +252,10 @@ export class Features implements FeatureHost {
   }
 
   dispatchAction(action: string): boolean {
+    if (action === SESSIONS_TOGGLE_ACTION) {
+      this.sessions?.toggle()
+      return true
+    }
     if (action === JOBS_TOGGLE_ACTION) {
       this.jobs?.toggle()
       return true
@@ -248,11 +275,12 @@ export class Features implements FeatureHost {
     this.completions?.maybeSync()
     const width = this.innerWidth()
     const pane = this.terminal?.visible ? this.terminal.render(width, this.innerHeight()) : null
+    const sessions = this.sessions?.visible ? this.sessions.render(width, this.innerHeight()) : null
     const jobs = this.jobs?.visible
       ? this.jobs.render(width, this.innerHeight(), this.monitor?.watching)
       : null
     const popup = this.completions?.render(width) ?? null
-    const stack = [pane, jobs, popup].filter(Boolean)
+    const stack = [pane, sessions, jobs, popup].filter(Boolean)
     if (stack.length === 0) return null
     if (stack.length === 1) return stack[0]
     return createElement(Box, { flexDirection: 'column', width }, ...stack)
@@ -269,6 +297,7 @@ export class Features implements FeatureHost {
   async dispose(): Promise<void> {
     this.completions?.dispose()
     this.completions = undefined
+    this.sessions = undefined
     this.monitor?.dispose()
     this.monitor = undefined
     this.jobs = undefined
