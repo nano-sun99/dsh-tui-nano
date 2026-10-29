@@ -3,6 +3,7 @@
  * decision seams and the lifecycle together. One instance owns one root.
  */
 import { createElement } from 'react'
+import type { ReactNode } from 'react'
 import type { CoreBoot } from '../boot/assemble.ts'
 import type { OfficialModules } from '../boot/official.ts'
 import { type MountClaim, releaseMountClaim } from '../boot/root.ts'
@@ -13,6 +14,7 @@ import { resolveKey } from '../input/keymap.ts'
 import type { InputEvent, Key } from '../input/parser.ts'
 import { INPUT_BYTE_LIMIT } from '../input/segments.ts'
 import type { Renderer } from '../render/renderer.ts'
+import { writeHandoff } from '../runtime/handoff.ts'
 import { formatShutdownReport, Lifecycle } from '../runtime/lifecycle.ts'
 import type { Terminal } from '../runtime/terminal.ts'
 import { EDGE } from '../theme/spacing.ts'
@@ -32,6 +34,61 @@ export interface NanoAppOptions {
   readonly conversation: ConversationController
   readonly history: HistoryStore
   readonly writeDiagnostic: (line: string) => void
+  /** 接线接缝（S02 spec §1 接入点例外第 2/3 条）：不传时行为与 α 一致。 */
+  readonly features?: FeatureHost
+}
+
+/** 受控重启请求（spec §1 第 6 条接缝）：只换根，不建替代会话。 */
+export interface RestartRequest {
+  readonly rootId: string
+  readonly reason?: 'root-switch' | 'cold-rename'
+  readonly payload?: Record<string, unknown>
+}
+
+/** 受控重启：main 捕获后交回 launcher 以 `--root <rootId>` 重新拉起。 */
+export class AppRestart extends Error {
+  readonly rootId: string
+  constructor(rootId: string) {
+    super(`nano: 受控重启到根 ${rootId}`)
+    this.rootId = rootId
+  }
+}
+
+/** S02 拿到的东西：官方根、渲染/终端句柄，以及回写 S01 状态的两个入口。 */
+export interface FeatureContext {
+  readonly core: CoreBoot
+  readonly official: OfficialModules
+  readonly terminal: Terminal
+  readonly renderer: Renderer
+  readonly conversation: ConversationController
+  readonly decisions: DecisionManager
+  /** S01 的输入框实例；S02 的补全/@/草稿读写它（spec §1 第 4 条接缝）。 */
+  readonly input: InputModel
+  readonly rootId: string
+  readonly dataRoot: string
+  readonly cwd: string
+  /** 请求重画一帧（S02 自己的状态变化时调用）。 */
+  requestRender(): void
+  /** 写一行提示到状态栏；传 undefined 清掉。 */
+  setNotice(text: string | undefined): void
+  /** 受控重启：冻结输入 → 写 handoff → 既有关停 → 以新根重新拉起。 */
+  requestRestart(request: RestartRequest): void
+}
+
+/**
+ * S02 实现的接线对象。全部方法可选：没有 features 时 S01 走原路径。
+ * - `start` 在首帧之前 await，失败即启动失败；
+ * - `dispose` 在关停 drain 阶段调用；
+ * - `handleKey` 先于 S01 处理按键，返回 true 表示已消费；
+ * - `dispatchAction` 接 S01 没消费的 keymap action id；
+ * - `body` 返回正文区内容（可为空）。
+ */
+export interface FeatureHost {
+  start?(context: FeatureContext): void | Promise<void>
+  dispose?(): void | Promise<void>
+  handleKey?(key: Key): boolean
+  dispatchAction?(action: string): boolean
+  body?(): ReactNode
 }
 
 export class NanoApp {
@@ -57,6 +114,7 @@ export class NanoApp {
   private lastUnknownLog = 0
   private finishResolve: ((code: number) => void) | undefined
   private coreDisposed = false
+  private pendingRestart: RestartRequest | undefined
 
   constructor(options: NanoAppOptions) {
     this.options = options
@@ -76,6 +134,25 @@ export class NanoApp {
     this.input.setHistory(history.entries().map((entry) => entry.display))
     this.options.terminal.refreshSize()
     this.options.renderer.resize(this.options.terminal.width, this.options.terminal.height)
+    // S02 的接线先就位再画首帧；抛错即启动失败（main 走恢复终端 + 退出 1）。
+    await this.options.features?.start?.({
+      core,
+      official: this.options.official,
+      terminal: this.options.terminal,
+      renderer: this.options.renderer,
+      conversation,
+      decisions: this.decisions,
+      input: this.input,
+      rootId: this.options.rootId,
+      dataRoot: this.options.dataRoot,
+      cwd: this.options.cwd,
+      requestRender: () => this.scheduleRender(),
+      setNotice: (text) => {
+        this.notice = text
+        this.scheduleRender()
+      },
+      requestRestart: (request) => this.requestRestart(request),
+    })
     this.render()
     const finish = new Promise<number>((resolve) => {
       this.finishResolve = resolve
@@ -85,6 +162,7 @@ export class NanoApp {
     void conversation.onChange(() => this.scheduleRender())
     this.decisions.onChange(() => this.scheduleRender())
     return finish.then((code) => {
+      if (this.pendingRestart) throw new AppRestart(this.pendingRestart.rootId)
       throw new AppExit(code)
     })
   }
@@ -159,6 +237,11 @@ export class NanoApp {
   private handleKey(key: Key): void {
     if (this.decisions.hasDecision) {
       this.handleDecisionKey(key)
+      return
+    }
+    // 接线接缝：S01 的模态优先，之后才轮到 S02 的界面（终端/面板输入）。
+    if (this.options.features?.handleKey?.(key) === true) {
+      this.scheduleRender()
       return
     }
     const scopes = [
@@ -270,6 +353,8 @@ export class NanoApp {
         this.scrollOffset = 0
         return
       default:
+        // 接线接缝：S01 不认识的 keymap action 交给 S02。
+        if (action && this.options.features?.dispatchAction?.(action) === true) return
         break
     }
     if (key.name === 'escape') {
@@ -446,6 +531,7 @@ export class NanoApp {
       scrollOffset: this.scrollOffset,
       stickBottom: this.stickBottom,
       ...(this.notice ? { notice: this.notice } : {}),
+      ...(this.options.features?.body ? { featureBody: this.options.features.body() } : {}),
       userName: '你',
     }
   }
@@ -468,6 +554,28 @@ export class NanoApp {
     }
   }
 
+  /** 记录重启意图并走既有关停；关停里写 handoff，start() 结束时抛 AppRestart。 */
+  private requestRestart(request: RestartRequest): void {
+    if (this.pendingRestart) return
+    try {
+      // 先落盘 handoff：写不成就取消重启，应用继续跑，草稿留在输入框。
+      writeHandoff(this.options.dataRoot, {
+        rootId: request.rootId,
+        sessionId: this.options.rootId,
+        reason: request.reason ?? 'root-switch',
+        ...(request.payload ? { payload: request.payload } : {}),
+      })
+    } catch (error) {
+      this.notice = `切换失败（handoff 写入失败）：${String((error as Error)?.message ?? error)}`
+      this.options.writeDiagnostic(`nano: handoff 写入失败，取消重启`)
+      this.scheduleRender()
+      return
+    }
+    this.pendingRestart = request
+    this.exitCode = 0
+    void this.shutdown(`restart ${request.rootId}`)
+  }
+
   private async shutdown(reason: string): Promise<void> {
     if (this.stopping) {
       // The terminal delivers Ctrl+C to the launcher and the runtime; the
@@ -481,6 +589,14 @@ export class NanoApp {
     this.shutdownStartedAt = Date.now()
     this.options.writeDiagnostic(`nano: 开始关停（${reason}）`)
     const { core, conversation, claim, terminal } = this.options
+    this.lifecycle.register('drain', 'features', async () => {
+      try {
+        await this.options.features?.dispose?.()
+      } catch (error) {
+        this.cleanupFailed = true
+        throw error
+      }
+    })
     this.lifecycle.register('drain', 'conversation', async () => {
       try {
         conversation.stop()
@@ -535,6 +651,11 @@ export class NanoApp {
     this.removeProcessListeners()
     const failed = report.results.some((result) => result.status !== 'stopped')
     if (failed) this.exitCode = this.exitCode || 1
+    if (failed && this.pendingRestart) {
+      // 清理失败时不换根：claim 没释放，新进程只会报「被占用」。
+      this.pendingRestart = undefined
+      this.options.writeDiagnostic('nano: 清理未完成，取消受控重启')
+    }
     this.options.writeDiagnostic(formatShutdownReport(report))
     this.finishResolve?.(this.exitCode)
   }

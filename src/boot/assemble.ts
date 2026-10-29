@@ -31,6 +31,11 @@ export interface CoreBootOptions {
   readonly home: string
   readonly cwd: string
   readonly rootId: string
+  /**
+   * 接线接缝（S02 spec §1 接入点例外）：boot 前追加的补丁层。
+   * 只追加在 α 的三条既有 patch 之后，不改变它们的顺序与内容。
+   */
+  readonly extraPatches?: readonly any[]
 }
 
 export interface PreparedCore {
@@ -95,6 +100,8 @@ export async function prepareCore(options: CoreBootOptions): Promise<PreparedCor
     config: { root: join(dataRoot, 'runtime-data', rootId, 'storage') },
   })
   patches.push({ id: 'hmr', disabled: true })
+  // S02 的启动前置行（terminal-controller、storage-domain 路由）；α 不传时为空。
+  for (const layer of options.extraPatches ?? []) patches.push(layer)
 
   const resolution = await appBoot.createRuntimeResolution({
     installAnchor: official.installAnchor,

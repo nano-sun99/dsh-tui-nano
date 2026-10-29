@@ -7,7 +7,8 @@ import { closeSync, existsSync, openSync, rmSync, writeSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createElement } from 'react'
-import { AppExit, NanoApp } from './app/nano-app.ts'
+import { spawn } from 'node:child_process'
+import { AppExit, AppRestart, NanoApp } from './app/nano-app.ts'
 import { Skeleton } from './app/skeleton.tsx'
 import { type PreparedCore, prepareCore, startCore } from './boot/assemble.ts'
 import { loadOfficial, type OfficialModules } from './boot/official.ts'
@@ -21,9 +22,11 @@ import {
   writeLastRoot,
 } from './boot/root.ts'
 import { ConversationController } from './conversation/controller.ts'
+import { Features } from './controls/feature-host.ts'
 import { HistoryStore } from './input/history.ts'
 import { Renderer } from './render/renderer.ts'
 import { Terminal } from './runtime/terminal.ts'
+import { featureBootPatches } from './sessions/boot-patches.ts'
 import { activeTheme } from './theme/theme.ts'
 
 interface CliArgs {
@@ -79,6 +82,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       home: paths.home,
       cwd: process.cwd(),
       rootId,
+      extraPatches: featureBootPatches(rootId),
     })
   } catch (error) {
     reportVisible(message(error))
@@ -165,11 +169,13 @@ export async function main(argv: readonly string[]): Promise<number> {
       conversation,
       history,
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
+      features: new Features(),
     })
     try {
       await app.start()
       return 0
     } catch (error) {
+      if (error instanceof AppRestart) return await relaunchInto(error.rootId)
       if (error instanceof AppExit) return error.code
       throw error
     }
@@ -189,6 +195,26 @@ export async function main(argv: readonly string[]): Promise<number> {
     for (const signal of earlySignals) process.off(signal, earlySignalHandler)
     terminal.restore()
   }
+}
+
+/**
+ * 受控重启：终端已恢复、认领已释放，交回 launcher 以 `--root <rootId>` 重新拉起。
+ * 清掉 `NANO_GUARDED`，让新进程重新走 fd 守护。
+ */
+function relaunchInto(rootId: string): Promise<number> {
+  return new Promise((resolve) => {
+    const env = { ...process.env }
+    delete env.NANO_GUARDED
+    const child = spawn(process.execPath, [process.argv[1] as string, '--root', rootId], {
+      stdio: ['inherit', 'inherit', 'inherit'],
+      env,
+    })
+    child.on('error', (error) => {
+      reportVisible(`nano: 重启失败：${String(error)}`)
+      resolve(1)
+    })
+    child.on('exit', (code, signal) => resolve(signal ? 1 : (code ?? 1)))
+  })
 }
 
 /** B8: show where configuration, credentials and global instructions came from. */
