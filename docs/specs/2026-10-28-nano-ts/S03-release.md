@@ -10,7 +10,9 @@
 
 仅删除：`crates/`、`Cargo.toml`、`Cargo.lock`、`rust-toolchain.toml`、`protocol/`、`bridge/`。这些路径不承接功能，只按总纲 §8.2 处置表在退场时删除。
 
-不碰：业务功能实现；发现功能缺失时报告并退回对应子件。`package.json` 由 S01 独占，本份提供 npm manifest 内容由 S01 合入。
+不碰：业务功能实现；发现功能缺失时报告并退回对应子件。`package.json` 在 α/β 期由 S01 独占；γ 发布期 S01 已交付，manifest 由本份落盘，内容以 §2.1 为准。
+
+入口级例外（2026-10-29 用户拍板，改旧 spec）：S03 可改 `src/bin.ts`、`src/main.ts` 与 `src/input/keymap.ts` 的入口/文档接缝——Node 下限检查、`nano purge` 交互确认与 `--yes`、`--help` 的键位段生成；不改 α 的业务行为，回归由 S01 单测与 S03 e2e 覆盖。新增 `src/input/keymap-docs.ts`（键位文档渲染）与 `src/controls/feature-keys.ts`（S02 功能键静态清单，运行时与文档共用）归本份。
 
 ## 2. 包结构与安装
 
@@ -23,37 +25,41 @@
   "private": false,
   "type": "module",
   "license": "MIT",
-  "bin": { "nano": "dist/cli.js" },
+  "bin": { "nano": "dist/bin.js" },
   "files": ["dist"],
   "engines": { "node": ">=22.19.0" },
   "publishConfig": { "access": "public" },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "test": "vitest run",
-    "lint": "biome check .",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run && vitest run --config tests/feature/vitest.config.ts",
+    "test:e2e": "node --test tests/e2e/*.test.mjs",
+    "lint": "biome check src tests",
     "keymap:docs": "node scripts/keymap-docs.mjs",
-    "prepack": "npm run build && node scripts/prepack-check.mjs"
+    "prepack": "npm run build && node scripts/keymap-docs.mjs --check && node scripts/prepack-check.mjs"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-app-boot": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-base": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-api-terminal-controller": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-file-reference-local": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-schedule": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-storage": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-storage-json": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-tool-ask-user": "0.2.1-rc.2",
-    "react": "^19",
-    "react-reconciler": "^0.31",
-    "yoga-layout": "^3",
-    "string-width": "^7"
+    "@deepseek-ai/dsh": "0.2.1-rc.2",
+    "marked": "^15.0.12",
+    "prismjs": "^1.30.0",
+    "react": "^19.1.1",
+    "react-reconciler": "^0.33.0",
+    "string-width": "^7.2.0",
+    "yaml": "^2.9.1",
+    "yoga-layout": "^3.2.1"
   },
   "devDependencies": {
-    "typescript": "^5",
-    "vitest": "^3",
-    "@biomejs/biome": "^2"
+    "@biomejs/biome": "^2.2.4",
+    "@types/node": "^24.3.0",
+    "@types/prismjs": "^1.26.5",
+    "@types/react": "^19.1.12",
+    "@types/react-reconciler": "^0.32.1",
+    "npm-packlist": "^11.3.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   },
   "overrides": {
+    "@deepseek-ai/dsh": "0.2.1-rc.2",
     "@deepseek-ai/cordis": "4.0.5",
     "@deepseek-ai/cordis-plugin-group": "1.0.5",
     "@deepseek-ai/cordis-plugin-include": "1.0.10",
@@ -64,9 +70,10 @@
 ```
 
 - 包名 `dsh-tui-nano`、bin `nano`、版本 `0.2.0`；`docs/release/0.2.0/` 为发布目录，`docs/release/0.1.0/` 标 HISTORICAL，不作为 v2 依据。
-- `files` 只含 `dist`；构建用 `tsc`，依赖全部 external；`dist/cli.js` 必须带 shebang 且可执行。若改用 tsup 打包依赖，必须把 Yoga WASM 等资产显式列入 `files`，并重写本节。
-- `prepack-check` 用 `npm-packlist` 断言 `dist/cli.js` 存在、带 shebang；不做递归 `npm pack --dry-run`。
-- 版本口径：harness 包精确 `0.2.1-rc.2`；其依赖的 `@deepseek-ai/*` 用 `overrides` 按已装官方树锁精确版本（cordis 4.0.5、cordis-plugin-* 见 manifest），不随 registry 漂移；启动前按明确包名+版本清单校验，未知 harness 版本拒绝启动；Cordis/React 单实例用 `createRequire(...).resolve` 断言解析到同一路径/版本。
+- `files` 只含 `dist`；构建用 `tsc`，依赖全部 external；`dist/bin.js` 必须带 shebang 且可执行（S01 交付的入口是 `src/bin.ts`，2026-10-29 改旧 spec 对齐）。若改用 tsup 打包依赖，必须把 Yoga WASM 等资产显式列入 `files`，并重写本节。
+- `prepack-check` 用 `npm-packlist` 断言 `dist/bin.js` 存在、带 shebang；不做递归 `npm pack --dry-run`。
+- 版本口径：依赖只声明 `@deepseek-ai/dsh` 整包（精确 `0.2.1-rc.2`），子包由该整包自带、启动时按整包锚点解析（`src/boot/official.ts`）；`overrides` 把该整包与 cordis 五件锁到已装官方树版本（cordis 4.0.5、cordis-plugin-* 见 manifest），不随 registry 漂移。启动前校验整包版本，未知 harness 版本拒绝启动；Cordis/React 单实例由启动期断言解析到同一路径与版本（`src/boot/official.ts`）。
+- `test` 同时跑 `tests/unit`（S01）与 `tests/feature`（S02）；e2e 单独用 `test:e2e`，避免把需要合成 HOME/DSH_HOME 的安装演练塞进默认回归。
 - 首次发布用 dist-tag `next`，发布结论通过后再提升 `latest`。
 - Node 下限 22.19（官方树 `@earendil-works/pi-ai@1.3.0`、`undici@8.11.2` 的 engines）；`engines` 只警告，bin 入口必须运行时检查 `process.versions.node`，低于下限给可操作错误并退出。
 - 官方依赖树自带 native 预编译包（node-pty/koffi/sharp/node-addon-require-builtin/node-addon-system 等）；nano 自身不新增原生 addon，不承诺整条依赖树无 native。
@@ -120,22 +127,22 @@
 
 ## 4. Rust 与 bridge 退场
 
-- 合并本组 spec 前：`main` 打 tag `rust-final`（记录 SHA）并推 `archive/rust-v1`；`git rev-parse`/`git ls-remote` 验证。
+- 删除前：在 `main` 打 tag `rust-final`（记录 SHA）并推 `archive/rust-v1`；`git rev-parse`/`git ls-remote` 验证。spec 合并时未打（2026-10-29 补齐），tag 取删除前 `main` 的 SHA；tag 与分支只做归档，不回改历史。
 - 删除 `crates/`、`Cargo.toml`、`Cargo.lock`、`rust-toolchain.toml`、`protocol/`、`bridge/`；按总纲 §8.2 的 bridge 处置表吸收业务逻辑，未列模块必须标注「不承接」及原因。
 - 删除后检查（只用已跟踪文件，目录不存在不 fatal）：
 
 ```sh
 git ls-files -z -- src package.json packaging tests scripts README.md README.en.md AGENTS.md .github .gitignore \
-  | xargs -0 grep -nE 'cargo|Cargo|rust|bridge|nano-protocol|--bridge-package|target/release|nano-bridge'
+  | xargs -0 grep -nE 'cargo|Cargo|rust-toolchain|nano-protocol|--bridge-package|target/release|nano-bridge|@dsh-tui-nano/bridge|bridge/'
 ```
 
-  结果为空；`docs/specs/` 历史规格与 `docs/release/0.1.0/`（已标 HISTORICAL）豁免。bridge/ 下的 `cordis.patch.yml` 行集（终端/问卷/文件引用/HMR）由 S01 重写为应用自持 profile 的行集，不照搬 `dsh plugin` 安装路径。
+  结果为空；`docs/specs/` 历史规格与 `docs/release/0.1.0/`（已标 HISTORICAL）豁免。裸词 `rust`/`bridge` 不再进正则：`rust` 会误伤语法高亮的语言名（`src/transcript/markdown.ts` 的 `prism-rust` 与 `rs: 'rust'`），`bridge` 过宽；门禁只匹配旧工具链、旧路径与旧协议标识（2026-10-29 改旧 spec）。bridge/ 下的 `cordis.patch.yml` 行集（终端/问卷/文件引用/HMR）由 S01 重写为应用自持 profile 的行集，不照搬 `dsh plugin` 安装路径。
 - 仓库可构建、测试、打包；旧 Rust 发布证据标为历史，不作为 v2 发布依据。
 - 删除以合并后的 `main` 为准，先 rebase 再删，不 force 覆盖他人改动。
 
 ## 5. 键位与文档
 
-- 键位单一源 `src/input/keymap.ts`（S01）；S02 只注册功能键；本份用 `scripts/keymap-docs.mjs --check` 从源生成 README/`--help` 并加 diff 检查，挂到 `prepack` 或 §6 验收，写明执行者与时点；中英文 README 同步。
+- 键位单一源 `src/input/keymap.ts`（S01）；S02 只注册功能键，功能键的静态清单位于 `src/controls/feature-keys.ts`（运行时注册与文档共用同一份）。本份用 `scripts/keymap-docs.mjs` 从源渲染键位表：`--write` 写 README.md / README.en.md 的标记区块，`--check` 只比对并返回非零；`--check` 挂在 `prepack`（`npm pack` 前自动跑），§6 验收也跑一次。`--help` 的键位段由 `src/input/keymap-docs.ts` 在运行时从同一清单渲染；中英文 README 同步。
 - README 保留主题与透明、架构、许可证/致谢等章节；补 `LICENSE` 文件（MIT，沿用 Cargo.toml 声明）；已知限制必须含：无崩溃隔离、共享事件循环上限、强杀后终端可能残留、调度无暂停、投递非严格一次、Monitor `notify` 计费、三处用户变更（总纲 §5.2）。
 - 首启显示配置/凭据/全局指令实际来源（B8）由 S01 实现，本份只验证；不复制凭据值。
 
@@ -152,3 +159,4 @@ git ls-files -z -- src package.json packaging tests scripts README.md README.en.
 - 2026-10-28 重审 8 份后按发现重写：native 口径、精确版本、应用自持 profile、卸载残留定义、npm manifest owner、bridge 退场、发布闸门/阻断/脱敏、键位单一源、旧安装器处置；完整清单在 PR #84 评论。
 - 2026-10-28 轻审修订：npm manifest 完整清单、harness 精确/其余跟随口径、普通卸载保留 profile 与 `--purge` 区分、B1–B8 阻断表、发布审计档位、Rust 退场 grep 限定范围与旧 packaging 文件清单。
 - 2026-10-28 二次轻审修订：manifest 可直接落盘（全名/版本/devDeps/type/license/bin/files/overrides）、`nano purge` 作为可执行入口且不依赖 npm 生命周期、版本 `0.2.0` 与 `docs/release/0.2.0`、B1–B8 逐条覆盖 v1 S13 并补首启来源、B8 改由 S01 实现、grep 用 `git ls-files` 避免假绿与 fatal、p50 删除、Node 22.19 运行时检查、`npm pack` 命令与 integrity、发布档位由用户当场选择。
+- 2026-10-29 实施发现修订（用户选择「改旧 spec」）：bin 对齐 S01 已交付的 `dist/bin.js`（新增 `src/bin.ts` 入口级例外）；依赖对齐已实现的 `@deepseek-ai/dsh` 整包并保留 cordis 五件 overrides；`test` 覆盖 `tests/feature`、新增 `test:e2e`；grep 门禁去掉会误伤语法高亮的裸词 `rust`/`bridge`，改为旧工具链/路径/协议标识；`rust-final` tag 在删除前补打；§5 写明 `keymap:docs` 的 `--write`/`--check` 与 `--help` 渲染来源。

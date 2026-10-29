@@ -108,7 +108,7 @@ Ghostty
 |---|---|---|---|---|---|---|
 | [S01 α](S01-runtime-render-conversation.md) | 自建根/核心组装、pre-boot 首帧、终端独占、渲染/输入、真实对话与阅读决策 | 官方公开导出 | `package.json`、`package-lock.json`、`tsconfig.json`、`vitest.config.ts`、`biome.json`、`src/boot`、`src/runtime`、`src/render`、`src/input`、`src/theme`、`src/conversation`、`src/transcript`、`src/decisions`、`src/app`、`src/types`、`src/main.ts`、`src/bin.ts`、`tests/unit`、`docs/evidence/2026-10-28-nano-ts/alpha` | S02/S03 文件、官方存储 | spec 合并后 / phase-0+α / 由 S03 发布 | A |
 | [S02 β](S02-input-sessions-terminal.md) | 输入/会话/控制/附件/技能、终端/任务/Monitor/调度/子代理 | S01 render/input/transcript/keymap/scene 契约 | `src/attachments`、`src/sessions`、`src/controls`、`src/skills`、`src/terminal`、`src/jobs`、`src/monitor`、`src/schedule`、`src/subagents`、`tests/feature`、`docs/evidence/2026-10-28-nano-ts/beta` | `src/render`、`package.json`、S01/S03 文件 | S01 契约冻结后 / β / 由 S03 发布 | B |
-| [S03 γ](S03-release.md) | npm 包、发布验收、证据、Rust 与 bridge 退场 | 全部成果 | `packaging/`、`tests/e2e/`、`scripts/`（Rust 期证据脚本）、`docs/release/`、`README.md`、`README.en.md`、键位文档；仅删除 `crates/`、`Cargo.*`、`rust-toolchain.toml`、`protocol/`、`bridge/` | 代其他子件补写功能 | S01 包入口 + S02 键位冻结 / γ / 本份发布 | C |
+| [S03 γ](S03-release.md) | npm 包、发布验收、证据、Rust 与 bridge 退场 | 全部成果 | `packaging/`、`tests/e2e/`、`scripts/`（Rust 期证据脚本）、`docs/release/`、`README.md`、`README.en.md`、键位文档、`src/input/keymap-docs.ts`、`src/controls/feature-keys.ts`；入口级例外见 S03 §1；仅删除 `crates/`、`Cargo.*`、`rust-toolchain.toml`、`protocol/`、`bridge/` | 代其他子件补写功能 | S01 包入口 + S02 键位冻结 / γ / 本份发布 | C |
 
 - `package.json` 由 S01 独占；S03 提供 npm manifest 清单（`private` 处置、`version`、`dependencies`、`scripts`、`bin`、`files`、`engines`、`publishConfig`、`prepack`），由 S01 合入。S02/S03 的依赖变更同样经 S01。
 - **接入点例外（2026-10-29 用户拍板，[ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)）**：`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx`、`src/conversation/controller.ts` 这五个文件由 S02 加六处可选接缝——`CoreBootOptions.extraPatches`、`NanoAppOptions.features`、`AppSnapshot.featureBody` 与 `handleKey`/未消费 action 分发、`FeatureContext.input`、`submitContent`/`steerContent`、`requestRestart`；只加可选参数与钩子、不改 α 既有行为，细则见 [S02 §1](S02-input-sessions-terminal.md)。接缝之外的行为 owner 仍是 S01。
@@ -224,3 +224,4 @@ Ghostty
 | 20 | 高 | handoff 草稿与 input-history ADR 冲突；exec/PTY/claim 失败未定义 | 已改：§3.3 原子写/读后删/失败矩阵，标为受控切根显式例外 |
 | 21 | 高 | 首启来源无人负责；`--purge` 无入口；manifest 落不了盘 | 已改：首启来源（B8）归 S01 验收；`nano purge` 先于 npm 卸载；S03 给完整 manifest |
 | 22 | 高 | 子代理成本是未登记的第四处变更；20 MiB 无依据；`!`/quiet 语义漂移 | 已改：删除成本字段与 20 MiB；`!` 回 step boundary、quiet 回官方 inject |
+| 23 | 高 | S03 manifest 与 S01 已交付结果冲突（bin 文件名、依赖形态）、grep 门禁误伤语法高亮 | 2026-10-29 用户选择「改旧 spec」：S03 §2.1/§4 对齐 `dist/bin.js` 与 `@deepseek-ai/dsh` 整包，门禁改为旧工具链/路径/协议标识；入口级例外同步到 S01 §1/§6 与 §6 owner 地图 |

@@ -1,0 +1,44 @@
+
+> dsh-tui-nano@0.2.0 build
+> tsc -p tsconfig.json
+
+
+> dsh-tui-nano@0.2.0 test
+> vitest run && vitest run --config tests/feature/vitest.config.ts
+
+
+ RUN  v3.2.7 /Users/sunchongsheng/code/dsh-tui-nano/.claude/worktrees/issue-88
+
+ ✓ tests/unit/seams.test.ts (3 tests) 7ms
+ ✓ tests/unit/text.test.ts (10 tests) 7ms
+ ✓ tests/unit/d01.test.ts (9 tests) 3ms
+ ✓ tests/unit/decisions.test.ts (7 tests) 29ms
+ ✓ tests/unit/boot.test.ts (9 tests) 23ms
+ ✓ tests/unit/renderer.test.ts (8 tests) 25ms
+ ✓ tests/unit/transcript.test.ts (10 tests) 24ms
+ ✓ tests/unit/input.test.ts (10 tests) 4ms
+ ✓ tests/unit/fixes.test.ts (14 tests) 37ms
+ ✓ tests/unit/perf.test.ts (4 tests) 396ms
+
+ Test Files  10 passed (10)
+      Tests  84 passed (84)
+   Start at  14:07:15
+   Duration  682ms (transform 361ms, setup 0ms, collect 928ms, tests 556ms, environment 1ms, prepare 382ms)
+
+
+ RUN  v3.2.7 /Users/sunchongsheng/code/dsh-tui-nano/.claude/worktrees/issue-88
+
+ ✓ tests/feature/bash-mode.test.ts (3 tests) 1ms
+ ✓ tests/feature/info-panel.test.ts (3 tests) 1ms
+ ✓ tests/feature/jobs.test.ts (2 tests) 2ms
+ ✓ tests/feature/handoff.test.ts (2 tests) 13ms
+ ✓ tests/feature/subagents.test.ts (3 tests) 2ms
+ ✓ tests/feature/monitor.test.ts (4 tests) 6ms
+ ✓ tests/feature/cross-root.test.ts (2 tests) 2ms
+ ✓ tests/feature/attachments.test.ts (6 tests) 80ms
+
+ Test Files  8 passed (8)
+      Tests  25 passed (25)
+   Start at  14:07:16
+   Duration  256ms (transform 129ms, setup 0ms, collect 326ms, tests 107ms, environment 1ms, prepare 314ms)
+
