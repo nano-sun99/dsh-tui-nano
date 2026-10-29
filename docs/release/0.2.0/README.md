@@ -12,7 +12,7 @@
 | `version-matrix.md` | 产物哈希、官方依赖、Node/Ghostty/macOS/CPU、复现命令 |
 | `known-limitations.md` | 必须披露的限制与证据未覆盖项 |
 | `evidence/tests-unit-feature.txt` | `npm run build && npm test`（单元 84 + 功能 25） |
-| `evidence/e2e-release.txt` | 发布级 e2e 14 个用例（安装/启动/升级/purge/卸载/重装/Node 矩阵/门禁） |
+| `evidence/e2e-release.txt` | 发布级 e2e 15 个用例（安装/启动/升级/purge/卸载/重装/Node 矩阵/门禁） |
 
 ## 复核方式
 
@@ -21,11 +21,12 @@ npm ci
 npm run build
 npm test
 NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
+mkdir -p packaging/dist
 npm pack --pack-destination packaging/dist
 shasum -a 256 packaging/dist/dsh-tui-nano-0.2.0.tgz
 ```
 
-前置：macOS arm64 + Ghostty；Node 22.19 与 24.x 各一份（证据运行用 nvm 的 v22.19.0 与 v24.18.0）。所有测试使用合成 `HOME` / `DSH_HOME` / 数据根，不读写真实目录。
+前置：macOS arm64 + Ghostty；Node 22.19 与 24.x 各一份（证据运行用 nvm 的 v22.19.0 与 v24.18.0）。所有测试使用合成 `HOME` / `DSH_HOME` / 数据根 / 安装前缀；npm cache 固定在系统临时目录，不写 `~/.npm`。
 
 视觉与跨会话九面隔离的证据缺口见 `known-limitations.md`「证据未覆盖」；这些缺口正是当前阻断项。
 

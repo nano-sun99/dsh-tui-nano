@@ -12,7 +12,7 @@
 
 接入点例外：`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx`、`src/conversation/controller.ts` 这五个文件允许 S02 加六处可选接缝——`extraPatches`（boot 前补丁）、`features`（boot 后初始化与关停）、`featureBody` + `handleKey`/未消费 action 分发（界面与按键）、`FeatureContext.input`（输入框访问）、`submitContent`/`steerContent`（有序内容提交）、`requestRestart`（受控重启）；细则见 [S02 §1](S02-input-sessions-terminal.md) 与 [ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)。接缝之外不改；这些文件的既有行为与回归验收仍归本份。
 
-`package.json` 由本份独占；S02/S03 的依赖变更与 npm manifest 清单经 S01 合入。`src/input/keymap.ts` 由本份独占，S02 只经 D01 的注册 API 加功能键。
+`package.json` 在 α/β 期由本份独占；γ 发布期由 S03 落 manifest（内容以 [S03 §2.1](S03-release.md) 为准）。`src/input/keymap.ts` 由本份独占，S02 只经 D01 的注册 API 加功能键；S03 只按 [S03 §1](S03-release.md) 的入口级例外改它的文档接缝。
 
 ## 2. 运行时与组装
 

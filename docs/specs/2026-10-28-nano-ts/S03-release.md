@@ -12,7 +12,7 @@
 
 不碰：业务功能实现；发现功能缺失时报告并退回对应子件。`package.json` 在 α/β 期由 S01 独占；γ 发布期 S01 已交付，manifest 由本份落盘，内容以 §2.1 为准。
 
-入口级例外（2026-10-29 用户拍板，改旧 spec）：S03 可改 `src/bin.ts`、`src/main.ts` 与 `src/input/keymap.ts` 的入口/文档接缝——Node 下限检查、`nano purge` 交互确认与 `--yes`、`--help` 的键位段生成；不改 α 的业务行为，回归由 S01 单测与 S03 e2e 覆盖。新增 `src/input/keymap-docs.ts`（键位文档渲染）与 `src/controls/feature-keys.ts`（S02 功能键静态清单，运行时与文档共用）归本份。
+入口级例外（2026-10-29 用户拍板，改旧 spec）：S03 可改 `src/bin.ts`、`src/main.ts`、`src/input/keymap.ts` 与 `src/controls/feature-host.ts` 的入口/文档接缝——Node 下限检查、`nano purge` 交互确认与 `--yes`、`--help` 的键位段生成、功能键改为从静态清单注册；不改 α/β 的业务行为，回归由 S01 单测、S02 功能测试与 S03 e2e 覆盖。新增 `src/input/keymap-docs.ts`（键位文档渲染）与 `src/controls/feature-keys.ts`（S02 功能键静态清单，运行时与文档共用）归本份。发布期 manifest 落盘会改 `package.json` / `package-lock.json`；`biome.json` 的检查范围扩到 `tests/**`、`scripts/**`，并做一次只含格式与 import 排序的扫尾（无行为变化）。
 
 ## 2. 包结构与安装
 
@@ -33,8 +33,10 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run && vitest run --config tests/feature/vitest.config.ts",
+    "test:watch": "vitest",
     "test:e2e": "node --test tests/e2e/*.test.mjs",
     "lint": "biome check src tests",
+    "start": "node dist/bin.js",
     "keymap:docs": "node scripts/keymap-docs.mjs",
     "prepack": "npm run build && node scripts/keymap-docs.mjs --check && node scripts/prepack-check.mjs"
   },
@@ -70,19 +72,19 @@
 ```
 
 - 包名 `dsh-tui-nano`、bin `nano`、版本 `0.2.0`；`docs/release/0.2.0/` 为发布目录，`docs/release/0.1.0/` 标 HISTORICAL，不作为 v2 依据。
-- `files` 只含 `dist`；构建用 `tsc`，依赖全部 external；`dist/bin.js` 必须带 shebang 且可执行（S01 交付的入口是 `src/bin.ts`，2026-10-29 改旧 spec 对齐）。若改用 tsup 打包依赖，必须把 Yoga WASM 等资产显式列入 `files`，并重写本节。
+- `files` 只含 `dist`；构建用 `tsc`，依赖全部 external；`dist/bin.js` 必须带 shebang（可执行位由 npm 安装 bin 时设置，2026-10-29 重审对齐；S01 交付的入口是 `src/bin.ts`）。若改用 tsup 打包依赖，必须把 Yoga WASM 等资产显式列入 `files`，并重写本节。
 - `prepack-check` 用 `npm-packlist` 断言 `dist/bin.js` 存在、带 shebang；不做递归 `npm pack --dry-run`。
 - 版本口径：依赖只声明 `@deepseek-ai/dsh` 整包（精确 `0.2.1-rc.2`），子包由该整包自带、启动时按整包锚点解析（`src/boot/official.ts`）；`overrides` 把该整包与 cordis 五件锁到已装官方树版本（cordis 4.0.5、cordis-plugin-* 见 manifest），不随 registry 漂移。启动前校验整包版本，未知 harness 版本拒绝启动；Cordis/React 单实例由启动期断言解析到同一路径与版本（`src/boot/official.ts`）。
 - `test` 同时跑 `tests/unit`（S01）与 `tests/feature`（S02）；e2e 单独用 `test:e2e`，避免把需要合成 HOME/DSH_HOME 的安装演练塞进默认回归。
 - 首次发布用 dist-tag `next`，发布结论通过后再提升 `latest`。
-- Node 下限 22.19（官方树 `@earendil-works/pi-ai@1.3.0`、`undici@8.11.2` 的 engines）；`engines` 只警告，bin 入口必须运行时检查 `process.versions.node`，低于下限给可操作错误并退出。
+- Node 下限 22.19（官方树 `@earendil-works/pi-ai@1.4.0`、`undici@8.11.2` 的 engines）；`engines` 只警告，bin 入口必须运行时检查 `process.versions.node`，低于下限给可操作错误并退出。
 - 官方依赖树自带 native 预编译包（node-pty/koffi/sharp/node-addon-require-builtin/node-addon-system 等）；nano 自身不新增原生 addon，不承诺整条依赖树无 native。
 
 ### 2.2 安装、升级、卸载
 
 - 安装/升级走 npm；数据根默认保留。
 - **普通卸载**：`npm uninstall -g dsh-tui-nano`，删包/bin，**保留数据根与应用 profile**；`$DSH_HOME` 除官方标识外不变。
-- **`--purge`**：先执行 `nano purge`（bin 仍在时；交互确认，`--yes` 跳过），删除数据根（profile/sessions/runtime-data/history 全部），再执行 `npm uninstall -g dsh-tui-nano`。不依赖 npm 生命周期脚本（npm v7 起不保证 uninstall 脚本运行）。
+- **`--purge`**：先执行 `nano purge`（bin 仍在时；交互确认，`--yes` / `-y` 跳过；stdin 不是 TTY 时必须显式跳过，否则拒绝执行），删除数据根（profile/sessions/runtime-data/history 全部），再执行 `npm uninstall -g dsh-tui-nano`。确认提示必须写到 `/dev/tty` 与 stderr，stdout 被重定向时用户仍要能看见。不依赖 npm 生命周期脚本（npm v7 起不保证 uninstall 脚本运行）。
 - 安装/卸载前后对 `$DSH_HOME` 做哈希比对，只允许 `.anonymous-user-id` 出现或不变。
 - 旧 Rust `packaging/install.sh|build-release.sh|uninstall.sh|verify-install.sh`、`packaging/manifest.json`、`packaging/README.md`、Rust 期证据脚本、`tests/e2e` 的 cargo 命令必须删除或重写；仓库内只保留 npm 一条安装路径。
 
@@ -142,7 +144,7 @@ git ls-files -z -- src package.json packaging tests scripts README.md README.en.
 
 ## 5. 键位与文档
 
-- 键位单一源 `src/input/keymap.ts`（S01）；S02 只注册功能键，功能键的静态清单位于 `src/controls/feature-keys.ts`（运行时注册与文档共用同一份）。本份用 `scripts/keymap-docs.mjs` 从源渲染键位表：`--write` 写 README.md / README.en.md 的标记区块，`--check` 只比对并返回非零；`--check` 挂在 `prepack`（`npm pack` 前自动跑），§6 验收也跑一次。`--help` 的键位段由 `src/input/keymap-docs.ts` 在运行时从同一清单渲染；中英文 README 同步。
+- 键位单一源 `src/input/keymap.ts`（S01）；S02 只注册功能键，功能键的静态清单位于 `src/controls/feature-keys.ts`（运行时注册与文档共用同一份）。本份用 `scripts/keymap-docs.mjs` 直接 import `src/**/*.ts`（Node ≥22.19 的类型剥离）渲染键位表，避免读到过期 `dist/`：`--write` 写 README.md / README.en.md 的标记区块，`--check` 只比对并返回非零；`--check` 挂在 `prepack`（`npm pack` 前自动跑），§6 验收也跑一次。`--help` 的键位段由 `src/input/keymap-docs.ts` 在运行时从同一清单渲染；中英文 README 同步。
 - README 保留主题与透明、架构、许可证/致谢等章节；补 `LICENSE` 文件（MIT，沿用 Cargo.toml 声明）；已知限制必须含：无崩溃隔离、共享事件循环上限、强杀后终端可能残留、调度无暂停、投递非严格一次、Monitor `notify` 计费、三处用户变更（总纲 §5.2）。
 - 首启显示配置/凭据/全局指令实际来源（B8）由 S01 实现，本份只验证；不复制凭据值。
 
@@ -160,3 +162,4 @@ git ls-files -z -- src package.json packaging tests scripts README.md README.en.
 - 2026-10-28 轻审修订：npm manifest 完整清单、harness 精确/其余跟随口径、普通卸载保留 profile 与 `--purge` 区分、B1–B8 阻断表、发布审计档位、Rust 退场 grep 限定范围与旧 packaging 文件清单。
 - 2026-10-28 二次轻审修订：manifest 可直接落盘（全名/版本/devDeps/type/license/bin/files/overrides）、`nano purge` 作为可执行入口且不依赖 npm 生命周期、版本 `0.2.0` 与 `docs/release/0.2.0`、B1–B8 逐条覆盖 v1 S13 并补首启来源、B8 改由 S01 实现、grep 用 `git ls-files` 避免假绿与 fatal、p50 删除、Node 22.19 运行时检查、`npm pack` 命令与 integrity、发布档位由用户当场选择。
 - 2026-10-29 实施发现修订（用户选择「改旧 spec」）：bin 对齐 S01 已交付的 `dist/bin.js`（新增 `src/bin.ts` 入口级例外）；依赖对齐已实现的 `@deepseek-ai/dsh` 整包并保留 cordis 五件 overrides；`test` 覆盖 `tests/feature`、新增 `test:e2e`；grep 门禁去掉会误伤语法高亮的裸词 `rust`/`bridge`，改为旧工具链/路径/协议标识；`rust-final` tag 在删除前补打；§5 写明 `keymap:docs` 的 `--write`/`--check` 与 `--help` 渲染来源。
+- 2026-10-29 实施期重审修订（用户选「重审」并选「改」）：入口级例外补 `feature-host.ts` / `package.json` / `package-lock.json` / `biome.json` 与格式化扫尾；`dist/bin.js` 只断言 shebang（可执行位由 npm 设置）；`test:watch` / `start` 进 manifest；purge 补 `-y` 别名、非 TTY 必须显式跳过、提示写 `/dev/tty`；`keymap-docs` 改为直接 import 源码；pi-ai 版本更正为 1.4.0。

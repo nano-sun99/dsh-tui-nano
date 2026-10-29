@@ -1,3 +1,6 @@
+> **HISTORICAL（2026-10-29 起）**：v1（Rust 实现）的发布记录，已随实现退场冻结，不作为 0.2.0 的依据。
+> 归档：tag `rust-final`、分支 `archive/rust-v1`。当前记录见 [`../0.2.0/`](../0.2.0/README.md)。
+
 # 证据索引（0.1.0）
 
 所有命令均在合成 HOME / DSH_HOME / workdir 下运行；不读取或写入用户的真实凭据、会话和桌面。前置：`zstd` CLI（会话日志为多帧 zstd）、Pillow（截图差分）、Ghostty 与 macOS 辅助功能/屏幕录制权限。

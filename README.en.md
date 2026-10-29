@@ -46,13 +46,13 @@ Three principles: **reading first, little decoration, never invent facts**. Sess
 - **Input enhancements**: `@file` references, image / generic file attachments, skill catalog, instruction sources.
 - **Workflow**: `!` shell commands, jobs panel, interactive terminal, Monitor output watching.
 - **Sessions and controls**: session list / resume / rename, context usage, `/compact`, scheduled tasks, subagents.
-- **Models and permissions**: `/model` for model and reasoning effort, `/permission` for permission presets, `Ctrl+P` command palette.
+- **Models and permissions**: `/model` for model and reasoning effort, `/permission` for permission presets.
 
 ## Requirements
 
 | Item | Requirement |
 | --- | --- |
-| OS / terminal | macOS arm64 + Ghostty (the only verified combination; others are untested) |
+| OS / terminal | macOS arm64 + Ghostty (manual interaction verified; no 0.2.0 visual screenshots yet; others untested) |
 | Node | ≥ 22.19 (`engines`; the entry checks at runtime and exits with an actionable error below that) |
 | Official dsh | exactly `0.2.1-rc.2`; unknown versions are refused at startup |
 | Credentials | resolved by the official dsh under `${DSH_HOME:-~/.dsh}`; nano never copies or prints credential values |
@@ -152,7 +152,7 @@ Top-level layout:
 | Item | State |
 | --- | --- |
 | 0.2.0 release | **not published to the registry**; `npm pack` output installs globally, see `docs/release/0.2.0/` |
-| Platform | only macOS arm64 + Ghostty verified |
+| Platform | macOS arm64 + Ghostty verified by manual interaction; no 0.2.0 visual screenshots yet |
 | First publish | dist-tag `next`; promote to `latest` after the release conclusion passes |
 
 ## Known limitations

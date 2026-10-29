@@ -16,7 +16,7 @@
 
 ## 运行与平台
 
-- 只验证 macOS arm64 + Ghostty；其他系统、终端和架构未验证。
+- 只在 macOS arm64 + Ghostty 上做过手工交互验证；0.2.0 没有 Ghostty 真机视觉截图；其他系统、终端和架构未验证。
 - 只接受官方 `@deepseek-ai/dsh` `0.2.1-rc.2`；其他版本在骨架前拒绝启动。
 - Node 下限 22.19；低于下限在入口给出可操作错误并退出。
 - 官方依赖树自带原生预编译包（node-pty / koffi / sharp 等）；nano 自身不新增原生 addon，也不承诺整条依赖树无 native。
