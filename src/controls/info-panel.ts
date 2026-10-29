@@ -162,21 +162,34 @@ export function readModelIdentity(ctx: any): ModelIdentity | undefined {
  * 占用 = contextPressure 的 pressureTokens / contextWindow；缺一显示「未知」。
  * `tokenUsage` 是计费累计，按 spec 不混用。
  */
-export function occupancyText(ctx: any, agent: any): string {
+function occupancyState(ctx: any, agent: any): { used: number; window: number } | undefined {
   const session = agent?.session
   const registry = ctx?.get?.('sessionProjections')
-  if (!session || !registry?.snapshot) return '未知'
+  if (!session || !registry?.snapshot) return undefined
   let snapshot: any
   try {
     snapshot = registry.snapshot(session, ['contextPressure'])
   } catch {
-    return '未知'
+    return undefined
   }
   const state = snapshot?.values?.contextPressure ?? snapshot?.contextPressure
   const used = Number(state?.pressureTokens ?? state?.surfaceTokens ?? NaN)
   const window = Number(state?.contextWindow ?? NaN)
-  if (!Number.isFinite(used) || !Number.isFinite(window) || window <= 0) return '未知'
-  return `${Math.round((used / window) * 100)}%（${used}/${window}）`
+  if (!Number.isFinite(used) || !Number.isFinite(window) || window <= 0) return undefined
+  return { used, window }
+}
+
+/** 0..1 的上下文占用，用于输入框的占比线；数据缺失时为 undefined。 */
+export function occupancyRatio(ctx: any, agent: any): number | undefined {
+  const state = occupancyState(ctx, agent)
+  if (!state) return undefined
+  return Math.max(0, Math.min(1, state.used / state.window))
+}
+
+export function occupancyText(ctx: any, agent: any): string {
+  const state = occupancyState(ctx, agent)
+  if (!state) return '未知'
+  return `${Math.round((state.used / state.window) * 100)}%（${state.used}/${state.window}）`
 }
 
 /** 强度列表：官方 `llm.resolveModelInfo(provider, model)` 的 reasoning.efforts。 */

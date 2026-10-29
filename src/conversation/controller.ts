@@ -44,6 +44,12 @@ export class ConversationController {
   private handle: any
   private statusValue: 'idle' | 'running' = 'idle'
   private selection: { provider: string; model: string; reasoningEffort?: string } | undefined
+  private selectionRef:
+    | {
+        current: { provider: string; model: string; reasoningEffort?: string }
+        assembled: unknown
+      }
+    | undefined
   private disposers: Array<() => void> = []
   private disposed = false
 
@@ -73,6 +79,7 @@ export class ConversationController {
       throw new Error('nano: 没有可用的默认模型；请先在官方 DSH 中配置 provider/model。')
     }
     this.selection = selection
+    this.selectionRef = { current: selection, assembled: undefined }
     const sessionId = official.session.SessionId(rootId)
     const agentOptions = {
       provider: selection.provider,
@@ -80,7 +87,7 @@ export class ConversationController {
       ...(selection.reasoningEffort ? { reasoningEffort: selection.reasoningEffort } : {}),
     }
     const setup = (agentCtx: any) => {
-      official.agent.installModelSelection(agentCtx, { current: selection, assembled: undefined })
+      official.agent.installModelSelection(agentCtx, this.selectionRef)
     }
     // A persisted log makes `create` fail by design, so resume first and fall
     // back to create only when persistence reports NotFound.
@@ -365,6 +372,69 @@ export class ConversationController {
 
   get selectionInfo(): string {
     return this.selection ? `${this.selection.provider}/${this.selection.model}` : '未选择模型'
+  }
+
+  get modelSelection(): { provider: string; model: string; reasoningEffort?: string } | undefined {
+    return this.selectionRef?.current ?? this.selection
+  }
+
+  /** 当前 provider 的官方模型目录（adapter 自报，可能为空）。 */
+  async listModels(provider: string): Promise<any[]> {
+    const llm = this.options.ctx.get('llm')
+    if (!llm?.listModels) return []
+    try {
+      return await llm.listModels(provider)
+    } catch {
+      return []
+    }
+  }
+
+  /** 解析某个精确 provider/model 的官方元数据与可选强度。 */
+  async resolveModelEfforts(provider: string, model: string): Promise<string[]> {
+    const llm = this.options.ctx.get('llm')
+    if (!llm?.resolveModelInfo) return []
+    try {
+      const info = await llm.resolveModelInfo(provider, model)
+      const efforts = info?.reasoning?.efforts
+      if (!Array.isArray(efforts)) return []
+      return efforts
+        .map((effort: any) => String(effort?.id ?? effort?.name ?? effort))
+        .filter(Boolean)
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * 切换模型/强度：只改下一次请求的组装，不触碰正在运行的步骤。
+   * 先用官方 resolveModelInfo 校验，成功才写回 selection ref。
+   */
+  async selectModel(
+    provider: string,
+    model: string,
+    effort?: string,
+  ): Promise<{ provider: string; model: string; reasoningEffort?: string; efforts: string[] }> {
+    const llm = this.options.ctx.get('llm')
+    if (!llm?.resolveModelInfo) throw new Error('模型服务不可用')
+    const catalog = await this.listModels(provider)
+    const ids = catalog
+      .map((entry: any) => String(entry?.id ?? entry?.model ?? entry?.name ?? ''))
+      .filter(Boolean)
+    if (ids.length > 0 && !ids.includes(model)) {
+      throw new Error(`模型不在目录：${provider}/${model}；可选：${ids.join(' / ')}`)
+    }
+    await llm.resolveModelInfo(provider, model)
+    const efforts = await this.resolveModelEfforts(provider, model)
+    if (effort && !efforts.includes(effort)) {
+      throw new Error(
+        `模型 ${provider}/${model} 没有强度 ${effort}；可选：${efforts.join(' / ') || '无'}`,
+      )
+    }
+    const next = { provider, model, ...(effort ? { reasoningEffort: effort } : {}) }
+    if (!this.selectionRef) throw new Error('会话尚未启动')
+    this.selectionRef.current = next
+    this.selection = next
+    return { ...next, efforts }
   }
 }
 

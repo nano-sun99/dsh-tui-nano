@@ -19,6 +19,7 @@ export type Tone =
   | 'code'
   | 'diffAdd'
   | 'diffDel'
+  | 'rule'
 
 export interface Span {
   readonly text: string

@@ -34,6 +34,8 @@ export interface AppSnapshot {
   readonly stickBottom: boolean
   readonly notice?: string
   readonly userName: string
+  /** 上下文占用 0..1；缺失时不画占比色。 */
+  readonly contextRatio?: number
   /** 接线接缝（S02 spec §1）：S02 的正文区内容；没有 features 时为空。 */
   readonly featureBody?: ReactNode
 }
@@ -66,6 +68,8 @@ export function toneColor(tone: Tone, theme: Theme): [number, number, number] {
       return [...theme.diffAdd]
     case 'diffDel':
       return [...theme.diffDel]
+    case 'rule':
+      return [...theme.rule]
     default:
       return [...theme.fg]
   }
@@ -142,13 +146,16 @@ function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
   )
 }
 
-function InputLine(props: { snapshot: AppSnapshot; width: number }) {
-  const { snapshot } = props
+function inputInnerWidth(width: number): number {
+  return Math.max(1, width - EDGE * 2 - 2)
+}
+
+/** 输入区内容（提示符右侧）；InputLine 与高度计算共用。 */
+function buildInputSpans(snapshot: AppSnapshot): Span[] {
   const disabled = snapshot.decisions.hasDecision
   const chars = graphemes(snapshot.text)
   const before = chars.slice(0, snapshot.cursor).join('')
   const after = chars.slice(snapshot.cursor).join('')
-  const innerWidth = Math.max(1, props.width - EDGE * 2 - 2)
   const spans: Span[] = []
   if (disabled) {
     spans.push({ text: '等待你处理上面的确认…', tone: 'faint' })
@@ -161,26 +168,65 @@ function InputLine(props: { snapshot: AppSnapshot; width: number }) {
     spans.push({ text: after, tone: 'normal' })
   }
   if (snapshot.notice) spans.push({ text: `  ${snapshot.notice}`, tone: 'faint' })
-  const rows = wrapSpans(spans, innerWidth)
+  return spans
+}
+
+function inputLineCount(snapshot: AppSnapshot, width: number): number {
+  const rows = wrapSpans(buildInputSpans(snapshot), inputInnerWidth(width))
+  return Math.min(4, Math.max(1, rows.length))
+}
+
+/** 输入块上/下边框：左侧按上下文占比着色，右侧为普通边框色。 */
+function ContextRule(props: { theme: Theme; width: number; ratio?: number }) {
+  const bar = Math.max(1, props.width - EDGE * 2)
+  const filled =
+    props.ratio === undefined ? 0 : Math.max(0, Math.min(bar, Math.round(props.ratio * bar)))
+  const tone: Tone =
+    props.ratio === undefined
+      ? 'rule'
+      : props.ratio >= 0.95
+        ? 'danger'
+        : props.ratio >= 0.8
+          ? 'warning'
+          : 'accent'
+  const spans: Span[] = [
+    ...(filled > 0 ? [{ text: '─'.repeat(filled), tone }] : []),
+    { text: '─'.repeat(bar - filled), tone: 'rule' },
+  ]
+  return (
+    <Box flexDirection="row" paddingX={EDGE} width={props.width} height={1} flexShrink={0}>
+      <RowView row={{ spans }} theme={props.theme} width={bar} />
+    </Box>
+  )
+}
+
+function InputLine(props: { snapshot: AppSnapshot; width: number }) {
+  const { snapshot } = props
+  const innerWidth = inputInnerWidth(props.width)
+  const rows = wrapSpans(buildInputSpans(snapshot), innerWidth)
   const lineCount = Math.min(4, Math.max(1, rows.length))
   return (
-    <Box
-      flexDirection="column"
-      paddingX={EDGE}
-      paddingTop={1}
-      width={props.width}
-      height={lineCount + 1}
-    >
-      <Box flexDirection="row">
-        <Text color={snapshot.theme.accent} bold>
-          {'› '}
-        </Text>
-        <Box flexDirection="column" width={innerWidth}>
-          {rows.slice(0, lineCount).map((row, index) => (
-            <RowView key={`input-${index}`} row={row} theme={snapshot.theme} width={innerWidth} />
-          ))}
+    <Box flexDirection="column" width={props.width}>
+      <ContextRule theme={snapshot.theme} width={props.width} ratio={snapshot.contextRatio} />
+      <Box
+        flexDirection="column"
+        paddingX={EDGE}
+        paddingTop={1}
+        width={props.width}
+        height={lineCount + 1}
+      >
+        <Box flexDirection="row">
+          <Text color={snapshot.theme.accent} bold>
+            {'› '}
+          </Text>
+          <Box flexDirection="column" width={innerWidth}>
+            {rows.slice(0, lineCount).map((row, index) => (
+              <RowView key={`input-${index}`} row={row} theme={snapshot.theme} width={innerWidth} />
+            ))}
+          </Box>
         </Box>
       </Box>
+      <ContextRule theme={snapshot.theme} width={props.width} ratio={snapshot.contextRatio} />
     </Box>
   )
 }
@@ -340,7 +386,7 @@ export function App(props: { snapshot: AppSnapshot }) {
   const { snapshot } = props
   const width = snapshot.width
   const height = snapshot.height
-  const inputHeight = 5
+  const inputHeight = inputLineCount(snapshot, width) + 3
   const bodyHeight = Math.max(1, height - 1 - inputHeight)
   return (
     <Box flexDirection="column" width={width} height={height}>

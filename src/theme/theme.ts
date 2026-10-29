@@ -32,6 +32,7 @@ export interface Theme {
   readonly diffDelBg: Rgb
   readonly selectionBg: Rgb
   readonly focusBg: Rgb
+  readonly rule: Rgb
 }
 
 const dark: Theme = {
@@ -54,6 +55,7 @@ const dark: Theme = {
   diffDelBg: [56, 37, 42], // #38252a
   selectionBg: [59, 74, 102], // #3b4a66
   focusBg: [36, 43, 53], // #242b35
+  rule: [66, 73, 83], // #424953
 }
 
 const light: Theme = {
@@ -76,6 +78,7 @@ const light: Theme = {
   diffDelBg: [241, 220, 223], // #f1dcdf
   selectionBg: [213, 222, 242], // #d5def2
   focusBg: [232, 232, 229], // #e8e8e5
+  rule: [196, 198, 201], // #c4c6c9
 }
 
 let cached: Theme | undefined

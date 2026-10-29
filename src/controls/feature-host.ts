@@ -259,6 +259,11 @@ export class Features implements FeatureHost {
     const commands = context.core.ctx.get('commands')
     const name = (text.trim().slice(1).split(/\s+/u)[0] ?? '').toLowerCase()
     context.requestRender()
+    if (name === 'model') {
+      context.input.take()
+      await this.runModelCommand(text.trim().split(/\s+/u).slice(1).join(' '))
+      return
+    }
     const definition = agent && commands ? commands.find(agent, name) : undefined
     if (!definition) {
       model.appendNotice(`未知命令 /${name}：按普通消息发送（未注入命令）`, 'warning')
@@ -288,6 +293,64 @@ export class Features implements FeatureHost {
       if (name === 'permission') {
         model.appendNotice('可能已部分生效，请重开 /permission 核对', 'warning')
       }
+    }
+    context.requestRender()
+  }
+
+  /**
+   * `/model`：查看或切换模型与推理强度。目录与强度都来自官方 adapter；
+   * 切换成功才写回 selection，下一次请求生效。
+   */
+  private async runModelCommand(args: string): Promise<void> {
+    const context = this.context
+    if (!context) return
+    const model = context.conversation.model
+    const conversation = context.conversation
+    const current = conversation.modelSelection
+    if (args === '') {
+      const lines: string[] = []
+      lines.push(
+        current
+          ? `当前模型：${current.provider}/${current.model}${current.reasoningEffort ? ` · 强度 ${current.reasoningEffort}` : ' · 强度默认'}`
+          : '当前模型：未知',
+      )
+      if (current) {
+        const models = await conversation.listModels(current.provider)
+        const ids = models
+          .map((entry: any) => String(entry?.id ?? entry?.model ?? entry?.name ?? ''))
+          .filter(Boolean)
+        if (ids.length > 0) {
+          lines.push(`可选：${ids.slice(0, 12).join(' / ')}${ids.length > 12 ? ' …' : ''}`)
+        }
+        const efforts = await conversation.resolveModelEfforts(current.provider, current.model)
+        if (efforts.length > 0) lines.push(`强度：${efforts.join(' / ')}`)
+      }
+      lines.push('用法：/model <provider>/<model> [effort]')
+      for (const line of lines) model.appendNotice(line, 'info')
+      context.requestRender()
+      return
+    }
+    const parts = args.split(/\s+/u)
+    const target = parts[0] ?? ''
+    const effort = parts[1]
+    const slash = target.indexOf('/')
+    if (slash <= 0 || slash === target.length - 1) {
+      model.appendNotice('格式：/model <provider>/<model> [effort]', 'warning')
+      context.requestRender()
+      return
+    }
+    try {
+      const next = await conversation.selectModel(
+        target.slice(0, slash),
+        target.slice(slash + 1),
+        effort,
+      )
+      model.appendNotice(
+        `模型已切换：${next.provider}/${next.model}${next.reasoningEffort ? ` · 强度 ${next.reasoningEffort}` : ''}（下一次请求生效）`,
+        'info',
+      )
+    } catch (error) {
+      model.appendNotice(`模型切换失败：${String((error as Error)?.message ?? error)}`, 'danger')
     }
     context.requestRender()
   }

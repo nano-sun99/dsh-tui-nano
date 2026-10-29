@@ -8,6 +8,7 @@ import { createElement } from 'react'
 import type { CoreBoot } from '../boot/assemble.ts'
 import type { OfficialModules } from '../boot/official.ts'
 import { type MountClaim, releaseMountClaim } from '../boot/root.ts'
+import { occupancyRatio } from '../controls/info-panel.ts'
 import type { ConversationController } from '../conversation/controller.ts'
 import { APPROVAL_OPTIONS, type ApprovalOutcome, DecisionManager } from '../decisions/manager.ts'
 import { HISTORY_LIMIT, type HistoryStore } from '../input/history.ts'
@@ -517,6 +518,7 @@ export class NanoApp {
       this.scrollOffset += total - this.lastTotalLines
     }
     this.lastTotalLines = total
+    const contextRatio = occupancyRatio(this.options.core.ctx, this.options.conversation.agent)
     return {
       transcript: this.options.conversation.model,
       decisions: this.decisions,
@@ -532,6 +534,7 @@ export class NanoApp {
       scrollOffset: this.scrollOffset,
       stickBottom: this.stickBottom,
       ...(this.notice ? { notice: this.notice } : {}),
+      ...(contextRatio !== undefined ? { contextRatio } : {}),
       ...(this.options.features?.body ? { featureBody: this.options.features.body() } : {}),
       userName: '你',
     }

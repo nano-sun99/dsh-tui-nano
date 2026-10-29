@@ -8,7 +8,7 @@ npm run test:e2e
 NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 ```
 
-前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 28 个用例：安装 16 + 视觉 3 + 能力 1 + 交互 3 + 跨会话 2 + 主链路 2 + Monitor 1。
+前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 29 个用例：安装 16 + 视觉 3 + 能力 1 + 交互 4 + 跨会话 2 + 主链路 2 + Monitor 1。
 
 ## `release.test.mjs`（16）
 
@@ -43,13 +43,14 @@ NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 
 boot 官方核心后读工具注册表：断言 terminal 不在 Agent 工具表里，且 `ask_user_question` 存在。
 
-## `interaction-pty.test.mjs`（3）
+## `interaction-pty.test.mjs`（4）
 
 真 PTY 里输入并观察界面：
 
 - 无凭据发送消息：界面显示「回合出错」与官方原因，进程不崩。
 - `!echo nano-bang`：首次使用先显示「以用户权限运行，不是 Agent 授权」的提示，再显示命令行、输出与退出码。
 - `!!` 与 `!` 各自提示一次，文案区分「不注入上下文」与「会作为上下文注入」。
+- `/model`：列出当前模型与官方目录、切换成功、目录外模型被拒。
 
 ## `monitor-policy.test.mjs`（1）
 

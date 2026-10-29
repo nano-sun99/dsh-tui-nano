@@ -202,7 +202,8 @@ describe('layout regressions', () => {
       }),
     )
     renderer.flushFrame()
-    const status = renderer.snapshotLines()[18] ?? ''
+    const lines = renderer.snapshotLines()
+    const status = lines.find((line) => line.includes('deepseek-official/deepseek-chat')) ?? ''
     expect(status.trimEnd().endsWith('退出')).toBe(true)
     expect(status).toContain('nano 0.2.0')
     renderer.unmount()

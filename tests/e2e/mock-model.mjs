@@ -8,6 +8,12 @@
 import { createServer } from 'node:http'
 
 const mode = process.env.MOCK_SCRIPT ?? 'chain'
+const LONG_TEXT =
+  '这是一段用于真实 Ghostty 视觉验收的中文长文本，检查 CJK 宽度、换行与阅读层级。nano 不铺整屏实色，普通背景保留终端默认背景；diff、选择与 hover 才用自有 RGB。\n\n' +
+  Array.from(
+    { length: 10 },
+    (_, index) => `第 ${String(index + 1).padStart(2, '0')} 行：主题、间距与窄屏换行检查。`,
+  ).join('\n')
 
 const sse = (res) => {
   res.writeHead(200, {
@@ -100,6 +106,14 @@ const handler = (req, res) => {
       // 非 JSON 请求按空体处理；下面会走文本分支。
     }
     const withTools = Array.isArray(body.tools) && body.tools.length > 0
+    if (mode === 'text') {
+      sse(res)
+      start(res, body.model)
+      text(res, LONG_TEXT)
+      send(res, 'message_stop', { type: 'message_stop' })
+      res.end()
+      return
+    }
     const results = collectToolResults(body.messages)
     const failed = results.some((result) => result.is_error === true)
     sse(res)
