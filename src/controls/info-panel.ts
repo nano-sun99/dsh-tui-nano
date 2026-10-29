@@ -67,9 +67,9 @@ export class InfoPanel {
       if (skills?.snapshot) {
         const snapshot = await skills.snapshot()
         this.catalogComplete = snapshot?.complete !== false
-        this.skills = ((snapshot?.skills ?? []) as Array<{ name: string; description: string }>).map(
-          (skill) => ({ name: skill.name, description: skill.description }),
-        )
+        this.skills = (
+          (snapshot?.skills ?? []) as Array<{ name: string; description: string }>
+        ).map((skill) => ({ name: skill.name, description: skill.description }))
       } else {
         this.skills = []
         this.catalogComplete = false
@@ -115,7 +115,13 @@ export class InfoPanel {
     if (model?.efforts && model.efforts.length > 0) {
       lines.push(createElement(Text, { dim: true }, `  可选强度：${model.efforts.join(' / ')}`))
     }
-    lines.push(createElement(Text, { dim: true }, `  上下文：${occupancyText(this.options.ctx, this.options.getAgent())}`))
+    lines.push(
+      createElement(
+        Text,
+        { dim: true },
+        `  上下文：${occupancyText(this.options.ctx, this.options.getAgent())}`,
+      ),
+    )
     lines.push(
       createElement(
         Text,
@@ -126,7 +132,8 @@ export class InfoPanel {
     for (const skill of this.skills.slice(0, Math.max(1, height - 8))) {
       lines.push(createElement(Text, {}, `    ${skill.name}  ${skill.description}`))
     }
-    if (this.loadFailed) lines.push(createElement(Text, { dim: true }, `  技能发现失败：${this.loadFailed}`))
+    if (this.loadFailed)
+      lines.push(createElement(Text, { dim: true }, `  技能发现失败：${this.loadFailed}`))
     if (this.notice) lines.push(createElement(Text, { dim: true }, `  ${this.notice}`))
     return createElement(Box, { flexDirection: 'column', width }, ...lines)
   }
@@ -173,7 +180,10 @@ export function occupancyText(ctx: any, agent: any): string {
 }
 
 /** 强度列表：官方 `llm.resolveModelInfo(provider, model)` 的 reasoning.efforts。 */
-export async function readEfforts(ctx: any, identity: ModelIdentity | undefined): Promise<string[]> {
+export async function readEfforts(
+  ctx: any,
+  identity: ModelIdentity | undefined,
+): Promise<string[]> {
   if (!identity) return []
   const llm = ctx?.get?.('llm')
   if (!llm?.resolveModelInfo) return []
@@ -181,7 +191,9 @@ export async function readEfforts(ctx: any, identity: ModelIdentity | undefined)
     const info = await llm.resolveModelInfo(identity.provider, identity.model)
     const efforts = info?.reasoning?.efforts
     if (!Array.isArray(efforts)) return []
-    return efforts.map((effort: any) => String(effort?.id ?? effort?.name ?? effort)).filter(Boolean)
+    return efforts
+      .map((effort: any) => String(effort?.id ?? effort?.name ?? effort))
+      .filter(Boolean)
   } catch {
     return []
   }

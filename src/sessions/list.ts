@@ -170,7 +170,11 @@ export class SessionsPanel {
     if (!this.open) return null
     const lines: ReactNode[] = []
     lines.push(
-      createElement(Text, { dim: true }, `会话 · ↑↓ 选择 · Enter 切换（受控重启） · r 改名 · Esc 关闭${this.loading ? ' · 加载中…' : ''}`),
+      createElement(
+        Text,
+        { dim: true },
+        `会话 · ↑↓ 选择 · Enter 切换（受控重启） · r 改名 · Esc 关闭${this.loading ? ' · 加载中…' : ''}`,
+      ),
     )
     if (this.rows.length === 0 && !this.loading) {
       lines.push(createElement(Text, { dim: true }, '  （没有会话）'))

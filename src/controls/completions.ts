@@ -11,13 +11,13 @@ import type { InputModel } from '../app/input-model.ts'
 import {
   type CompletionItem,
   type CompletionKind,
+  type CompletionProvider,
   CompletionRegistry,
   CompletionSession,
-  type CompletionProvider,
 } from '../input/completion.ts'
 import type { Key } from '../input/parser.ts'
-import { graphemes } from '../render/text.ts'
 import { Box, Text } from '../render/components.ts'
+import { graphemes } from '../render/text.ts'
 
 export interface CompletionsOptions {
   readonly ctx: any
@@ -287,7 +287,11 @@ export function detectTrigger(text: string, cursor: number): Trigger | undefined
     if (char === '@') {
       const prev = index > 0 ? before[index - 1] : undefined
       if (prev === undefined || /\s/u.test(prev ?? '')) {
-        return { kind: 'file', query: before.slice(index + 1).join(''), remove: before.length - index }
+        return {
+          kind: 'file',
+          query: before.slice(index + 1).join(''),
+          remove: before.length - index,
+        }
       }
       return undefined
     }

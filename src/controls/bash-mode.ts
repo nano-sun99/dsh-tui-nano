@@ -70,8 +70,11 @@ export async function runBash(options: BashRunOptions): Promise<BashRunResult> {
 
 /** 给模型看的注入文本：命令、退出码与合并输出，明确不是用户指令。 */
 export function renderBashInjection(result: BashRunResult): string {
-  const status =
-    result.timedOut ? '超时' : result.aborted ? '已取消' : `退出码 ${String(result.exitCode ?? 'null')}`
+  const status = result.timedOut
+    ? '超时'
+    : result.aborted
+      ? '已取消'
+      : `退出码 ${String(result.exitCode ?? 'null')}`
   const body = [result.stdout, result.stderr].filter((part) => part !== '').join('\n')
   return `[人工命令] $ ${result.command}\n${status}\n${body}`.trimEnd()
 }

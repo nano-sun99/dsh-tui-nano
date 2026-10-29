@@ -2,8 +2,9 @@
  * Application orchestrator: wires the terminal, renderer, conversation,
  * decision seams and the lifecycle together. One instance owns one root.
  */
-import { createElement } from 'react'
+
 import type { ReactNode } from 'react'
+import { createElement } from 'react'
 import type { CoreBoot } from '../boot/assemble.ts'
 import type { OfficialModules } from '../boot/official.ts'
 import { type MountClaim, releaseMountClaim } from '../boot/root.ts'

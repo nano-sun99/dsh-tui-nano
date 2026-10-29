@@ -12,7 +12,11 @@
 export interface PatchLayer {
   readonly id?: string
   readonly config?: unknown
-  readonly insert?: readonly { readonly id: string; readonly name: string; readonly config?: unknown }[]
+  readonly insert?: readonly {
+    readonly id: string
+    readonly name: string
+    readonly config?: unknown
+  }[]
   readonly [key: string]: unknown
 }
 

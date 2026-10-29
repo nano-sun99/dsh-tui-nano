@@ -23,6 +23,8 @@ export interface KeyBinding {
   /** Empty means "any scope"; otherwise the binding applies when the scope is present. */
   readonly scopes?: readonly Scope[]
   readonly description: string
+  /** English description for README.en.md (S03 §5); falls back to `description`. */
+  readonly descriptionEn?: string
   /** Feature owner: `s01` or a later slice. */
   readonly owner?: 's01' | 's02' | 's03'
 }
@@ -73,6 +75,7 @@ registerKeybinding({
   keys: [{ name: 'enter' }],
   scopes: ['input'],
   description: '提交输入',
+  descriptionEn: 'Submit the input',
   owner: 's01',
 })
 registerKeybinding({
@@ -84,6 +87,7 @@ registerKeybinding({
   ],
   scopes: ['input'],
   description: '输入换行',
+  descriptionEn: 'Insert a newline',
   owner: 's01',
 })
 registerKeybinding({
@@ -91,6 +95,7 @@ registerKeybinding({
   keys: [{ name: 'char', text: 'c', ctrl: true }],
   scopes: ['running'],
   description: '停止当前回合（保留队列）',
+  descriptionEn: 'Stop the current turn (keep the queue)',
   owner: 's01',
 })
 registerKeybinding({
@@ -98,6 +103,7 @@ registerKeybinding({
   keys: [{ name: 'char', text: 's', ctrl: true }],
   scopes: ['running'],
   description: '引导当前回合（下一 step 生效）',
+  descriptionEn: 'Steer the current turn (applies at the next step)',
   owner: 's01',
 })
 registerKeybinding({
@@ -105,6 +111,7 @@ registerKeybinding({
   keys: [{ name: 'char', text: 'x', ctrl: true }],
   scopes: ['running', 'idle'],
   description: '停止当前回合并清空队列',
+  descriptionEn: 'Stop the current turn and clear the queue',
   owner: 's01',
 })
 registerKeybinding({
@@ -115,6 +122,7 @@ registerKeybinding({
   ],
   scopes: ['idle'],
   description: '退出 Nano',
+  descriptionEn: 'Exit Nano',
   owner: 's01',
 })
 registerKeybinding({
@@ -122,6 +130,7 @@ registerKeybinding({
   keys: [{ name: 'backspace' }],
   scopes: ['input'],
   description: '删除前一个字符',
+  descriptionEn: 'Delete the previous character',
   owner: 's01',
 })
 registerKeybinding({
@@ -129,6 +138,7 @@ registerKeybinding({
   keys: [{ name: 'delete' }],
   scopes: ['input'],
   description: '删除后一个字符',
+  descriptionEn: 'Delete the next character',
   owner: 's01',
 })
 registerKeybinding({
@@ -139,6 +149,7 @@ registerKeybinding({
   ],
   scopes: ['input'],
   description: '删除前一个词',
+  descriptionEn: 'Delete the previous word',
   owner: 's01',
 })
 registerKeybinding({
@@ -146,6 +157,7 @@ registerKeybinding({
   keys: [{ name: 'char', text: 'u', ctrl: true }],
   scopes: ['input'],
   description: '清空当前输入',
+  descriptionEn: 'Clear the current input',
   owner: 's01',
 })
 registerKeybinding({
@@ -153,6 +165,7 @@ registerKeybinding({
   keys: [{ name: 'left' }, { name: 'char', text: 'b', ctrl: true }],
   scopes: ['input'],
   description: '向左移动光标',
+  descriptionEn: 'Move the cursor left',
   owner: 's01',
 })
 registerKeybinding({
@@ -160,6 +173,7 @@ registerKeybinding({
   keys: [{ name: 'right' }, { name: 'char', text: 'f', ctrl: true }],
   scopes: ['input'],
   description: '向右移动光标',
+  descriptionEn: 'Move the cursor right',
   owner: 's01',
 })
 registerKeybinding({
@@ -170,6 +184,7 @@ registerKeybinding({
   ],
   scopes: ['input'],
   description: '按词左移',
+  descriptionEn: 'Move left by one word',
   owner: 's01',
 })
 registerKeybinding({
@@ -180,6 +195,7 @@ registerKeybinding({
   ],
   scopes: ['input'],
   description: '按词右移',
+  descriptionEn: 'Move right by one word',
   owner: 's01',
 })
 registerKeybinding({
@@ -187,6 +203,7 @@ registerKeybinding({
   keys: [{ name: 'home' }, { name: 'char', text: 'a', ctrl: true }],
   scopes: ['input'],
   description: '行首',
+  descriptionEn: 'Move to the start of the line',
   owner: 's01',
 })
 registerKeybinding({
@@ -194,6 +211,7 @@ registerKeybinding({
   keys: [{ name: 'end' }, { name: 'char', text: 'e', ctrl: true }],
   scopes: ['input'],
   description: '行尾',
+  descriptionEn: 'Move to the end of the line',
   owner: 's01',
 })
 registerKeybinding({
@@ -201,6 +219,7 @@ registerKeybinding({
   keys: [{ name: 'up' }],
   scopes: ['input'],
   description: '上一条历史（当前项目）',
+  descriptionEn: 'Previous history entry (this project)',
   owner: 's01',
 })
 registerKeybinding({
@@ -208,24 +227,28 @@ registerKeybinding({
   keys: [{ name: 'down' }],
   scopes: ['input'],
   description: '下一条历史',
+  descriptionEn: 'Next history entry',
   owner: 's01',
 })
 registerKeybinding({
   id: 'transcript.scrollUp',
   keys: [{ name: 'pageup' }, { name: 'up', shift: true }],
   description: '向上滚动 transcript',
+  descriptionEn: 'Scroll the transcript up',
   owner: 's01',
 })
 registerKeybinding({
   id: 'transcript.scrollDown',
   keys: [{ name: 'pagedown' }, { name: 'down', shift: true }],
   description: '向下滚动 transcript',
+  descriptionEn: 'Scroll the transcript down',
   owner: 's01',
 })
 registerKeybinding({
   id: 'transcript.scrollBottom',
   keys: [{ name: 'end', ctrl: true }],
   description: '跳到转录末尾并粘底',
+  descriptionEn: 'Jump to the end and stick to the bottom',
   owner: 's01',
 })
 registerKeybinding({
@@ -233,6 +256,7 @@ registerKeybinding({
   keys: [{ name: 'escape' }],
   scopes: ['overlay'],
   description: '关闭当前覆盖层',
+  descriptionEn: 'Close the current overlay',
   owner: 's01',
 })
 registerKeybinding({
@@ -240,5 +264,6 @@ registerKeybinding({
   keys: [{ name: 'tab' }],
   scopes: ['overlay'],
   description: '切换覆盖层焦点',
+  descriptionEn: 'Switch overlay focus',
   owner: 's01',
 })

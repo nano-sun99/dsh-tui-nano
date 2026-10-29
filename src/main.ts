@@ -3,15 +3,16 @@
  * before the alternate screen; the pre-boot skeleton appears before `boot()`;
  * any failure after that restores the terminal and reports visibly.
  */
-import { closeSync, existsSync, openSync, rmSync, writeSync } from 'node:fs'
+
+import { spawn } from 'node:child_process'
+import { closeSync, existsSync, openSync, readFileSync, rmSync, writeSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createElement } from 'react'
-import { spawn } from 'node:child_process'
 import { AppExit, AppRestart, NanoApp } from './app/nano-app.ts'
 import { Skeleton } from './app/skeleton.tsx'
 import { type PreparedCore, prepareCore, startCore } from './boot/assemble.ts'
-import { loadOfficial, type OfficialModules } from './boot/official.ts'
+import { loadOfficial, type OfficialModules, PINNED_HARNESS_VERSION } from './boot/official.ts'
 import { type Paths, resolvePaths } from './boot/paths.ts'
 import {
   acquireMountClaim,
@@ -21,9 +22,12 @@ import {
   resolveRootId,
   writeLastRoot,
 } from './boot/root.ts'
-import { ConversationController } from './conversation/controller.ts'
 import { Features } from './controls/feature-host.ts'
+import { FEATURE_KEYBINDINGS } from './controls/feature-keys.ts'
+import { ConversationController } from './conversation/controller.ts'
 import { HistoryStore } from './input/history.ts'
+import { describeBindings } from './input/keymap.ts'
+import { renderKeymapHelp } from './input/keymap-docs.ts'
 import { Renderer } from './render/renderer.ts'
 import { Terminal } from './runtime/terminal.ts'
 import { featureBootPatches } from './sessions/boot-patches.ts'
@@ -33,6 +37,7 @@ interface CliArgs {
   readonly help: boolean
   readonly version: boolean
   readonly purge: boolean
+  readonly yes: boolean
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
@@ -42,11 +47,13 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 0
   }
   if (args.version) {
-    process.stdout.write('nano 0.2.0 (harness 0.2.1-rc.2)\n')
+    process.stdout.write(`nano ${nanoVersion()} (harness ${PINNED_HARNESS_VERSION})\n`)
     return 0
   }
   const paths = resolvePaths()
   if (args.purge) {
+    // S03 §2.2：普通卸载保留数据根，只有显式 purge 才删；交互确认，--yes 跳过。
+    if (!(await confirmPurge(paths.dataRoot, args.yes))) return 1
     rmSync(paths.dataRoot, { recursive: true, force: true })
     process.stdout.write(`nano: 已删除数据根 ${paths.dataRoot}\n`)
     return 0
@@ -246,26 +253,66 @@ function parseArgs(argv: readonly string[]): CliArgs {
   let help = false
   let version = false
   let purge = false
+  let yes = false
   for (const arg of argv) {
     if (arg === '--help' || arg === '-h') help = true
     else if (arg === '--version' || arg === '-v') version = true
     else if (arg === 'purge' || arg === '--purge') purge = true
+    else if (arg === '--yes' || arg === '-y') yes = true
   }
-  return { help, version, purge }
+  return { help, version, purge, yes }
+}
+
+/** 删除数据根前的人类确认；非交互环境必须显式 `--yes`，不默认放行。 */
+async function confirmPurge(dataRoot: string, yes: boolean): Promise<boolean> {
+  if (yes) return true
+  if (process.stdin.isTTY !== true) {
+    reportVisible('nano: 删除数据根需要交互确认；非交互环境请用 `nano purge --yes`。')
+    return false
+  }
+  process.stdout.write(
+    `将删除数据根 ${dataRoot}（含 profile、会话、历史），不可撤销。\n输入 yes 继续：`,
+  )
+  const { createInterface } = await import('node:readline')
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    const answer = await new Promise<string>((resolve) => {
+      rl.once('line', (line) => resolve(line))
+      rl.once('close', () => resolve(''))
+    })
+    return answer.trim().toLowerCase() === 'yes'
+  } finally {
+    rl.close()
+  }
 }
 
 function helpText(): string {
   return [
     'nano — DeepSeek Harness 的终端界面',
     '',
-    '用法：nano [--root <id>] [--help] [--version] [purge]',
+    '用法：nano [--root <id>] [--help] [--version] [purge [--yes]]',
     '',
     '  --root <id>   指定根会话身份（默认沿用上一次的根）',
-    '  --help        显示本帮助',
+    '  --help        显示本帮助与键位表',
     '  --version     显示版本',
-    '  purge         删除数据根（含 profile；不可撤销）',
+    '  purge         删除数据根（含 profile；不可撤销；交互确认）',
+    '  --yes         配合 purge，跳过交互确认',
+    '',
+    renderKeymapHelp([...describeBindings(), ...FEATURE_KEYBINDINGS]),
     '',
   ].join('\n')
+}
+
+/** 版本号来自已安装包自己的 package.json，升级后 `--version` 才会跟着变。 */
+function nanoVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      version?: string
+    }
+    return pkg.version ?? '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
 }
 
 function message(error: unknown): string {

@@ -7,8 +7,9 @@
  *
  * 输出只进本面板的 cell 网格，不进 transcript，也不进模型上下文。
  */
-import { createElement, type ReactNode } from 'react'
+
 import { Peer } from '@deepseek-ai/dsh-client-connection'
+import { createElement, type ReactNode } from 'react'
 import type { Key } from '../input/parser.ts'
 import { Box, Grid, Text } from '../render/components.ts'
 import { CellGrid } from '../render/grid.ts'
@@ -93,7 +94,11 @@ export class TerminalPane {
       this.expectedSequence = 0
       this.gapReported = false
       this.abort = control
-      this.info = await terminal.create(agent, { id, cols: this.cols, rows: this.rows }, control.signal)
+      this.info = await terminal.create(
+        agent,
+        { id, cols: this.cols, rows: this.rows },
+        control.signal,
+      )
       await this.attach(id, agent, control.signal)
       this.state = 'open'
       this.options.onChange()
@@ -106,7 +111,7 @@ export class TerminalPane {
   }
 
   private async attach(id: string, agent: any, signal: AbortSignal): Promise<void> {
-    const uplink = (async function* push(this: TerminalPane) {
+    const uplink = async function* push(this: TerminalPane) {
       for (;;) {
         const item = this.uplinkQueue.shift()
         if (item !== undefined) {
@@ -117,7 +122,7 @@ export class TerminalPane {
           this.wake = resolve
         })
       }
-    }).call(this)
+    }.call(this)
     this.peer = new Peer(this.options.ctx, { principal: { kind: 'owner' }, interactions: 'none' })
     const gateway = this.options.ctx.get('typertGateway')
     if (!gateway) throw new Error('typertGateway 不可用')
@@ -141,7 +146,11 @@ export class TerminalPane {
         } else if (frame.type === 'output' && typeof frame.data === 'string') {
           // 序号缺口：结束该附件并报错，不丢弃单条继续。
           const sequence = typeof frame.sequence === 'number' ? frame.sequence : undefined
-          if (sequence !== undefined && sequence !== this.expectedSequence + 1 && !this.gapReported) {
+          if (
+            sequence !== undefined &&
+            sequence !== this.expectedSequence + 1 &&
+            !this.gapReported
+          ) {
             this.gapReported = true
             this.state = 'failed'
             this.error = `序列缺口（期望 ${this.expectedSequence + 1}，收到 ${sequence}）`
@@ -194,7 +203,9 @@ export class TerminalPane {
       try {
         await this.options.ctx.get('terminalController')?.close?.(agent, this.info.id)
       } catch (error) {
-        this.options.writeDiagnostic(`nano: 终端关闭失败：${String((error as Error)?.message ?? error)}`)
+        this.options.writeDiagnostic(
+          `nano: 终端关闭失败：${String((error as Error)?.message ?? error)}`,
+        )
       }
     }
     this.info = undefined
@@ -243,7 +254,13 @@ export class TerminalPane {
     const gridHeight = Math.max(3, height - 1)
     if (this.grid.width !== width || this.grid.height !== gridHeight) {
       this.grid.resize(Math.max(10, width), gridHeight)
-      if (this.info) this.send({ type: 'resize', sequence: ++this.sequence, cols: this.grid.width, rows: gridHeight })
+      if (this.info)
+        this.send({
+          type: 'resize',
+          sequence: ++this.sequence,
+          cols: this.grid.width,
+          rows: gridHeight,
+        })
     }
     return createElement(
       Box,

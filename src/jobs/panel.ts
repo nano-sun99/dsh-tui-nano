@@ -110,7 +110,9 @@ export class JobsPanel {
         lossy?: boolean
       }
       this.lossy = read.lossy === true
-      const text = (read.chunks ?? []).map((chunk) => (chunk.gapBefore ? '…（有缺口）\n' : '') + chunk.text).join('')
+      const text = (read.chunks ?? [])
+        .map((chunk) => (chunk.gapBefore ? '…（有缺口）\n' : '') + chunk.text)
+        .join('')
       this.output = text.split('\n').slice(-8)
     } catch {
       this.output = []
@@ -175,7 +177,11 @@ export class JobsPanel {
     if (!this.open) return null
     const lines: ReactNode[] = []
     lines.push(
-      createElement(Text, { dim: true }, `任务 · ↑↓ 选择 · s 停止 · m 监听(quiet) · M 监听(notify) · Esc 关闭${this.lossy ? ' · 输出已裁剪' : ''}`),
+      createElement(
+        Text,
+        { dim: true },
+        `任务 · ↑↓ 选择 · s 停止 · m 监听(quiet) · M 监听(notify) · Esc 关闭${this.lossy ? ' · 输出已裁剪' : ''}`,
+      ),
     )
     if (this.rows.length === 0) {
       lines.push(createElement(Text, { dim: true }, '  （没有任务）'))

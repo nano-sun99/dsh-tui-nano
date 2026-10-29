@@ -1,20 +1,30 @@
 {
   "name": "dsh-tui-nano",
   "version": "0.2.0",
-  "private": true,
+  "private": false,
   "type": "module",
-  "engines": {
-    "node": ">=22.19"
-  },
+  "license": "MIT",
   "bin": {
     "nano": "dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config tests/feature/vitest.config.ts",
     "test:watch": "vitest",
-    "lint": "biome check src tests/unit",
+    "test:e2e": "node --test tests/e2e/*.test.mjs",
+    "lint": "biome check src tests",
+    "keymap:docs": "node scripts/keymap-docs.mjs",
+    "prepack": "npm run build && node scripts/keymap-docs.mjs --check && node scripts/prepack-check.mjs",
     "start": "node dist/bin.js"
   },
   "dependencies": {
@@ -33,10 +43,16 @@
     "@types/prismjs": "^1.26.5",
     "@types/react": "^19.1.12",
     "@types/react-reconciler": "^0.32.1",
+    "npm-packlist": "^11.3.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },
   "overrides": {
-    "@deepseek-ai/dsh": "0.2.1-rc.2"
+    "@deepseek-ai/dsh": "0.2.1-rc.2",
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/cordis-plugin-group": "1.0.5",
+    "@deepseek-ai/cordis-plugin-include": "1.0.10",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.6",
+    "@deepseek-ai/cordis-plugin-timer": "1.1.7"
   }
 }
