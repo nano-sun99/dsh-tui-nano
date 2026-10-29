@@ -74,6 +74,14 @@ boot 官方核心后读工具注册表：断言 terminal 不在 Agent 工具表�
 
 mock 监听随机端口，不触真实网络与真实凭据。
 
+## `ghostty-visual.py`
+
+真 Ghostty 截图（需要辅助功能与屏幕录制权限）：深/浅、60/100 列、CJK、diff 工具行、0.8 透明度。每个场景用独立 Ghostty 实例，跑完立即结束该实例并清理临时目录；只截取本次窗口。
+
+```sh
+python3 tests/e2e/ghostty-visual.py --tarball packaging/dist/dsh-tui-nano-0.2.0.tgz --out docs/release/0.2.0/evidence/ghostty
+```
+
 ## 隔离与边界
 
 - 使用合成 `HOME` / `DSH_HOME` / `NANO_DATA_ROOT` / npm 安装前缀，并清掉继承的 `DEEPSEEK_API_KEY` 等凭据变量；npm cache 固定在系统临时目录，不写 `~/.npm`。`capability.test.mjs` 在进程内临时改 `process.env`，finally 恢复。

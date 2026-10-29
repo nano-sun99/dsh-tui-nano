@@ -162,6 +162,7 @@ git ls-files -z -- src package.json packaging tests scripts README.md README.en.
 - 2026-10-28 轻审修订：npm manifest 完整清单、harness 精确/其余跟随口径、普通卸载保留 profile 与 `--purge` 区分、B1–B8 阻断表、发布审计档位、Rust 退场 grep 限定范围与旧 packaging 文件清单。
 - 2026-10-28 二次轻审修订：manifest 可直接落盘（全名/版本/devDeps/type/license/bin/files/overrides）、`nano purge` 作为可执行入口且不依赖 npm 生命周期、版本 `0.2.0` 与 `docs/release/0.2.0`、B1–B8 逐条覆盖 v1 S13 并补首启来源、B8 改由 S01 实现、grep 用 `git ls-files` 避免假绿与 fatal、p50 删除、Node 22.19 运行时检查、`npm pack` 命令与 integrity、发布档位由用户当场选择。
 - 2026-10-29 实施发现修订（用户选择「改旧 spec」）：bin 对齐 S01 已交付的 `dist/bin.js`（新增 `src/bin.ts` 入口级例外）；依赖对齐已实现的 `@deepseek-ai/dsh` 整包并保留 cordis 五件 overrides；`test` 覆盖 `tests/feature`、新增 `test:e2e`；grep 门禁去掉会误伤语法高亮的裸词 `rust`/`bridge`，改为旧工具链/路径/协议标识；`rust-final` tag 在删除前补打；§5 写明 `keymap:docs` 的 `--write`/`--check` 与 `--help` 渲染来源。
+- 2026-10-29 真 Ghostty 视觉采集：新增 `tests/e2e/ghostty-visual.py`，深/浅、60/100 列、CJK、diff 工具行、0.8 透明度各一张；每场景独立实例并即时关闭。
 - 2026-10-29 用户指示补 `/model` 与输入框上下文线：控制器保留可变 selection ref；`/model` 列官方目录、校验后切换；输入块补上下 `rule` 边框，左段按 `contextPressure` 占比着色。
 - 2026-10-29 用户指示按设计稿修正 v2 色板：`src/theme/theme.ts` 改用主题 spec §3.2 的全套 RGB；覆盖层去掉 `overlayBg` 实色底；视觉 e2e 断言同步。
 - 2026-10-29 用户指示补主链路 e2e：本地 Anthropic Messages SSE mock，覆盖 read→edit（差异）→完成与 bash 提权→审批（默认拒绝→允许一次）→完成；不触真实网络/凭据。

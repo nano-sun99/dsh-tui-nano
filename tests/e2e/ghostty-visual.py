@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -116,18 +117,32 @@ def wait_for_window_gone(title, timeout=15):
 
 def capture(title, path):
     window_id = wait_for_window(title)
+    listing = run([str(LIST_WINDOWS)]).stdout
+    for line in listing.splitlines():
+        fields = line.split("\t")
+        if len(fields) >= 5 and fields[0] == str(window_id):
+            print(f"WINDOW {title} id={window_id} bounds={fields[4]}")
     subprocess.run(["screencapture", "-x", "-l", str(window_id), "-o", str(path)], check=True)
     return window_id
 
 
 def close_window(title):
-    for _ in range(2):
-        try:
-            focus(title)
-        except RuntimeError:
-            return True
-        applescript('tell application "System Events" to keystroke "c" using control down')
-        if wait_for_window_gone(title, 6):
+    """关掉本次专有实例：按 --title 找到 Ghostty 进程并结束它。"""
+    for _ in range(3):
+        killed = False
+        for pid in ghostty_pids():
+            command = run(["ps", "-o", "command=", "-p", str(pid)]).stdout
+            if f"--title={title}" in command:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    killed = True
+                except OSError:
+                    pass
+        if killed:
+            time.sleep(0.6)
+            if wait_for_window_gone(title, 4):
+                return True
+        if wait_for_window_gone(title, 1):
             return True
     return False
 
@@ -137,7 +152,7 @@ def ghostty_pids():
     return {int(line) for line in result.stdout.split() if line.strip().isdigit()}
 
 
-def launch(title, command, cols, rows, opacity=None, font_size=None):
+def launch(title, command, cols, rows, opacity=None, font_size=None, bg=None, fg=None, cwd=None):
     args = [
         "open",
         "-na",
@@ -151,7 +166,14 @@ def launch(title, command, cols, rows, opacity=None, font_size=None):
         "--wait-after-command=false",
         "--macos-option-as-alt=true",
         "--window-save-state=never",
+        "--window-inherit-working-directory=false",
     ]
+    if cwd is not None:
+        args.append(f"--working-directory={cwd}")
+    if bg is not None:
+        args.append(f"--background={bg}")
+    if fg is not None:
+        args.append(f"--foreground={fg}")
     if opacity is not None:
         args.append(f"--background-opacity={opacity}")
     if font_size is not None:
@@ -328,7 +350,7 @@ def main():
 
     results = []
 
-    def scenario(name, *, theme, cols, rows, send, opacity=None, capture_after=5.0):
+    def scenario(name, *, theme, cols, rows, send, opacity=None, capture_after=5.0, bg=None, fg=None):
         title = f"nano-visual-{name}"
         env = {
             "HOME": str(home),
@@ -341,16 +363,18 @@ def main():
         }
         command = "env " + " ".join(f"{key}={value}" for key, value in env.items())
         command += f' "{bin_path}" --root ghostty-{name}'
-        launch(title, command, cols, rows, opacity=opacity)
-        paste_text(title, send)
-        send_key(title, 36)  # Return
-        time.sleep(capture_after)
-        path = out / f"{name}.png"
-        capture(title, path)
-        check = image_check(path)
-        results.append({"scenario": name, "path": str(path), **check})
-        print(f"CAPTURED {name} {check}")
-        close_window(title)
+        try:
+            launch(title, command, cols, rows, opacity=opacity, bg=bg, fg=fg, cwd=str(work))
+            paste_text(title, send)
+            send_key(title, 36)  # Return
+            time.sleep(capture_after)
+            path = out / f"{name}.png"
+            capture(title, path)
+            check = image_check(path)
+            results.append({"scenario": name, "path": str(path), **check})
+            print(f"CAPTURED {name} {check}")
+        finally:
+            close_window(title)
 
     scenario(
         "01-dark-100-response",
@@ -359,6 +383,8 @@ def main():
         rows=35,
         send="请用 LONG-CJK 回复一段长文本",
         capture_after=6.0,
+        bg="#17191d",
+        fg="#e8e6e0",
     )
     scenario(
         "02-light-60",
@@ -367,6 +393,8 @@ def main():
         rows=30,
         send="请用 LONG-CJK 回复一段长文本",
         capture_after=6.0,
+        bg="#f6f3ed",
+        fg="#343945",
     )
     scenario(
         "03-dark-diff",
@@ -375,6 +403,8 @@ def main():
         rows=35,
         send="DIFF-SCENARIO 请改 note",
         capture_after=6.0,
+        bg="#17191d",
+        fg="#e8e6e0",
     )
     scenario(
         "04-dark-transparency",
@@ -384,6 +414,8 @@ def main():
         send="请用 LONG-CJK 回复一段长文本",
         opacity=0.8,
         capture_after=6.0,
+        bg="#17191d",
+        fg="#e8e6e0",
     )
 
     subprocess.run(["pbcopy"], input=original_clipboard, check=False)
@@ -392,7 +424,7 @@ def main():
     shutil.copyfile(summary, out / "summary.json")
     print(f"SUMMARY {summary}")
     if not args.keep:
-        pass  # 保留临时目录便于排查；截图已复制到 --out
+        shutil.rmtree(ROOT, ignore_errors=True)
     return 0
 
 

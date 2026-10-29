@@ -24,7 +24,7 @@
 
 ## 证据未覆盖（不当作已验证）
 
-- **v2 的 Ghostty 真机视觉**：深/浅主题、间距、process-display、diff 8 行、CJK/窄屏有实现与单测，PTY 无头验证也确认了主题 RGB 与 60/100 列；但没有 0.2.0 的 Ghostty 截图，合成、透明、字体与窗口观感未验证；`docs/release/0.1.0/evidence/ghostty/` 的截图属于已退场的 Rust 实现，不能替代。
+- **Ghostty 真机视觉**：0.2.0 已有真机截图（深/浅、60/100 列、CJK、0.8 透明度、diff 工具行），见 `docs/release/0.2.0/evidence/ghostty/`。diff 展开态在 Ghostty 截图中为折叠，由 PTY e2e 断言；process-display 的逐项观感没有单独截图。
 - **IME 组合态**：parser 按 UTF-8 / grapheme 处理，组合中的预编辑文本由终端负责；真实输入法组合未自动模拟。
 - **鼠标拖选与剪贴板**：选区提取、宽字符起点、OSC 52 / pbcopy 有单测；Ghostty 实际拖选手感未取证。
 - **主链路只对 mock 验证**：`tests/e2e/main-chain.test.mjs` 用本地 Anthropic Messages SSE mock 跑通对话/工具/差异/审批/完成，未连接真实模型服务。

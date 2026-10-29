@@ -2,7 +2,7 @@
 
 - 规格：`docs/specs/2026-10-28-nano-ts/S03-release.md`；执行单：#88。
 - **结论：不发布。** 打包、安装链与 Rust/bridge 退场已完成，但 §3.3 仍有必测项没有 0.2.0 证据；按 §3.2 口径构成阻断。详见 [`release-conclusion.md`](release-conclusion.md)。
-- 产物：`packaging/dist/dsh-tui-nano-0.2.0.tgz`，SHA-256 `dcdf742d…`（完整值见 [`version-matrix.md`](version-matrix.md)）。
+- 产物：`packaging/dist/dsh-tui-nano-0.2.0.tgz`，SHA-256 `99e574f4…`（完整值见 [`version-matrix.md`](version-matrix.md)）。
 
 ## 目录
 
@@ -12,6 +12,7 @@
 | `version-matrix.md` | 产物哈希、官方依赖、Node/Ghostty/macOS/CPU、复现命令 |
 | `known-limitations.md` | 必须披露的限制与证据未覆盖项 |
 | `evidence/tests-unit-feature.txt` | `npm run build && npm test`（单元 84 + 功能 25） |
+| `evidence/ghostty/` | 真 Ghostty 截图（深/浅、60/100 列、CJK、diff、透明度）与 `summary.json` |
 | `evidence/e2e-release.txt` | 发布级 e2e 29 个用例（安装 16 + 视觉 3 + 能力 1 + 交互 4 + 跨会话 2 + 主链路 2 + Monitor 1） |
 
 ## 复核方式
