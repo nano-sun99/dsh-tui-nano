@@ -27,6 +27,9 @@ def main() -> int:
     parser.add_argument("--cols", type=int, default=100)
     # 看到这个字符串就提前发 Ctrl+C；没看到就在 --wait 到点后发。
     parser.add_argument("--until", default=None)
+    # 就绪后往终端里打一行（自动回车），再等 --send-wait 秒收集输出。
+    parser.add_argument("--send", default=None)
+    parser.add_argument("--send-wait", type=float, default=3.0)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
@@ -83,6 +86,24 @@ def main() -> int:
         collected.extend(chunk)
         if until is not None and until in collected:
             break
+
+    if args.send:
+        try:
+            os.write(master, args.send.encode("utf-8") + b"\r")
+        except OSError:
+            pass
+        send_deadline = time.time() + args.send_wait
+        while time.time() < send_deadline:
+            ready, _, _ = select.select([master], [], [], 0.2)
+            if not ready:
+                continue
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            collected.extend(chunk)
 
     try:
         os.write(master, b"\x03")

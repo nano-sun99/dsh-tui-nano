@@ -8,7 +8,7 @@ npm run test:e2e
 NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 ```
 
-前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。两个套件串行跑（`--test-concurrency=1`）。
+前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 24 个用例：安装 16 + 视觉 3 + 能力 1 + 交互 2 + 跨会话 2。
 
 ## `release.test.mjs`（16）
 
@@ -38,6 +38,26 @@ NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 真 PTY 无头跑 nano，解析它发出的 SGR 字节：深/浅主题分别命中各自色盘的 RGB、均不含 ANSI 命名色；60/100 列骨架行不超宽且有一行铺满。该套件跑仓库 `dist/`，不安装 tarball。
 
 **边界**：PTY 只证明 nano 发了什么颜色，不证明 Ghostty 的合成、透明、字体与窗口观感；后者仍要真机截图，不能用本文件替代。
+
+## `capability.test.mjs`（1）
+
+boot 官方核心后读工具注册表：断言 terminal 不在 Agent 工具表里，且 `ask_user_question` 存在。
+
+## `interaction-pty.test.mjs`（2）
+
+真 PTY 里输入并观察界面：
+
+- 无凭据发送消息：界面显示「回合出错」与官方原因，进程不崩。
+- `!echo nano-bang`：显示命令行、输出与退出码。
+
+## `cross-session.test.mjs`（2）
+
+共用一份数据根的两个真 PTY 进程：
+
+- 同根第二窗口被拒，并说明被哪个进程占用。
+- 双 root 并发都能起界面；root-a/root-b 的 `sessions` 与 `runtime-data/storage` 目录互不重叠，root-b 界面看不到 root-a 的输入。
+
+边界：这里覆盖目录与进程层；九面（草稿/队列/附件/审批/问卷/终端/Monitor/调度）的内存内容隔离仍要专项证据。
 
 ## 隔离与边界
 

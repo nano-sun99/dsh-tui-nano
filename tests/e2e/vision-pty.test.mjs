@@ -123,8 +123,10 @@ function skeletonLineWidths(screen) {
   const widths = []
   for (const chunk of screen.split('\r\n')) {
     if (!chunk.includes('\x1b[K')) continue
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: 解析终端 CSI 必须匹配 ESC
     if (/\x1b\[\d+;\d+H/.test(chunk)) continue // 后面带光标定位的是正式 UI 片段，不是整行
     // 去掉 CSI（含 `ESC[>1u` 这类 kitty 协议）与行尾残留的 `\r`。
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: 解析终端 CSI 必须匹配 ESC
     const text = chunk.replace(/\x1b\[[0-9;?>]*[A-Za-z]/g, '').replace(/\r+$/, '')
     widths.push(stringWidth(text))
   }

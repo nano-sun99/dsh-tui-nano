@@ -15,9 +15,9 @@
 | --- | --- | --- | --- |
 | B1 | 数据丢失 / 损坏 | 通过 | 官方持久化独占会话；普通卸载保留数据根、`purge` 才删（e2e「普通卸载保留数据根」「purge --yes 删除数据根」每步 snapshot）；`--root purge` 误删回归已修并有用例 |
 | B2 | 凭据 / 用户内容泄漏 | 通过 | nano 不复制、不显示凭据值；`$DSH_HOME` 只允许新增 `.anonymous-user-id`（e2e 启动冒烟逐文件哈希）；首启来源只显示路径（alpha §1#6） |
-| B3 | 跨会话串内容 | 未验证 | 同根第二窗口拒绝与双 root 目录隔离有证据（alpha §1#4、beta §0），但九面（transcript/草稿/队列/附件/审批/问卷/终端/Monitor/调度）逐面隔离没有 0.2.0 证据（beta §3 自评「未覆盖」） |
+| B3 | 跨会话串内容 | 未验证 | 同根第二窗口拒绝、双 root 并发、session/storage 目录隔离有 e2e；但九面（transcript/草稿/队列/附件/审批/问卷/终端/Monitor/调度）的内容隔离没有逐面证据（beta §3 自评「未覆盖」） |
 | B4 | 无法启动 / 退出 | 通过 | e2e：全新安装 → 启动（真 PTY）→ Ctrl+C 退出 → purge → 卸载 → 重装 → 再启动，全部通过 |
-| B5 | 权限 / 审批绕过 | 未验证 | 审批 waterfall、默认焦点、无答即拒有单测（`tests/unit/decisions.test.ts`、`tests/unit/seams.test.ts`）；`!` 权限提示与「terminal 不进 Agent 工具表」没有发布级证据 |
+| B5 | 权限 / 审批绕过 | 未验证 | 审批 waterfall、默认焦点、无答即拒有单测；能力探针证明 terminal 不在 Agent 工具表；**`!` 权限提示缺失**（S08 §2.2 要求首次使用时提示，当前只显示 `$ cmd`） |
 | B6 | 会话无法恢复 | 通过 | alpha §2：同根二次启动 resume 后历史回放可见 |
 | B7 | 交付物缺失 / 契约冲突 | 通过 | 包入口、keymap 文档、prepack 检查、发布文档齐全；键位单一源生成 README 与 `--help`（e2e「keymap 文档与源码一致」「--help 含用法与键位段」）。视觉未验证不影响「交付物存在」的判定，但会作为独立行阻断 |
 | B8 | 首启来源缺失 | 通过 | alpha §1#6：首帧 notice 显示 profile / settings / 生效层 / 凭据 / 全局指令来源 |
@@ -40,10 +40,10 @@
 | 功能面 | 附件/图片/技能/模型/权限/压缩/终端/任务/Monitor/调度/子代理 | 未验证 | beta §3 对照表多项为「部分」，跨根九面「未覆盖」 |
 | 视觉 | 主题/间距 ADR、process-display ADR、深/浅、60/100 列、diff 8 行、CJK/窄屏 | 未验证 | PTY 无头验证通过：深/浅主题分别命中各自色盘的 RGB、均无 ANSI 命名色；60/100 列骨架行不超宽且有一行铺满（`vision-pty.test.mjs`）；仍缺 0.2.0 的 Ghostty 真机截图（合成/透明/字体），0.1.0 截图属已退场的 Rust 实现 |
 | 长会话 | 1000 行 p95、5000 行内存 | 通过 | alpha §6：滚动 2.80ms / 流式 1.61ms / resize 6.99ms；5000 行与 1000 行堆增长同量级 |
-| 异常 | 断网、官方异常、SIGTERM、SIGKILL、终端残留、reset 提示 | 未验证 | SIGTERM/SIGHUP/3s 强制恢复通过（alpha #12）；陈旧锁提示 `reset` 通过（e2e「强杀残留」）；断网与官方异常未取证 |
-| 安全 | 审批无答即拒、Monitor `notify` 默认关闭且计费提示、`!` 权限提示、terminal 不进 Agent 工具表 | 未验证 | 审批与 Monitor 有单测；`!` 权限提示与工具表未取证 |
-| 跨会话 | 九面隔离；双窗口同根拒绝、双 root 并发 | 未验证 | 同根拒绝（alpha #4）与双 root 目录隔离（beta §0）通过；九面隔离未覆盖 |
-| 安装 | 全新安装 → 启动 → 升级 → `nano purge` → 卸载 → 重装；每步前后文件清单/哈希 | 通过 | e2e 19 个用例（安装链 16 + 视觉 token 3）；每步 `snapshot` 记录数据根 / `$DSH_HOME` / 安装目录的文件数与摘要哈希；卸载后重装再跑一次真 PTY 启动 |
+| 异常 | 断网、官方异常、SIGTERM、SIGKILL、终端残留、reset 提示 | 未验证 | SIGTERM/SIGHUP/3s 与前次强杀 `reset` 提示通过；e2e「官方调用失败」证明模型调用失败时界面显示回合出错且不崩；断网（真实网络不可达）未模拟 |
+| 安全 | 审批无答即拒、Monitor `notify` 默认关闭且计费提示、`!` 权限提示、terminal 不进 Agent 工具表 | 未验证 | 能力探针证明 terminal 不在 Agent 工具表、`ask_user_question` 存在；审批与 Monitor 有单测；**`!` 权限提示缺失**——S08 §2.2 要求首次使用时提示「以用户权限运行、不是 Agent 授权」，当前只显示 `$ cmd`，需退回 S02 补实现 |
+| 跨会话 | 九面隔离；双窗口同根拒绝、双 root 并发 | 未验证 | e2e：同根第二窗口被拒、双 root 并发、root-a/root-b 的 sessions 与 runtime-data/storage 目录互不重叠、root-b 界面看不到 root-a 的输入；九面（草稿/队列/附件/审批/问卷/终端/Monitor/调度）的内容隔离仍未逐面取证 |
+| 安装 | 全新安装 → 启动 → 升级 → `nano purge` → 卸载 → 重装；每步前后文件清单/哈希 | 通过 | e2e 24 个用例（安装链 16 + 视觉 3 + 能力 1 + 交互 2 + 跨会话 2）；每步 `snapshot` 记录数据根 / `$DSH_HOME` / 安装目录的文件数与摘要哈希；卸载后重装再跑一次真 PTY 启动 |
 | 架构 | 单一运行时宿主（ADR-20261029-single-process-fd-guard）、无 `nano.*` 协议、无第二宿主；fd 级守护 | 通过 | ADR + `src/bin.ts` / `src/runtime/fd-guard.ts`；alpha §5 启动期 stdout 写入 0；e2e「架构门禁」为空（门禁只覆盖旧工具链/路径字符串，不替代结构审查） |
 | 证据 | 合成 HOME/DSH_HOME/数据根；脱敏；绑定发布产物 | 通过 | 安装链 e2e 用合成 HOME / DSH_HOME / 数据根 / 安装前缀；视觉 PTY 套件跑仓库 `dist/`（不装 tarball）；npm cache 固定在本机临时目录，不写 `~/.npm`；证据文件已脱敏；tarball SHA-256 与 `version-matrix.md` 双向绑定 |
 
@@ -79,8 +79,11 @@
 用户要求「能自动化的先自动做，但不抢鼠标键盘」。本轮新增：
 
 - `vision-pty.test.mjs`：真 PTY 无头验证主题 token 与列宽——深/浅主题分别命中各自色盘的 RGB、均不含 ANSI 命名色；60/100 列骨架行不超宽且有一行铺满。该套件跑仓库 `dist/`，不安装 tarball。它**不能**替代 Ghostty 真机视觉（合成、透明、字体仍缺证据）。
+- `capability.test.mjs`：boot 官方核心后读工具注册表，确认 terminal 不在 Agent 工具表。
+- `interaction-pty.test.mjs`：无凭据发送消息，界面显示「回合出错」且不崩；`!echo` 执行并显示输出/退出码。
+- `cross-session.test.mjs`：同根第二窗口被拒、双 root 并发、会话与 storage 目录按根隔离。
 - e2e「骨架后核心加载失败」：把已安装包的 `dist/boot/assemble.js` 换成 `startCore` 抛错的 shim，验证骨架出现后终端恢复、可见错误、退出 1。
-- e2e 总数从 15 增至 19（安装/启动/升级/purge/卸载/重装 16 + 视觉 token 3）。
+- e2e 总数增至 24（安装 16 + 视觉 3 + 能力 1 + 交互 2 + 跨会话 2）。
 
 同时把 `test:e2e` 改为 `--test-concurrency=1`，避免两个 PTY 套件并行互相拖慢。
 
@@ -95,6 +98,9 @@
 | 键位文档 | README 中英区块与 `--help` 都从源码单一源生成，`--check` 挂 `prepack` | `scripts/keymap-docs.mjs`；e2e |
 | Rust / bridge 退场 | 删除 `crates/`、`Cargo.*`、`rust-toolchain.toml`、`protocol/`、`bridge/`；tag `rust-final` + 分支 `archive/rust-v1`；grep 门禁为空 | `version-matrix.md`；e2e「架构门禁」 |
 | 用户数据边界 | 普通卸载保留数据根；`purge` 交互确认、`--yes`/`-y` 跳过；`$DSH_HOME` 只写 `.anonymous-user-id` | e2e |
+| 能力面 | 能力探针：terminal 不在 Agent 工具表、ask_user_question 存在 | `tests/e2e/capability.test.mjs` |
+| 交互异常 | 模型调用失败时界面显示回合出错且不崩；`!echo` 显示输出与退出码 | `tests/e2e/interaction-pty.test.mjs` |
+| 跨会话（目录层） | 同根第二窗口被拒、双 root 并发、会话/storage 目录按根隔离 | `tests/e2e/cross-session.test.mjs` |
 | 视觉 token | PTY 无头验证：深/浅主题只发真彩色、无 ANSI 命名色、60/100 列可起界面（不开窗口、不抢键鼠） | `tests/e2e/vision-pty.test.mjs`；`evidence/e2e-release.txt` |
 | 骨架后核心加载失败 | 注入 `startCore` 抛错：骨架可见、错误可见、退出 1 | e2e「骨架后核心加载失败」 |
 | 文档 | README / README.en / LICENSE（MIT）/ `docs/release/0.1.0` 全部标 HISTORICAL | 本目录与仓库根 |
