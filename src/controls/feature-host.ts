@@ -21,6 +21,7 @@ import { SessionsPanel } from '../sessions/list.ts'
 import { SubagentDock } from '../subagents/dock.ts'
 import { Monitor, renderMonitorLines } from '../monitor/monitor.ts'
 import { Completions } from './completions.ts'
+import { InfoPanel } from './info-panel.ts'
 
 /** 终端面板开关（owner s02）：Ctrl+T。 */
 export const TERMINAL_TOGGLE_ACTION = 'terminal.toggle'
@@ -30,6 +31,9 @@ export const JOBS_TOGGLE_ACTION = 'jobs.toggle'
 
 /** 会话列表面板开关（owner s02）：Ctrl+L。 */
 export const SESSIONS_TOGGLE_ACTION = 'sessions.toggle'
+
+/** 信息面板（技能/模型/上下文）开关（owner s02）：Ctrl+I。 */
+export const INFO_TOGGLE_ACTION = 'info.toggle'
 
 function isTerminalToggle(key: Key): boolean {
   return key.name === 'char' && key.ctrl === true && key.text === 't'
@@ -43,6 +47,10 @@ function isSessionsToggle(key: Key): boolean {
   return key.name === 'char' && key.ctrl === true && key.text === 'l'
 }
 
+function isInfoToggle(key: Key): boolean {
+  return key.name === 'char' && key.ctrl === true && key.text === 'i'
+}
+
 export class Features implements FeatureHost {
   private context: FeatureContext | undefined
   private storage: ScheduleStorage | undefined
@@ -53,6 +61,7 @@ export class Features implements FeatureHost {
   private monitor: Monitor | undefined
   private sessions: SessionsPanel | undefined
   private dock: SubagentDock | undefined
+  private info: InfoPanel | undefined
   private disposeKeys: (() => void)[] = []
 
   async start(context: FeatureContext): Promise<void> {
@@ -127,6 +136,12 @@ export class Features implements FeatureHost {
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
     })
     this.dock.start()
+    this.info = new InfoPanel({
+      ctx,
+      getAgent: () => context.conversation.agent,
+      onChange: () => context.requestRender(),
+      writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
+    })
     this.sessions = new SessionsPanel({
       ctx,
       rootId: context.rootId,
@@ -142,6 +157,13 @@ export class Features implements FeatureHost {
     })
 
     this.disposeKeys.push(
+      registerKeybinding({
+        id: INFO_TOGGLE_ACTION,
+        keys: [{ name: 'char', text: 'i', ctrl: true }],
+        scopes: ['idle', 'input', 'running'],
+        description: '打开/关闭信息面板（技能/模型/上下文）',
+        owner: 's02',
+      }),
       registerKeybinding({
         id: SESSIONS_TOGGLE_ACTION,
         keys: [{ name: 'char', text: 'l', ctrl: true }],
@@ -168,8 +190,9 @@ export class Features implements FeatureHost {
 
   handleKey(key: Key): boolean {
     // 开关必须交回 keymap：否则面板聚焦时会把 Ctrl+T 当成终端输入吃掉。
-    if (isTerminalToggle(key) || isJobsToggle(key) || isSessionsToggle(key)) return false
+    if (isTerminalToggle(key) || isJobsToggle(key) || isSessionsToggle(key) || isInfoToggle(key)) return false
     if (this.completions?.handleKey(key)) return true
+    if (this.info?.handleKey(key)) return true
     if (this.sessions?.handleKey(key)) return true
     if (this.jobs?.handleKey(key)) return true
     if (this.terminal?.visible && this.terminal.handleKey(key, false)) return true
@@ -314,6 +337,10 @@ export class Features implements FeatureHost {
   }
 
   dispatchAction(action: string): boolean {
+    if (action === INFO_TOGGLE_ACTION) {
+      this.info?.toggle()
+      return true
+    }
     if (action === SESSIONS_TOGGLE_ACTION) {
       this.sessions?.toggle()
       return true
@@ -337,13 +364,14 @@ export class Features implements FeatureHost {
     this.completions?.maybeSync()
     const width = this.innerWidth()
     const pane = this.terminal?.visible ? this.terminal.render(width, this.innerHeight()) : null
+    const info = this.info?.visible ? this.info.render(width, this.innerHeight()) : null
     const sessions = this.sessions?.visible ? this.sessions.render(width, this.innerHeight()) : null
     const jobs = this.jobs?.visible
       ? this.jobs.render(width, this.innerHeight(), this.monitor?.watching)
       : null
     const popup = this.completions?.render(width) ?? null
     const dock = this.dock?.visible ? this.dock.render(width) : null
-    const stack = [pane, sessions, jobs, popup, dock].filter(Boolean)
+    const stack = [pane, info, sessions, jobs, popup, dock].filter(Boolean)
     if (stack.length === 0) return null
     if (stack.length === 1) return stack[0]
     return createElement(Box, { flexDirection: 'column', width }, ...stack)
@@ -360,6 +388,7 @@ export class Features implements FeatureHost {
   async dispose(): Promise<void> {
     this.completions?.dispose()
     this.completions = undefined
+    this.info = undefined
     this.dock?.stop()
     this.dock = undefined
     this.sessions = undefined
