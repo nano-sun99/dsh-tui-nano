@@ -63,7 +63,7 @@ Ghostty
 
 - 启动顺序：确保 profile → 解析根身份 → 获取挂载认领 → pre-boot 骨架（进备用屏、接管 fd 0/1、raw mode）→ fd 级 stdout/stderr 捕获 → boot 核心 → 能力快照 → 挂 UI → 正式首帧 → 接受输入。认领失败发生在进备用屏之前；画骨架必须先占终端。
 - 启动失败两段：骨架前（profile/版本/认领）写 stderr 退出；骨架后（boot/快照）恢复终端、写 fd 2、非零退出。
-- 根切换/冷改名：运行时不做在线 storage 路由替换；受控进程重启 = 冻结输入 → 原子写 handoff（tmp+fsync+rename、0600、版本、读后删）→ 停 schedule/Monitor/PTY、取消在飞 → flush → 杀死并核验 PTY 进程组 → 释放 claim → exec self `--root <id>`。新进程提交成功后才删 handoff；认领/boot/handoff/rename 任一失败都恢复终端、保留 handoff、不建替代会话。冷改名即切到该会话（保持单主会话），改名后留在该根。
+- 根切换/冷改名：运行时不做在线 storage 路由替换；受控进程重启 = 冻结输入 → 原子写 handoff（tmp+fsync+rename、0600、版本、读后删；S02 定 payload，S01 落盘）→ 停 schedule/Monitor/PTY、取消在飞 → flush → 杀死并核验 PTY 进程组 → 释放 claim → 经 launcher 顺序拉起 `--root <id>`（Node 无 execve，旧 runtime 等新进程退出；读在新进程 boot 成功之后）。新进程提交成功后才删 handoff；认领/boot/handoff/rename 任一失败都恢复终端、保留 handoff、不建替代会话。冷改名即切到该会话（保持单主会话），改名后留在该根。
 - 关停阶段：冻结输入 → 排空生产者（S02 hooks）→ 排空持久化 → 释放 schedule 租约 → 释放挂载认领 → 恢复终端（finally，预留预算）→ 退出；每阶段独立截止，总优雅 10s；「3s 强制」= 恢复终端并非零退出；清理失败保留认领并报告。
 - `uncaughtException`/`unhandledRejection` 走同一关停路径；SIGINT/SIGTERM/SIGHUP 有界关停并逐项报告；SIGKILL 后下次启动检测脏状态提示 `reset`。
 - 官方 HMR 关闭（`hmr disabled`）；profile/settings 写入由应用自持 profile 承担。
@@ -111,7 +111,7 @@ Ghostty
 | [S03 γ](S03-release.md) | npm 包、发布验收、证据、Rust 与 bridge 退场 | 全部成果 | `packaging/`、`tests/e2e/`、`scripts/`（Rust 期证据脚本）、`docs/release/`、`README.md`、`README.en.md`、键位文档；仅删除 `crates/`、`Cargo.*`、`rust-toolchain.toml`、`protocol/`、`bridge/` | 代其他子件补写功能 | S01 包入口 + S02 键位冻结 / γ / 本份发布 | C |
 
 - `package.json` 由 S01 独占；S03 提供 npm manifest 清单（`private` 处置、`version`、`dependencies`、`scripts`、`bin`、`files`、`engines`、`publishConfig`、`prepack`），由 S01 合入。S02/S03 的依赖变更同样经 S01。
-- **接入点例外（2026-10-29 用户拍板，[ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)）**：`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx`、`src/conversation/controller.ts` 这五个文件由 S02 加五处可选接缝——`CoreBootOptions.extraPatches`、`NanoAppOptions.features`、`AppSnapshot.featureBody` 与 `handleKey`/未消费 action 分发、`FeatureContext.input`、`submitContent`/`steerContent`；只加可选参数与钩子、不改 α 既有行为，细则见 [S02 §1](S02-input-sessions-terminal.md)。接缝之外的行为 owner 仍是 S01。
+- **接入点例外（2026-10-29 用户拍板，[ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)）**：`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx`、`src/conversation/controller.ts` 这五个文件由 S02 加六处可选接缝——`CoreBootOptions.extraPatches`、`NanoAppOptions.features`、`AppSnapshot.featureBody` 与 `handleKey`/未消费 action 分发、`FeatureContext.input`、`submitContent`/`steerContent`、`requestRestart`；只加可选参数与钩子、不改 α 既有行为，细则见 [S02 §1](S02-input-sessions-terminal.md)。接缝之外的行为 owner 仍是 S01。
 - 键位单一源：S01 拥有 `src/input/keymap.ts`；S02 只注册功能键；S03 从该源生成 README/`--help` 并加 diff 检查。
 - README 由 S03 拥有；S01/S02 提供章节内容，不直接写 README。备用屏由 S01 决定，S03 写入 README。
 - 证据：S01/S02 各写自己的证据目录；S03 只做发布级 e2e 与最终归档。
@@ -120,7 +120,7 @@ Ghostty
 
 | ID | 提供方 → 消费方 | 类型 / 产物 | 就绪条件、证据、owner、波次 |
 |---|---|---|---|
-| D01 | S01 → S02 | 契约：render/input API、可交互 transcript（含子地址）、场景/焦点、keymap 注册 API、有序输入段与附件段、草稿/光标/锚点保存恢复、审批/问卷地址隔离、终端 cell 网格/VT、根会话身份、mount claim/release、lifecycle hooks（阶段/截止/隔离）、补全 provider、补全打开输入模式、历史读写（项目过滤/100 条/子代理投影）、合成 transcript 条目、boot 后服务/挂载扩展点、boot 前补丁注入、界面/动作、输入框与有序内容提交接入点（2026-10-29 补）、handoff 读写 | S01 夹具稳定帧 + 组件/API 冻结 + 单测 + 接口文件；owner S01；B |
+| D01 | S01 → S02 | 契约：render/input API、可交互 transcript（含子地址）、场景/焦点、keymap 注册 API、有序输入段与附件段、草稿/光标/锚点保存恢复、审批/问卷地址隔离、终端 cell 网格/VT、根会话身份、mount claim/release、lifecycle hooks（阶段/截止/隔离）、补全 provider、补全打开输入模式、历史读写（项目过滤/100 条/子代理投影）、合成 transcript 条目、boot 后服务/挂载扩展点、boot 前补丁注入、界面/动作、输入框、有序内容提交与受控重启接入点（2026-10-29 补）、handoff 读写 | S01 夹具稳定帧 + 组件/API 冻结 + 单测 + 接口文件；owner S01；B |
 | D02 | S01 → S03 | 运行时/发布：包入口、pre-boot 首帧、关停、证据 harness | phase-0+α 通过；owner S01；C |
 | D03 | S02 → S03 | 验收：功能面证据、键位注册、真实服务结果 | β 通过；owner S02；C |
 | D04 | S01+S02 → S03 | 发布：同批验收、发布矩阵、release conclusion | α/β 齐备；owner S03；C |
