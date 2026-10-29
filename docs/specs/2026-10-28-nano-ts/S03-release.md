@@ -12,7 +12,7 @@
 
 不碰：业务功能实现；发现功能缺失时报告并退回对应子件。`package.json` 在 α/β 期由 S01 独占；γ 发布期 S01 已交付，manifest 由本份落盘，内容以 §2.1 为准。
 
-入口级例外（2026-10-29 用户拍板，改旧 spec）：S03 可改 `src/bin.ts`、`src/main.ts`、`src/input/keymap.ts` 与 `src/controls/feature-host.ts` 的入口/文档接缝——Node 下限检查、`nano purge` 交互确认与 `--yes`、`--help` 的键位段生成、功能键改为从静态清单注册；不改 α/β 的业务行为，回归由 S01 单测、S02 功能测试与 S03 e2e 覆盖。新增 `src/input/keymap-docs.ts`（键位文档渲染）与 `src/controls/feature-keys.ts`（S02 功能键静态清单，运行时与文档共用）归本份。用户 2026-10-29 指示补 `!` 首次使用权限提示（S08 §2.2）；实现落在 `feature-host.ts`，属于本次授权的 S02 行为补缺。发布期 manifest 落盘会改 `package.json` / `package-lock.json`；`biome.json` 的检查范围扩到 `tests/**`、`scripts/**`，并做一次只含格式与 import 排序的扫尾（无行为变化）。
+入口级例外（2026-10-29 用户拍板，改旧 spec）：S03 可改 `src/bin.ts`、`src/main.ts`、`src/input/keymap.ts` 与 `src/controls/feature-host.ts` 的入口/文档接缝——Node 下限检查、`nano purge` 交互确认与 `--yes`、`--help` 的键位段生成、功能键改为从静态清单注册；除本句记录的 `!` 提示外，不改 α/β 的业务行为，回归由 S01 单测、S02 功能测试与 S03 e2e 覆盖。新增 `src/input/keymap-docs.ts`（键位文档渲染）与 `src/controls/feature-keys.ts`（S02 功能键静态清单，运行时与文档共用）归本份。用户 2026-10-29 指示补 `!` 首次使用权限提示（S08 §2.2）；实现落在 `feature-host.ts`，属于本次授权的 S02 行为补缺。发布期 manifest 落盘会改 `package.json` / `package-lock.json`；`biome.json` 的检查范围扩到 `tests/**`、`scripts/**`，并做一次只含格式与 import 排序的扫尾（无行为变化）。
 
 ## 2. 包结构与安装
 

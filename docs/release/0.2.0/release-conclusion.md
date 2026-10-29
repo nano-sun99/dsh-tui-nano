@@ -43,7 +43,7 @@
 | 异常 | 断网、官方异常、SIGTERM、SIGKILL、终端残留、reset 提示 | 未验证 | SIGTERM/SIGHUP/3s 与前次强杀 `reset` 提示通过；e2e「官方调用失败」证明模型调用失败时界面显示回合出错且不崩；断网（真实网络不可达）未模拟 |
 | 安全 | 审批无答即拒、Monitor `notify` 默认关闭且计费提示、`!` 权限提示、terminal 不进 Agent 工具表 | 通过 | 审批 waterfall/默认焦点/无答即拒有单测；Monitor `notify` 行显示「会唤醒模型并计费」且默认 `quiet`；`!` 首次使用提示在界面出现并有用例（S08 §2.2）；能力探针证明 terminal 不在 Agent 工具表、`ask_user_question` 存在 |
 | 跨会话 | 九面隔离；双窗口同根拒绝、双 root 并发 | 未验证 | e2e：同根第二窗口被拒、双 root 并发；sessions 根共享、叶子目录按 root 分开，runtime-data/<root>/storage 各自独立；root-b 界面与会话日志都不含 root-a 的输入；九面（草稿/队列/附件/审批/问卷/终端/Monitor/调度）的内容隔离仍未逐面取证 |
-| 安装 | 全新安装 → 启动 → 升级 → `nano purge` → 卸载 → 重装；每步前后文件清单/哈希 | 通过 | e2e 24 个用例（安装链 16 + 视觉 3 + 能力 1 + 交互 2 + 跨会话 2）；每步 `snapshot` 记录数据根 / `$DSH_HOME` / 安装目录的文件数与摘要哈希；卸载后重装再跑一次真 PTY 启动 |
+| 安装 | 全新安装 → 启动 → 升级 → `nano purge` → 卸载 → 重装；每步前后文件清单/哈希 | 通过 | e2e 28 个用例（安装 16 + 视觉 3 + 能力 1 + 交互 3 + 跨会话 2 + 主链路 2 + Monitor 1）；每步 `snapshot` 记录数据根 / `$DSH_HOME` / 安装目录的文件数与摘要哈希；卸载后重装再跑一次真 PTY 启动 |
 | 架构 | 单一运行时宿主（ADR-20261029-single-process-fd-guard）、无 `nano.*` 协议、无第二宿主；fd 级守护 | 通过 | ADR + `src/bin.ts` / `src/runtime/fd-guard.ts`；alpha §5 启动期 stdout 写入 0；e2e「架构门禁」为空（门禁只覆盖旧工具链/路径字符串，不替代结构审查） |
 | 证据 | 合成 HOME/DSH_HOME/数据根；脱敏；绑定发布产物 | 通过 | 安装链 e2e 用合成 HOME / DSH_HOME / 数据根 / 安装前缀；视觉 PTY 套件跑仓库 `dist/`（不装 tarball）；npm cache 固定在本机临时目录，不写 `~/.npm`；证据文件已脱敏；tarball SHA-256 与 `version-matrix.md` 双向绑定 |
 
@@ -52,10 +52,10 @@
 按 §3.2 口径，下列必测项不是「通过」即构成阻断：
 
 1. **B3 跨会话九面隔离**（未验证，最高优先级）。
-3. **功能面**：beta 自评多项「部分」。
-4. **视觉**：0.2.0 无 Ghostty 真机截图。
-5. **异常**：断网（真实网络不可达）未模拟；官方调用失败路径已有 e2e。
-6. **版本**：`dist.integrity` 需发布后 `npm view` 核对。
+2. **功能面**：beta 自评多项「部分」。
+3. **视觉**：0.2.0 无 Ghostty 真机截图。
+4. **异常**：断网（真实网络不可达）未模拟；官方调用失败路径已有 e2e。
+5. **版本**：`dist.integrity` 需发布后 `npm view` 核对。
 
 解除条件：逐项补齐可核证据（命令输出、截图或录屏），或由子件退回补实现/取证后重新出结论。必测项不接受「已知问题」降级。
 
@@ -84,7 +84,7 @@
 - `interaction-pty.test.mjs`：无凭据发送消息，界面显示「回合出错」且不崩；`!echo` 执行并显示输出/退出码。
 - `cross-session.test.mjs`：同根第二窗口被拒、双 root 并发、会话与 storage 目录按根隔离。
 - e2e「骨架后核心加载失败」：把已安装包的 `dist/boot/assemble.js` 换成 `startCore` 抛错的 shim，验证骨架出现后终端恢复、可见错误、退出 1。
-- e2e 总数增至 24（安装 16 + 视觉 3 + 能力 1 + 交互 2 + 跨会话 2）。
+- e2e 总数增至 28（安装 16 + 视觉 3 + 能力 1 + 交互 3 + 跨会话 2 + 主链路 2 + Monitor 1）。
 
 同时把 `test:e2e` 改为 `--test-concurrency=1`，避免两个 PTY 套件并行互相拖慢。
 

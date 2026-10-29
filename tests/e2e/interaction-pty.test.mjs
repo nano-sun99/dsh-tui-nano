@@ -84,6 +84,15 @@ test('官方调用失败：界面显示回合出错且进程不崩', () => {
   assert.match(screen, /no API key for provider route/, '应带出官方 missing-credential 原文')
 })
 
+test('!! 与 ! 各自提示，文案区分是否注入', () => {
+  const { code, screen } = runInteractive('!!echo first\n!echo second', { sendWait: 3 })
+  assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
+  assert.match(screen, /不注入上下文/, '!! 的提示应说明不注入上下文')
+  assert.match(screen, /会作为上下文注入/, '! 的提示应说明会注入上下文')
+  assert.match(screen, /first/, '!! 命令应执行并显示输出')
+  assert.match(screen, /second/, '! 命令应执行并显示输出')
+})
+
 test('人工命令：!echo 立即执行并显示输出与退出码', () => {
   const { code, screen } = runInteractive('!echo nano-bang', { sendWait: 4 })
   assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
@@ -92,6 +101,7 @@ test('人工命令：!echo 立即执行并显示输出与退出码', () => {
   assert.match(screen, /退出码 0/, '应显示退出码')
   // S08 §2.2：首次使用 ! 明确提示「以用户权限运行、不是 Agent 授权」。
   assert.match(screen, /以你的用户权限运行，不是 Agent 授权/, '首次 ! 应提示权限边界')
+  assert.match(screen, /会作为上下文注入/, '! 的提示应说明输出会注入上下文')
   assert.ok(
     screen.indexOf('以你的用户权限运行') < screen.indexOf('$ echo nano-bang'),
     '权限提示应出现在命令行之前',
