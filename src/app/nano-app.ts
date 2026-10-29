@@ -91,6 +91,9 @@ export interface FeatureHost {
   handleKey?(key: Key): boolean
   dispatchAction?(action: string): boolean
   body?(): ReactNode
+  /** 补全弹层：正文与状态行之间，独立占行。 */
+  completionBody?(): ReactNode
+  completionRows?(): number
 }
 
 export class NanoApp {
@@ -536,6 +539,12 @@ export class NanoApp {
       ...(this.notice ? { notice: this.notice } : {}),
       ...(contextRatio !== undefined ? { contextRatio } : {}),
       ...(this.options.features?.body ? { featureBody: this.options.features.body() } : {}),
+      ...(this.options.features?.completionBody
+        ? { completionBody: this.options.features.completionBody() }
+        : {}),
+      ...(this.options.features?.completionRows
+        ? { completionRows: this.options.features.completionRows() }
+        : {}),
       userName: '你',
     }
   }

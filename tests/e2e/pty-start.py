@@ -44,6 +44,8 @@ def main() -> int:
     # 就绪后往终端里打若干行（用 \n 分隔，每行自动回车）。
     parser.add_argument("--send", default=None)
     parser.add_argument("--send-wait", type=float, default=3.0)
+    # 只打字不回车（观察输入框/补全）。
+    parser.add_argument("--send-raw", default=None)
     # 发送后等到这个标记出现再继续（优先于固定 send-wait）。
     parser.add_argument("--send-until", default=None)
     # 按键（逗号分隔：up/down/left/right/enter/esc/tab）。
@@ -125,6 +127,13 @@ def main() -> int:
         return target is None or target in collected
 
     drain(args.until, args.wait)
+
+    if args.send_raw:
+        try:
+            os.write(master, args.send_raw.encode("utf-8"))
+        except OSError:
+            pass
+        drain(args.send_until, args.send_wait)
 
     if args.send:
         for line in args.send.split("\n"):

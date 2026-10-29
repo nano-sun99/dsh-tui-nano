@@ -231,6 +231,17 @@ export class Completions {
     return this.session.kind
   }
 
+  /** 补全弹层占用的行数；关闭时为 0。 */
+  rows(): number {
+    if (!this.session.isOpen) return 0
+    let count = 1 // 标题/提示行
+    const items = this.session.items.slice(0, 5)
+    if (items.length === 0) count += 1
+    count += items.length
+    if (this.failures.length > 0) count += 1
+    return count
+  }
+
   /** 补全打开时的按键；返回 true 表示已消费。 */
   handleKey(key: Key): boolean {
     if (!this.session.isOpen) return false

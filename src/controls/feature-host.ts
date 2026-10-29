@@ -507,12 +507,21 @@ export class Features implements FeatureHost {
     const jobs = this.jobs?.visible
       ? this.jobs.render(width, this.innerHeight(), this.monitor?.watching)
       : null
-    const popup = this.completions?.render(width) ?? null
     const dock = this.dock?.visible ? this.dock.render(width) : null
-    const stack = [pane, info, sessions, jobs, popup, dock].filter(Boolean)
+    const stack = [pane, info, sessions, jobs, dock].filter(Boolean)
     if (stack.length === 0) return null
     if (stack.length === 1) return stack[0]
     return createElement(Box, { flexDirection: 'column', width }, ...stack)
+  }
+
+  /** 补全弹层单独占正文与状态行之间的槽位，避免被 transcript 裁掉。 */
+  completionBody(): ReactNode {
+    this.completions?.maybeSync()
+    return this.completions?.render(this.innerWidth()) ?? null
+  }
+
+  completionRows(): number {
+    return this.completions?.rows() ?? 0
   }
 
   private innerWidth(): number {

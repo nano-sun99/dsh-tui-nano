@@ -38,6 +38,9 @@ export interface AppSnapshot {
   readonly contextRatio?: number
   /** 接线接缝（S02 spec §1）：S02 的正文区内容；没有 features 时为空。 */
   readonly featureBody?: ReactNode
+  /** 补全弹层（正文与状态行之间）。 */
+  readonly completionBody?: ReactNode
+  readonly completionRows?: number
 }
 
 export function toneColor(tone: Tone, theme: Theme): [number, number, number] {
@@ -177,8 +180,15 @@ function inputLineCount(snapshot: AppSnapshot, width: number): number {
 }
 
 /** 输入块上/下边框：左侧按上下文占比着色，右侧为普通边框色。 */
-function ContextRule(props: { theme: Theme; width: number; ratio?: number }) {
+function ContextRule(props: {
+  theme: Theme
+  width: number
+  ratio?: number
+  edge: 'top' | 'bottom'
+}) {
   const bar = Math.max(1, props.width - EDGE * 2)
+  // 贴边细线：上边框用下半格、下边框用上半格，视觉上更贴近输入文字。
+  const line = props.edge === 'top' ? '▁' : '▔'
   const filled =
     props.ratio === undefined ? 0 : Math.max(0, Math.min(bar, Math.round(props.ratio * bar)))
   const tone: Tone =
@@ -190,8 +200,8 @@ function ContextRule(props: { theme: Theme; width: number; ratio?: number }) {
           ? 'warning'
           : 'accent'
   const spans: Span[] = [
-    ...(filled > 0 ? [{ text: '─'.repeat(filled), tone }] : []),
-    { text: '─'.repeat(bar - filled), tone: 'rule' },
+    ...(filled > 0 ? [{ text: line.repeat(filled), tone }] : []),
+    { text: line.repeat(bar - filled), tone: 'rule' },
   ]
   return (
     <Box flexDirection="row" paddingX={EDGE} width={props.width} height={1} flexShrink={0}>
@@ -207,7 +217,7 @@ function InputLine(props: { snapshot: AppSnapshot; width: number }) {
   const lineCount = Math.min(4, Math.max(1, rows.length))
   return (
     <Box flexDirection="column" width={props.width}>
-      <ContextRule theme={snapshot.theme} width={props.width} ratio={snapshot.contextRatio} />
+      <Box height={1} />
       <Box flexDirection="column" paddingX={EDGE} width={props.width} height={lineCount}>
         <Box flexDirection="row">
           <Text color={snapshot.theme.accent} bold>
@@ -220,7 +230,12 @@ function InputLine(props: { snapshot: AppSnapshot; width: number }) {
           </Box>
         </Box>
       </Box>
-      <ContextRule theme={snapshot.theme} width={props.width} ratio={snapshot.contextRatio} />
+      <ContextRule
+        theme={snapshot.theme}
+        width={props.width}
+        ratio={snapshot.contextRatio}
+        edge="bottom"
+      />
     </Box>
   )
 }
@@ -380,8 +395,10 @@ export function App(props: { snapshot: AppSnapshot }) {
   const { snapshot } = props
   const width = snapshot.width
   const height = snapshot.height
+  // 跟 Claude Code 的输入区高度：上方一行留白 + 输入行 + 一条下边框。
   const inputHeight = inputLineCount(snapshot, width) + 2
-  const bodyHeight = Math.max(1, height - 1 - inputHeight)
+  const completionRows = snapshot.completionRows ?? 0
+  const bodyHeight = Math.max(1, height - 1 - inputHeight - completionRows)
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Box
@@ -399,6 +416,7 @@ export function App(props: { snapshot: AppSnapshot }) {
         />
         {snapshot.featureBody}
       </Box>
+      {snapshot.completionBody}
       <StatusLine snapshot={snapshot} width={width} />
       <InputLine snapshot={snapshot} width={width} />
       <DecisionOverlay snapshot={snapshot} width={width} height={height} />
