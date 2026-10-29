@@ -31,7 +31,7 @@
 
 | 导出 | 说明 |
 |---|---|
-| `ConversationController` | `start()` 建/恢复根 agent（sessionId = 根身份）；`submit/steer/stop/clear`；`model` 可订阅；`selectionInfo` |
+| `ConversationController` | `start()` 建/恢复根 agent（sessionId = 根身份）；`submit/steer/stop/clear`；`submitContent/steerContent`（入参 `PromptContent = { content, displayText }`，纯文本路径委托它）；`model` 可订阅；`selectionInfo` |
 | `TranscriptModel` | `appendUser`、`confirmUser`、`appendAssistant`、`appendTool`、`completeTool`、`appendNotice`、`setPreview`、`clearPreview`、`units()`、`layout()`；条目可选 `address`，`units({address})` 按子代理地址过滤；合成条目：`appendNotice(..., address)` 可承载 `bash-mode`、`role=user/source=monitor` 等展示文案 |
 | `renderMarkdown` / `highlightCode` | Markdown 子集、Prism 高亮 |
 | `renderDiffs` / `diffsFromMeta` | 工具结果的 `meta.diffs`（`{path, oldText, newText}`）；3 行上下文、8 行预算、无坐标不填行号 |
@@ -62,7 +62,7 @@
 
 ## 7. S02 使用注意
 
-- **boot 后扩展点**：`startCore(prepared)` 返回的 `core.ctx` 即官方 Cordis 根；S02 在 boot 后按服务名 `ctx.get(...)` 注册 schedule 后端/适配器（D02 契约）。boot 前补丁与界面挂载走 §9 的三处接缝——这两件事原本无处安放，必须经接缝改 S01 的四个文件。
+- **boot 后扩展点**：`startCore(prepared)` 返回的 `core.ctx` 即官方 Cordis 根；S02 在 boot 后按服务名 `ctx.get(...)` 注册 schedule 后端/适配器（D02 契约）。boot 前补丁、界面挂载与输入/提交走 §9 的五处接缝——这些事原本无处安放，必须经接缝改 S01 的五个文件。
 - **子代理地址**：`TranscriptModel` 的条目可带 `address`；S02 为每个子代理地址建视图时传 `units({address})`/`layout({address})` 过滤。子代理输入历史来自官方投影，本契约不读 `history.jsonl`。
 - **timed question**：`DecisionManager` 立即返回答案；α 不消费 `request.wait.timed` / `attachWait`。S02 若接 timed 面板，需在 `askQuestions` 之前处理 `wait`（官方契约见 `dsh-user-questions`），不改 S01 的两个 answerer 槽位语义。
 - **补全打开模式**：`CompletionSession.isOpen` 为真时，Enter 必须先 `accept()` 而不是提交；会话关闭后再走 `conversation.submit`。
@@ -77,12 +77,14 @@
 
 ## 9. β 接入点（2026-10-29 补，[ADR-20261029-s02-s01-seams](../../../decisions/2026-10-29-s02-s01-seams.md)）
 
-α 冻结的是零件；β 要的三处接线由下面这些可选接缝提供，**只加接线、不改既有行为**：
+α 冻结的是零件；β 要的五处接线由下面这些可选接缝提供，**只加接线、不改既有行为**：
 
 | 接缝 | 位置 | 形状 |
 |---|---|---|
 | boot 前补丁 | `src/boot/assemble.ts` 的 `CoreBootOptions.extraPatches` | 追加在 α 的四个 patch 之后；`src/main.ts` 传 S02 的 `featureBootPatches(rootId)`（`src/sessions/boot-patches.ts`） |
 | boot 后初始化 | `src/app/nano-app.ts` 的 `NanoAppOptions.features` | 首帧前 `await features.start(FeatureContext)`；关停 drain 阶段 `features.dispose()`；`src/main.ts` 构造 `new Features()` |
 | 界面与按键 | `src/app/App.tsx` 的 `AppSnapshot.featureBody`；`nano-app` 的 `handleKey` / `dispatchAction` | `body(): ReactNode` 渲染在正文区；`handleKey(key): boolean` 在 S01 模态之后；S01 未消费的 keymap action 交给 `dispatchAction(action)` |
+| 输入框访问 | `FeatureContext.input`（`src/app/nano-app.ts`） | S01 的 `InputModel`（`text`/`cursor`/`insert`/`backspace`）；草稿存储不在此列，S02 自建 `DraftStore` |
+| 有序内容提交 | `src/conversation/controller.ts` | `submitContent(prompt)` / `steerContent(prompt)`，`prompt = { content: readonly UserContentPart[], displayText: string }`；`content` 段为官方 `text` / `image` / 文件引用，`displayText` 进阅读面与历史（只有图时可为空串）；纯文本 `submit`/`steer` 委托它，行为不变 |
 
-`FeatureHost` 与 `FeatureContext` 的定义在 `src/app/nano-app.ts`；S02 的实现是 `src/controls/feature-host.ts`。不传 `features`、不传 `extraPatches` 时，α 的行为、界面与单测完全一致。
+`FeatureHost` 与 `FeatureContext` 的定义在 `src/app/nano-app.ts`；S02 的实现是 `src/controls/feature-host.ts`。不传 `extraPatches`、不装 `features`、不调 `submitContent`/`steerContent` 时，α 的行为、界面与单测完全一致。
