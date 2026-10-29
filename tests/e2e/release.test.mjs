@@ -17,7 +17,7 @@ import {
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 const nodeBin = process.execPath
@@ -249,6 +249,32 @@ test('启动冒烟：真 PTY 下起骨架并干净退出，$DSH_HOME 只允许�
   assert.ok(code === 0 || code === 130, `退出码异常：${code}\n${output.slice(0, 2000)}`)
 })
 
+test('未知 harness 版本拒绝启动', () => {
+  const fake = tempDir('nano-e2e-harness')
+  writeFileSync(
+    path.join(fake, 'package.json'),
+    JSON.stringify({ name: '@deepseek-ai/dsh', version: '9.9.9' }),
+  )
+  const official = pathToFileURL(path.join(repoRoot, 'dist', 'boot', 'official.js')).href
+  const script = `import(${JSON.stringify(official)}).then(async (m) => {
+    try { await m.loadOfficial(${JSON.stringify(path.join(fake, 'package.json'))}); console.log('NO_THROW') }
+    catch (error) { console.log(error.message) }
+  })`
+  const result = run(nodeBin, ['--input-type=module', '-e', script], { env: baseEnv() })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /版本不受支持/)
+})
+
+test('强杀残留：陈旧挂载锁让下次启动提示 reset', () => {
+  const mountDir = path.join(ctx.dataRoot, 'mount')
+  mkdirSync(mountDir, { recursive: true })
+  // 999999 是不存在的 pid：等价于上次进程被 SIGKILL 后留下的锁（锁文件是 JSON）。
+  writeFileSync(path.join(mountDir, 'e2e-root.lock'), JSON.stringify({ pid: 999999 }))
+  const { code, output } = startInPty(ctx.prefix, ctx.env)
+  assert.match(output, /reset/, '启动应在界面提示 reset')
+  assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
+})
+
 // 本机没有对应 Node 时跳过；发布证据运行会显式设置这两个变量。
 const node22 = process.env.NANO_NODE_22
 const node20 = process.env.NANO_NODE_20
@@ -322,8 +348,14 @@ test('架构门禁：仓库内无旧工具链/桥接引用', () => {
     { env: baseEnv(), cwd: repoRoot },
   ).stdout
   const files = tracked.split('\0').filter(Boolean)
-  const pattern =
-    /cargo|Cargo|rust-toolchain|nano-protocol|--bridge-package|target\/release|nano-bridge|@dsh-tui-nano\/bridge|bridge\//
+  // 门禁正则从 spec §4 现场提取，既保证单一来源，也避免测试文件自己带着字面量自匹配。
+  const spec = readFileSync(
+    path.join(repoRoot, 'docs/specs/2026-10-28-nano-ts/S03-release.md'),
+    'utf8',
+  )
+  const match = spec.match(/grep -nE '([^']+)'/)
+  assert.ok(match, 'S03 spec §4 应包含 grep 门禁命令')
+  const pattern = new RegExp(match[1])
   const hits = []
   for (const file of files) {
     const text = readFileSync(path.join(repoRoot, file), 'utf8')

@@ -18,6 +18,8 @@ npm run test:e2e
 | `purge 无 --yes 且非交互时拒绝`  | 退出非零、提示 `--yes`、数据根原样保留                                               |
 | `purge --yes 删除数据根`         | 数据根被删除                                                                         |
 | `启动冒烟`                       | 真 PTY 下起界面、Ctrl+C 干净退出；`$DSH_HOME` 只允许新增 `.anonymous-user-id`        |
+| `未知 harness 版本拒绝启动`      | `loadOfficial` 对非 `0.2.1-rc.2` 的锚点报「版本不受支持」                            |
+| `强杀残留提示 reset`             | 预置陈旧挂载锁（不存在的 pid），下次启动界面出现 `reset` 提示                        |
 | `升级`                           | 装 0.2.1 后 `--version` 跟着变，再装回 0.2.0                                         |
 | `普通卸载保留数据根`             | bin 消失、数据根保留、重装后可用                                                     |
 | `keymap 文档与源码一致`          | `scripts/keymap-docs.mjs --check`                                                    |
