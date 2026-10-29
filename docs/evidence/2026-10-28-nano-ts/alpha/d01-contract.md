@@ -62,7 +62,7 @@
 
 ## 7. S02 使用注意
 
-- **boot 后扩展点**：`startCore(prepared)` 返回的 `core.ctx` 即官方 Cordis 根；S02 在 boot 后按服务名 `ctx.get(...)` 注册 schedule 后端/适配器（D02 契约），不需要改 S01。
+- **boot 后扩展点**：`startCore(prepared)` 返回的 `core.ctx` 即官方 Cordis 根；S02 在 boot 后按服务名 `ctx.get(...)` 注册 schedule 后端/适配器（D02 契约）。boot 前补丁与界面挂载走 §9 的三处接缝——这两件事原本无处安放，必须经接缝改 S01 的四个文件。
 - **子代理地址**：`TranscriptModel` 的条目可带 `address`；S02 为每个子代理地址建视图时传 `units({address})`/`layout({address})` 过滤。子代理输入历史来自官方投影，本契约不读 `history.jsonl`。
 - **timed question**：`DecisionManager` 立即返回答案；α 不消费 `request.wait.timed` / `attachWait`。S02 若接 timed 面板，需在 `askQuestions` 之前处理 `wait`（官方契约见 `dsh-user-questions`），不改 S01 的两个 answerer 槽位语义。
 - **补全打开模式**：`CompletionSession.isOpen` 为真时，Enter 必须先 `accept()` 而不是提交；会话关闭后再走 `conversation.submit`。
@@ -74,3 +74,15 @@
 - 启动失败文案：骨架前写 `/dev/tty` + stderr（如「nano: 根 "x" 已被进程 123 占用…」）；骨架后「nano: 启动失败：…」。
 - 备用屏：`ESC[?1049h`；关停恢复顺序：关 mouse/paste/focus → 显示光标 → 离备用屏。
 - 进程显示细节：组行右侧固定「点击展开 / 点击收起」；思考行用 `▸`/`▾`，无文字提示。
+
+## 9. β 接入点（2026-10-29 补，[ADR-20261029-s02-s01-seams](../../../decisions/2026-10-29-s02-s01-seams.md)）
+
+α 冻结的是零件；β 要的三处接线由下面这些可选接缝提供，**只加接线、不改既有行为**：
+
+| 接缝 | 位置 | 形状 |
+|---|---|---|
+| boot 前补丁 | `src/boot/assemble.ts` 的 `CoreBootOptions.extraPatches` | 追加在 α 的四个 patch 之后；`src/main.ts` 传 S02 的 `featureBootPatches(rootId)`（`src/sessions/boot-patches.ts`） |
+| boot 后初始化 | `src/app/nano-app.ts` 的 `NanoAppOptions.features` | 首帧前 `await features.start(FeatureContext)`；关停 drain 阶段 `features.dispose()`；`src/main.ts` 构造 `new Features()` |
+| 界面与按键 | `src/app/App.tsx` 的 `AppSnapshot.featureBody`；`nano-app` 的 `handleKey` / `dispatchAction` | `body(): ReactNode` 渲染在正文区；`handleKey(key): boolean` 在 S01 模态之后；S01 未消费的 keymap action 交给 `dispatchAction(action)` |
+
+`FeatureHost` 与 `FeatureContext` 的定义在 `src/app/nano-app.ts`；S02 的实现是 `src/controls/feature-host.ts`。不传 `features`、不传 `extraPatches` 时，α 的行为、界面与单测完全一致。

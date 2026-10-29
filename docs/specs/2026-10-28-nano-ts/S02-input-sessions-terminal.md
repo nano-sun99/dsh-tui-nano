@@ -10,6 +10,16 @@
 
 不碰：S01 的全部文件（`src/boot`、`src/runtime`、`src/render`、`src/input`、`src/theme`、`src/conversation`、`src/transcript`、`src/decisions`、`src/app`、`src/types`、`src/main.ts`、`src/bin.ts`、`tests/unit`、`docs/evidence/alpha`）、`package.json` 与根配置（`tsconfig.json`、`vitest.config.ts`、`biome.json`、`package-lock.json`）、S03 的打包/发布文件。依赖变更经 S01。功能键只经 D01 的 keymap 注册 API，不修改 `src/input`。
 
+**接入点例外（2026-10-29 改旧 spec，用户拍板；见 [ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)）**：α 交付了零件但没有交付接线——boot 前补丁在 `src/boot/assemble.ts` 的 `prepareCore()` 里构造，S02 的模块没有初始化点，`App` 只吃固定 `AppSnapshot`。因此允许 S02 在四个 S01 文件里加**只加接线、不改既有行为**的可选接缝；接缝之外仍不碰：
+
+1. **boot 前补丁**（`src/boot/assemble.ts`、`src/main.ts`）：`CoreBootOptions` 增加可选 `extraPatches`，按传入顺序追加在 α 的四个 patch（tool 行、`session-persistence-jsonl.root`、`storage-json.root`、`hmr`）之后；`src/main.ts` 把 S02 的 `featureBootPatches(rootId)`（`src/sessions/boot-patches.ts`：terminal-controller 行 + `storage-domain` 路由）传进去。
+2. **boot 后初始化**（`src/app/nano-app.ts`）：`NanoAppOptions` 增加可选 `features`（S02 的 `FeatureHost`，`src/controls/feature-host.ts`，由 `src/main.ts` 构造 `new Features()` 传入）；首帧前 `await features.start(FeatureContext)`，关停 drain 阶段 `features.dispose()`。
+3. **界面与按键**（`src/app/App.tsx`，配合 `nano-app`）：`AppSnapshot` 增加可选 `featureBody` 并在正文区渲染；`nano-app` 在 S01 的模态之后调用 `features.handleKey(key)`（返回 `true` 即消费），并把 `resolveKey()` 解析出、S01 未消费的 action id 交给 `features.dispatchAction(action)`。
+
+`FeatureHost` 签名以实现为准：`start(context: FeatureContext)` / `dispose()` / `handleKey(key): boolean` / `dispatchAction(action: string): boolean` / `body(): ReactNode`；`FeatureContext` 带 `core`、`official`、`terminal`、`renderer`、`conversation`、`decisions`、`rootId`、`dataRoot`、`cwd`、`requestRender()`、`setNotice()`。
+
+接缝自身的约束：四处文件承载三处接缝；接缝都是可选参数/可选钩子，未装 `features` 且不传 `extraPatches` 时 α 行为、界面与既有单测完全一致；S01 里不留 S02 专用分支条件。**归属拆分**：这四个文件的既有行为与回归验收归 S01；S02 只拥有接缝本身与「接缝生效」的验收（传了 `extraPatches`/`features` 之后的新行为）。
+
 ## 2. 输入、会话与控制
 
 - 输入内容为有序列表（文本段 + 附件段），预览/提交顺序一致；提交失败恢复原文与附件；单次提交上限 32 KiB（含附件引用，不含图片 base64），超限拒绝并保留草稿；多行编辑/撤销/历史沿用 v1 与 `ADR-20261022-input-history`。
@@ -84,6 +94,8 @@
 - 会话控制器：nano 自提供的最小 `sessionController` 只暴露 `resolveAgent`（schedule 用），不加载官方 row；`resolveAgent` 返回 `{agent}`/`{error}` 两种形状；能力快照断言该方法存在；不存在同名服务重复注册。
 - 跨根：九个面逐面隔离；双窗口同根拒绝；双 root 并发。
 - 键位：经 D01 注册表汇总并可被 S03 生成 README/`--help`。
+- 接入点（boot 前，`extraPatches`）：传了之后 `terminalController` 服务存在、`storage-domain` 路由指向 `nano-schedule-json`、探针通过；不传时 α 行为不变（该项回归归 S01）。
+- 接入点（boot 后，`features`）：装 `FeatureHost` 后 S02 键位经 keymap 派发、`featureBody` 出现在正文区、关停走 `dispose`；不装时界面与 α 一致（该项回归归 S01）。
 
 ## 6. 本份机制与自定细节
 
@@ -91,6 +103,7 @@
 - 最小 `sessionController`：只因 base 不含官方 session-controller row（它要 12 个服务 + `nativeOpen`），而 schedule 需要 `ctx.sessionController.resolveAgent(sessionId)`。适配器只实现该方法，`{agent}`/`{error}` 与官方一致；其余会话操作走官方 `sessions`/`agents`，不再造第二套会话服务。v1 已在 `bridge/runtime/host.mjs` 的 `provideSessionController` 用过同一 stub，v2 沿用。
 - handoff：仅用于受控切根；原子写（tmp + fsync + rename）、0600、版本号、读后删除；普通关窗不恢复草稿（`ADR-20261022-input-history` 的显式例外，合并前补 ADR 修订）；不写 `history.jsonl`。
 - 附件暂存/补全排序/Monitor 默认预算/调度租约阈值沿用 v1（30s、0600、`runtime/attachment-staging`、官方目录顺序）；v1 的 48 KiB `nano.attachment.chunk` 是协议分片上限，v2 无协议，不沿用。
+- 接入点：S01 提供三处可选接缝（boot 前 `extraPatches`、boot 后 `features.start/dispose`、界面 `featureBody` 与 `handleKey`/未消费 action 分发），见 [ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)；S02 的全部界面与功能经这三处挂上，不另建入口。
 - 键位：S01 持有 `src/input/keymap.ts`；本份只注册功能键；S03 只生成文档。
 - 不新增 Agent 工具、第二份任务表、第二份队列、自建 Cron。
 - bridge 吸收范围见总纲 §8.2：controls/sessions/skills/attachments/jobs/monitor/schedule/subagents/shell/terminal 由本份吸收并验收，S03 只删除。
@@ -100,3 +113,5 @@
 - 2026-10-28 重审 8 份后按发现重写：调度隔离/启动顺序、D01 契约、`!` 安全、附件两条链、终端/任务/子代理语义、跨根隔离、验收负向；三处用户变更见总纲 §5.2；完整清单在 PR #84 评论。
 - 2026-10-28 轻审修订：补 sessionController 适配器与 schedule 后端 provide/routes/lease、单进程切根改受控重启 + handoff、`!` 不唤醒、补全 Enter 语义、`/permission`、Monitor quiet 计费核实、子代理成本可见、bridge 吸收范围、32 KiB 上限。
 - 2026-10-28 二次轻审修订：官方 session-controller 不可直接挂载、改为最小适配器；storage-domain 不重复 provide、routes 用后端名；schedule 探针后挂载与单一失败结论；`!` 恢复 step boundary 语义；Monitor quiet 恢复 inject 语义；删除子代理成本字段；删除 20 MiB 硬编码；冷改名补失败矩阵；补 D01 补全/历史/合成条目；删除 48 KiB 协议残留。
+- 2026-10-29 实施发现修订（用户选择「改旧 spec 开三道缝」）：α 只交付零件未交付接线，S02 无法在不改 S01 的前提下上线界面。§1 增加接入点例外（`extraPatches`、`nano-app` 的 `features`、`App` 的 `featureBody` 与动作分发），§5 增加接入点验收项（boot 前/后拆开）。spike-0b 已实测通过（`terminal-controller` 行可检出、命名后端 + routes + 探针落盘、最小适配器让官方 schedule 挂起并落 `schedule.json`）。
+- 2026-10-29 轻审修订：补 [ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)；§1 的 `FeatureHost`/`FeatureContext` 签名与实现对齐、文件名与 worker 对齐；修「boot 前补丁只能加在 `src/main.ts`」的事实错误（补丁在 `src/boot/assemble.ts` 构造）；§5 接入点验收拆成 boot 前/后两项并注明回归归 S01；同步 S01 §1/§6、总纲 §6、D01 接口文件 §7/§9。
