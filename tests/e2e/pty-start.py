@@ -68,7 +68,9 @@ def main() -> int:
             pass
         os._exit(143)
 
-    signal.signal(signal.SIGTERM, forward_term)
+    # Ctrl+C 中断套件时也要把 nano 会话组带走，否则会留下持锁的孤儿。
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, forward_term)
 
     until = args.until.encode("utf-8") if args.until else None
     collected = bytearray()

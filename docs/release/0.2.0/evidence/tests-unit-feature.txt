@@ -10,36 +10,36 @@
 
  RUN  v3.2.7 <repo>
 
- ✓ tests/unit/seams.test.ts (3 tests) 6ms
- ✓ tests/unit/input.test.ts (10 tests) 5ms
- ✓ tests/unit/d01.test.ts (9 tests) 5ms
- ✓ tests/unit/decisions.test.ts (7 tests) 29ms
- ✓ tests/unit/boot.test.ts (9 tests) 26ms
- ✓ tests/unit/renderer.test.ts (8 tests) 20ms
- ✓ tests/unit/transcript.test.ts (10 tests) 20ms
- ✓ tests/unit/fixes.test.ts (14 tests) 21ms
- ✓ tests/unit/text.test.ts (10 tests) 5ms
- ✓ tests/unit/perf.test.ts (4 tests) 372ms
+ ✓ tests/unit/seams.test.ts (3 tests) 10ms
+ ✓ tests/unit/text.test.ts (10 tests) 7ms
+ ✓ tests/unit/d01.test.ts (9 tests) 3ms
+ ✓ tests/unit/decisions.test.ts (7 tests) 31ms
+ ✓ tests/unit/boot.test.ts (9 tests) 21ms
+ ✓ tests/unit/renderer.test.ts (8 tests) 25ms
+ ✓ tests/unit/transcript.test.ts (10 tests) 97ms
+ ✓ tests/unit/fixes.test.ts (14 tests) 19ms
+ ✓ tests/unit/input.test.ts (10 tests) 4ms
+ ✓ tests/unit/perf.test.ts (4 tests) 422ms
 
  Test Files  10 passed (10)
       Tests  84 passed (84)
-   Start at  16:32:43
-   Duration  690ms (transform 367ms, setup 0ms, collect 1.06s, tests 509ms, environment 1ms, prepare 372ms)
+   Start at  16:48:02
+   Duration  761ms (transform 322ms, setup 0ms, collect 990ms, tests 639ms, environment 1ms, prepare 515ms)
 
 
  RUN  v3.2.7 <repo>
 
- ✓ tests/feature/bash-mode.test.ts (3 tests) 2ms
- ✓ tests/feature/handoff.test.ts (2 tests) 13ms
- ✓ tests/feature/subagents.test.ts (3 tests) 1ms
- ✓ tests/feature/info-panel.test.ts (3 tests) 1ms
- ✓ tests/feature/jobs.test.ts (2 tests) 2ms
- ✓ tests/feature/monitor.test.ts (4 tests) 4ms
- ✓ tests/feature/attachments.test.ts (6 tests) 53ms
- ✓ tests/feature/cross-root.test.ts (2 tests) 3ms
+ ✓ tests/feature/bash-mode.test.ts (3 tests) 3ms
+ ✓ tests/feature/jobs.test.ts (2 tests) 1ms
+ ✓ tests/feature/monitor.test.ts (4 tests) 3ms
+ ✓ tests/feature/subagents.test.ts (3 tests) 2ms
+ ✓ tests/feature/info-panel.test.ts (3 tests) 2ms
+ ✓ tests/feature/handoff.test.ts (2 tests) 26ms
+ ✓ tests/feature/attachments.test.ts (6 tests) 75ms
+ ✓ tests/feature/cross-root.test.ts (2 tests) 2ms
 
  Test Files  8 passed (8)
       Tests  25 passed (25)
-   Start at  16:32:44
-   Duration  266ms (transform 195ms, setup 0ms, collect 420ms, tests 80ms, environment 1ms, prepare 288ms)
+   Start at  16:48:03
+   Duration  392ms (transform 284ms, setup 0ms, collect 596ms, tests 114ms, environment 1ms, prepare 384ms)
 

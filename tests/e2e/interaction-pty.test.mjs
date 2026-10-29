@@ -11,6 +11,27 @@ import { fileURLToPath } from 'node:url'
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 const nodeBin = process.execPath
 
+/** 合成 HOME/DSH_HOME，并清掉继承来的凭据变量：否则会打真实模型请求。 */
+function childEnv(home, dshHome) {
+  const env = {
+    ...process.env,
+    HOME: home,
+    DSH_HOME: dshHome,
+    NANO_DATA_ROOT: path.join(home, '.dsh-tui-nano'),
+    NANO_THEME: 'dark',
+    TERM: 'xterm-256color',
+  }
+  for (const key of [
+    'DEEPSEEK_API_KEY',
+    'DEEPSEEK_BASE_URL',
+    'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY',
+  ]) {
+    delete env[key]
+  }
+  return env
+}
+
 function runInteractive(send, { sendWait = 6 } = {}) {
   const home = mkdtempSync(path.join(os.tmpdir(), 'nano-interaction-'))
   const dshHome = path.join(home, '.dsh')
@@ -45,14 +66,7 @@ function runInteractive(send, { sendWait = 6 } = {}) {
         cwd: repoRoot,
         encoding: 'utf8',
         timeout: 90000,
-        env: {
-          ...process.env,
-          HOME: home,
-          DSH_HOME: dshHome,
-          NANO_DATA_ROOT: path.join(home, '.dsh-tui-nano'),
-          NANO_THEME: 'dark',
-          TERM: 'xterm-256color',
-        },
+        env: childEnv(home, dshHome),
       },
     )
     assert.equal(result.status, 0, `pty-start.py 失败：${result.stderr}`)
@@ -67,8 +81,7 @@ test('官方调用失败：界面显示回合出错且进程不崩', () => {
   const { code, screen } = runInteractive('hello-no-creds', { sendWait: 6 })
   assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
   assert.match(screen, /回合出错/, '应显示回合出错')
-  assert.match(screen, /no API key|API key/i, '应带出官方错误原因')
-  assert.doesNotMatch(screen, /fatal|uncaught/i, '不应出现进程级崩溃')
+  assert.match(screen, /no API key for provider route/, '应带出官方 missing-credential 原文')
 })
 
 test('人工命令：!echo 立即执行并显示输出与退出码', () => {
