@@ -29,6 +29,7 @@ export interface AppSnapshot {
   readonly rootId: string
   readonly modelLabel: string
   readonly status: 'idle' | 'running'
+  readonly cwd?: string
   readonly expanded: ReadonlySet<string>
   readonly scrollOffset: number
   readonly stickBottom: boolean
@@ -130,7 +131,7 @@ function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
       : snapshot.text !== ''
         ? 'Enter 发送 · Shift+Enter 换行'
         : 'Enter 发送 · Ctrl+C 退出'
-  const left = `nano 0.2.0 · ${snapshot.modelLabel} · ${state}`
+  const left = displayCwd(snapshot.cwd)
   const right = hint
   const available = Math.max(1, props.width - 2 * EDGE)
   const showRight = displayWidth(left) + displayWidth(right) < available
@@ -208,6 +209,37 @@ function ContextRule(props: {
       <RowView row={{ spans }} theme={props.theme} width={bar} />
     </Box>
   )
+}
+
+/** 顶部标题头（design-contract §1）：应用名 + 模型 + 回合状态。 */
+function Header(props: { snapshot: AppSnapshot; width: number }) {
+  const state = props.snapshot.status === 'running' ? '运行中' : '空闲'
+  return (
+    <Box flexDirection="row" height={1} flexShrink={0} paddingX={EDGE} width={props.width}>
+      <Text color={props.snapshot.theme.fg} bold wrap={false}>
+        nano
+      </Text>
+      <Text color={props.snapshot.theme.muted} wrap={false}>
+        {'  '}
+        {props.snapshot.modelLabel} · {state}
+      </Text>
+    </Box>
+  )
+}
+
+function shortenHome(cwd: string | undefined): string {
+  if (!cwd) return ''
+  const home = process.env.HOME
+  if (home && cwd.startsWith(home)) return `~${cwd.slice(home.length)}`
+  return cwd
+}
+
+/** 底部状态行的目录：优先 ~，太长只留最后两段，保证右侧提示不被挤掉。 */
+function displayCwd(cwd: string | undefined, max = 44): string {
+  const short = shortenHome(cwd)
+  if (displayWidth(short) <= max) return short
+  const parts = short.split('/').filter(Boolean)
+  return `…/${parts.slice(-2).join('/')}`
 }
 
 function InputLine(props: { snapshot: AppSnapshot; width: number }) {
@@ -398,22 +430,15 @@ export function App(props: { snapshot: AppSnapshot }) {
   // 跟 Claude Code 的输入区高度：上方一行留白 + 输入行 + 一条下边框。
   const inputHeight = inputLineCount(snapshot, width) + 2
   const completionRows = snapshot.completionRows ?? 0
-  const bodyHeight = Math.max(1, height - 1 - inputHeight - completionRows)
+  const headerHeight = 3
+  const bodyHeight = Math.max(1, height - 1 - inputHeight - completionRows - headerHeight)
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box
-        flexDirection="column"
-        flexGrow={0}
-        height={bodyHeight}
-        paddingX={EDGE}
-        paddingTop={1}
-        width={width}
-      >
-        <Transcript
-          snapshot={snapshot}
-          bodyHeight={Math.max(1, bodyHeight - 1)}
-          width={width - EDGE * 2}
-        />
+      <Box height={1} />
+      <Header snapshot={snapshot} width={width} />
+      <Box height={1} />
+      <Box flexDirection="column" flexGrow={0} height={bodyHeight} width={width}>
+        <Transcript snapshot={snapshot} bodyHeight={bodyHeight} width={width} />
         {snapshot.featureBody}
       </Box>
       {snapshot.completionBody}

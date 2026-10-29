@@ -20,6 +20,7 @@ function snapshot(text: string, cursor = text.length): AppSnapshot {
     rootId: 'r',
     modelLabel: 'deepseek-official/deepseek-chat',
     status: 'idle',
+    cwd: '/tmp/project',
     expanded: new Set<string>(),
     scrollOffset: 0,
     stickBottom: true,

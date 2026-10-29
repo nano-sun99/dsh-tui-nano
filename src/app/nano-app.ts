@@ -532,6 +532,7 @@ export class NanoApp {
       height: this.options.terminal.height,
       rootId: this.options.rootId,
       modelLabel: this.options.conversation.selectionInfo,
+      cwd: this.options.cwd,
       status: this.options.conversation.status,
       expanded: this.expanded,
       scrollOffset: this.scrollOffset,
