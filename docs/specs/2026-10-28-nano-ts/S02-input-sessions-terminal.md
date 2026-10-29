@@ -17,10 +17,11 @@
 3. **界面与按键**（`src/app/App.tsx`，配合 `nano-app`）：`AppSnapshot` 增加可选 `featureBody` 并在正文区渲染；`nano-app` 在 S01 的模态之后调用 `features.handleKey(key)`（返回 `true` 即消费），并把 `resolveKey()` 解析出、S01 未消费的 action id 交给 `features.dispatchAction(action)`。
 4. **输入框访问**（`src/app/nano-app.ts`，经 `FeatureContext.input`）：把 S01 的 `InputModel` 交给 S02，供补全、`@` 引用、`Tab` 插入与草稿保存读写；S01 自己的文本编辑路径不变。
 5. **有序内容提交**（`src/conversation/controller.ts`）：在纯文本 `submit(text)`/`steer(text)` 旁增加 `submitContent(prompt)`/`steerContent(prompt)`，`prompt = { content, displayText }`——`content` 为官方 content 段（`text`/`image`/文件引用），`displayText` 是阅读面与历史里显示的文字（只有图时可为空串）；纯文本路径委托同一方法，行为、回显与历史记录不变。
+6. **受控重启**（`src/app/nano-app.ts`、`src/main.ts`）：`FeatureContext.requestRestart(request: { rootId; handoff? })`——冻结输入 → 用 S01 的 `writeHandoff` 原子写 handoff（含 S02 的草稿/光标/锚点）→ 按既有关停顺序 drain/flush/释放认领 → 进程以 `--root <rootId>` 重新拉起并读走 handoff；只换根，不建替代会话。失败矩阵沿用 §2（认领失败显示占用 pid；boot 失败恢复终端并保留 handoff；handoff 损坏报错不猜；rename 失败停新进程、保留草稿/锚点）。
 
 `FeatureHost` 签名以实现为准：`start(context: FeatureContext)` / `dispose()` / `handleKey(key): boolean` / `dispatchAction(action: string): boolean` / `body(): ReactNode`；`FeatureContext` 带 `core`、`official`、`terminal`、`renderer`、`conversation`、`decisions`、`input`、`rootId`、`dataRoot`、`cwd`、`requestRender()`、`setNotice()`。
 
-接缝自身的约束：五个文件（`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx`、`src/conversation/controller.ts`）承载五处接缝；接缝都是可选参数/可选钩子，不传 `extraPatches`、不装 `features`、不调 `submitContent`/`steerContent` 时 α 行为、界面与既有单测完全一致；S01 里不留 S02 专用分支条件。**归属拆分**：这些文件的既有行为与回归验收归 S01；S02 只拥有接缝本身与「接缝生效」的验收（传了 `extraPatches`/`features` 之后的新行为）。
+接缝自身的约束：五个文件（`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx`、`src/conversation/controller.ts`）承载六处接缝；接缝都是可选参数/可选钩子，不传 `extraPatches`、不装 `features`、不调 `submitContent`/`steerContent` 时 α 行为、界面与既有单测完全一致；S01 里不留 S02 专用分支条件。**归属拆分**：这些文件的既有行为与回归验收归 S01；S02 只拥有接缝本身与「接缝生效」的验收（传了 `extraPatches`/`features` 之后的新行为）。
 
 ## 2. 输入、会话与控制
 
@@ -98,6 +99,7 @@
 - 键位：经 D01 注册表汇总并可被 S03 生成 README/`--help`。
 - 接入点（boot 前，`extraPatches`）：传了之后 `terminalController` 服务存在、`storage-domain` 路由指向 `nano-schedule-json`、探针通过；不传时 α 行为不变（该项回归归 S01）。
 - 接入点（boot 后，`features`）：装 `FeatureHost` 后 S02 键位经 keymap 派发、`featureBody` 出现在正文区、关停走 `dispose`；不装时界面与 α 一致（该项回归归 S01）。
+- 接入点（切根）：`requestRestart` 后进程以新根重启、handoff 被新进程读走且只读一次；四种失败路径各有用例。
 - 接入点（输入与提交）：补全/`Tab` 插入后 S01 输入框里的文本等于插入结果；带一张图片附件的消息经 `submitContent` 发出后，官方 prompt 含 `image` 段、阅读面显示 `displayText`；`steerContent` 同规则；纯文本 `submit`/`steer` 的消息与 α 一致（该项回归归 S01）。
 
 ## 6. 本份机制与自定细节
@@ -118,4 +120,4 @@
 - 2026-10-28 二次轻审修订：官方 session-controller 不可直接挂载、改为最小适配器；storage-domain 不重复 provide、routes 用后端名；schedule 探针后挂载与单一失败结论；`!` 恢复 step boundary 语义；Monitor quiet 恢复 inject 语义；删除子代理成本字段；删除 20 MiB 硬编码；冷改名补失败矩阵；补 D01 补全/历史/合成条目；删除 48 KiB 协议残留。
 - 2026-10-29 实施发现修订（用户选择「改旧 spec 开三道缝」）：α 只交付零件未交付接线，S02 无法在不改 S01 的前提下上线界面。§1 增加接入点例外（`extraPatches`、`nano-app` 的 `features`、`App` 的 `featureBody` 与动作分发），§5 增加接入点验收项（boot 前/后拆开）。spike-0b 已实测通过（`terminal-controller` 行可检出、命名后端 + routes + 探针落盘、最小适配器让官方 schedule 挂起并落 `schedule.json`）。
 - 2026-10-29 轻审修订：补 [ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)；§1 的 `FeatureHost`/`FeatureContext` 签名与实现对齐、文件名与落点对齐；修「boot 前补丁只能加在 `src/main.ts`」的事实错误（补丁在 `src/boot/assemble.ts` 构造）；§5 接入点验收拆成 boot 前/后与输入/提交并注明回归归 S01；同步 S01 §1/§6、总纲 §6、D01 接口文件 §7/§9。
-- 2026-10-29 实施发现追加（用户选择「先补这两条」）：§1 增加第 4、5 条接缝（`FeatureContext.input` 输入框访问、`submitContent`/`steerContent` 有序内容提交），§5 增加对应验收；受控重启接缝（`requestRestart`）未纳入，留待会话列表/冷改名开工前另议。
+- 2026-10-29 实施发现追加（用户选择「先补这两条」+ 后继「补 requestRestart」）：第 6 条受控重启接缝见 §1；§1 增加第 4、5 条接缝（`FeatureContext.input` 输入框访问、`submitContent`/`steerContent` 有序内容提交），§5 增加对应验收；受控重启接缝（`requestRestart`）未纳入，留待会话列表/冷改名开工前另议。

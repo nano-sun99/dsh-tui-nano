@@ -77,7 +77,7 @@
 
 ## 9. β 接入点（2026-10-29 补，[ADR-20261029-s02-s01-seams](../../../decisions/2026-10-29-s02-s01-seams.md)）
 
-α 冻结的是零件；β 要的五处接线由下面这些可选接缝提供，**只加接线、不改既有行为**：
+α 冻结的是零件；β 要的六处接线由下面这些可选接缝提供，**只加接线、不改既有行为**：
 
 | 接缝 | 位置 | 形状 |
 |---|---|---|
@@ -85,6 +85,7 @@
 | boot 后初始化 | `src/app/nano-app.ts` 的 `NanoAppOptions.features` | 首帧前 `await features.start(FeatureContext)`；关停 drain 阶段 `features.dispose()`；`src/main.ts` 构造 `new Features()` |
 | 界面与按键 | `src/app/App.tsx` 的 `AppSnapshot.featureBody`；`nano-app` 的 `handleKey` / `dispatchAction` | `body(): ReactNode` 渲染在正文区；`handleKey(key): boolean` 在 S01 模态之后；S01 未消费的 keymap action 交给 `dispatchAction(action)` |
 | 输入框访问 | `FeatureContext.input`（`src/app/nano-app.ts`） | S01 的 `InputModel`（`text`/`cursor`/`insert`/`backspace`）；草稿存储不在此列，S02 自建 `DraftStore` |
+| 受控重启 | `src/app/nano-app.ts`、`src/main.ts` | `FeatureContext.requestRestart({ rootId, handoff? })`：冻结→handoff→drain→放 claim→`--root` 重启；只换根 |
 | 有序内容提交 | `src/conversation/controller.ts` | `submitContent(prompt)` / `steerContent(prompt)`，`prompt = { content: readonly UserContentPart[], displayText: string }`；`content` 段为官方 `text` / `image` / 文件引用，`displayText` 进阅读面与历史（只有图时可为空串）；纯文本 `submit`/`steer` 委托它，行为不变 |
 
 `FeatureHost` 与 `FeatureContext` 的定义在 `src/app/nano-app.ts`；S02 的实现是 `src/controls/feature-host.ts`。不传 `extraPatches`、不装 `features`、不调 `submitContent`/`steerContent` 时，α 的行为、界面与单测完全一致。

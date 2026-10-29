@@ -111,7 +111,7 @@ Ghostty
 | [S03 γ](S03-release.md) | npm 包、发布验收、证据、Rust 与 bridge 退场 | 全部成果 | `packaging/`、`tests/e2e/`、`scripts/`（Rust 期证据脚本）、`docs/release/`、`README.md`、`README.en.md`、键位文档；仅删除 `crates/`、`Cargo.*`、`rust-toolchain.toml`、`protocol/`、`bridge/` | 代其他子件补写功能 | S01 包入口 + S02 键位冻结 / γ / 本份发布 | C |
 
 - `package.json` 由 S01 独占；S03 提供 npm manifest 清单（`private` 处置、`version`、`dependencies`、`scripts`、`bin`、`files`、`engines`、`publishConfig`、`prepack`），由 S01 合入。S02/S03 的依赖变更同样经 S01。
-- **接入点例外（2026-10-29 用户拍板，[ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)）**：`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx`、`src/conversation/controller.ts` 这五个文件由 S02 加五处可选接缝——`CoreBootOptions.extraPatches`、`NanoAppOptions.features`、`AppSnapshot.featureBody` 与 `handleKey`/未消费 action 分发、`FeatureContext.input`、`submitContent`/`steerContent`；只加可选参数与钩子、不改 α 既有行为，细则见 [S02 §1](S02-input-sessions-terminal.md)。接缝之外的行为 owner 仍是 S01。
+- **接入点例外（2026-10-29 用户拍板，[ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)）**：`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx`、`src/conversation/controller.ts` 这五个文件由 S02 加六处可选接缝——`CoreBootOptions.extraPatches`、`NanoAppOptions.features`、`AppSnapshot.featureBody` 与 `handleKey`/未消费 action 分发、`FeatureContext.input`、`submitContent`/`steerContent`、`requestRestart`；只加可选参数与钩子、不改 α 既有行为，细则见 [S02 §1](S02-input-sessions-terminal.md)。接缝之外的行为 owner 仍是 S01。
 - 键位单一源：S01 拥有 `src/input/keymap.ts`；S02 只注册功能键；S03 从该源生成 README/`--help` 并加 diff 检查。
 - README 由 S03 拥有；S01/S02 提供章节内容，不直接写 README。备用屏由 S01 决定，S03 写入 README。
 - 证据：S01/S02 各写自己的证据目录；S03 只做发布级 e2e 与最终归档。
@@ -120,7 +120,7 @@ Ghostty
 
 | ID | 提供方 → 消费方 | 类型 / 产物 | 就绪条件、证据、owner、波次 |
 |---|---|---|---|
-| D01 | S01 → S02 | 契约：render/input API、可交互 transcript（含子地址）、场景/焦点、keymap 注册 API、有序输入段与附件段、草稿/光标/锚点保存恢复、审批/问卷地址隔离、终端 cell 网格/VT、根会话身份、mount claim/release、lifecycle hooks（阶段/截止/隔离）、补全 provider、补全打开输入模式、历史读写（项目过滤/100 条/子代理投影）、合成 transcript 条目、boot 后服务/挂载扩展点、boot 前补丁注入、界面/动作、输入框与有序内容提交接入点（2026-10-29 补）、handoff 读写 | S01 夹具稳定帧 + 组件/API 冻结 + 单测 + 接口文件；owner S01；B |
+| D01 | S01 → S02 | 契约：render/input API、可交互 transcript（含子地址）、场景/焦点、keymap 注册 API、有序输入段与附件段、草稿/光标/锚点保存恢复、审批/问卷地址隔离、终端 cell 网格/VT、根会话身份、mount claim/release、lifecycle hooks（阶段/截止/隔离）、补全 provider、补全打开输入模式、历史读写（项目过滤/100 条/子代理投影）、合成 transcript 条目、boot 后服务/挂载扩展点、boot 前补丁注入、界面/动作、输入框、有序内容提交与受控重启接入点（2026-10-29 补）、handoff 读写 | S01 夹具稳定帧 + 组件/API 冻结 + 单测 + 接口文件；owner S01；B |
 | D02 | S01 → S03 | 运行时/发布：包入口、pre-boot 首帧、关停、证据 harness | phase-0+α 通过；owner S01；C |
 | D03 | S02 → S03 | 验收：功能面证据、键位注册、真实服务结果 | β 通过；owner S02；C |
 | D04 | S01+S02 → S03 | 发布：同批验收、发布矩阵、release conclusion | α/β 齐备；owner S03；C |
