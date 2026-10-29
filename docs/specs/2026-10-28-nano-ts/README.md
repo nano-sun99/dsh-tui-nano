@@ -111,7 +111,7 @@ Ghostty
 | [S03 γ](S03-release.md) | npm 包、发布验收、证据、Rust 与 bridge 退场 | 全部成果 | `packaging/`、`tests/e2e/`、`scripts/`（Rust 期证据脚本）、`docs/release/`、`README.md`、`README.en.md`、键位文档；仅删除 `crates/`、`Cargo.*`、`rust-toolchain.toml`、`protocol/`、`bridge/` | 代其他子件补写功能 | S01 包入口 + S02 键位冻结 / γ / 本份发布 | C |
 
 - `package.json` 由 S01 独占；S03 提供 npm manifest 清单（`private` 处置、`version`、`dependencies`、`scripts`、`bin`、`files`、`engines`、`publishConfig`、`prepack`），由 S01 合入。S02/S03 的依赖变更同样经 S01。
-- **接入点例外（2026-10-29 用户拍板）**：S02 可在 `src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx` 加接线——`CoreBootOptions.extraPatches`、`NanoAppOptions.features`、`AppSnapshot.featureBody` 与未消费 action id 的分发；只加可选参数、不改 α 既有行为，细则见 [S02 §1](S02-input-sessions-terminal.md)。这三处的行为 owner 仍是 S01。
+- **接入点例外（2026-10-29 用户拍板，[ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)）**：`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx` 这四处文件由 S02 加三处可选接缝——`CoreBootOptions.extraPatches`、`NanoAppOptions.features`、`AppSnapshot.featureBody` 与 `handleKey`/未消费 action 分发；只加可选参数与钩子、不改 α 既有行为，细则见 [S02 §1](S02-input-sessions-terminal.md)。接缝之外的行为 owner 仍是 S01。
 - 键位单一源：S01 拥有 `src/input/keymap.ts`；S02 只注册功能键；S03 从该源生成 README/`--help` 并加 diff 检查。
 - README 由 S03 拥有；S01/S02 提供章节内容，不直接写 README。备用屏由 S01 决定，S03 写入 README。
 - 证据：S01/S02 各写自己的证据目录；S03 只做发布级 e2e 与最终归档。
