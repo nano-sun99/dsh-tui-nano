@@ -208,13 +208,7 @@ function InputLine(props: { snapshot: AppSnapshot; width: number }) {
   return (
     <Box flexDirection="column" width={props.width}>
       <ContextRule theme={snapshot.theme} width={props.width} ratio={snapshot.contextRatio} />
-      <Box
-        flexDirection="column"
-        paddingX={EDGE}
-        paddingTop={1}
-        width={props.width}
-        height={lineCount + 1}
-      >
+      <Box flexDirection="column" paddingX={EDGE} width={props.width} height={lineCount}>
         <Box flexDirection="row">
           <Text color={snapshot.theme.accent} bold>
             {'› '}
@@ -386,7 +380,7 @@ export function App(props: { snapshot: AppSnapshot }) {
   const { snapshot } = props
   const width = snapshot.width
   const height = snapshot.height
-  const inputHeight = inputLineCount(snapshot, width) + 3
+  const inputHeight = inputLineCount(snapshot, width) + 2
   const bodyHeight = Math.max(1, height - 1 - inputHeight)
   return (
     <Box flexDirection="column" width={width} height={height}>

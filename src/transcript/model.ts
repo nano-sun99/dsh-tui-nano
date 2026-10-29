@@ -285,7 +285,10 @@ export class TranscriptModel {
           gapBefore: 'Block',
           rows: this.cachedRows(key, () =>
             wrapSpans(
-              [textSpan('› ', 'user', { bold: true }), textSpan(entry.text, 'user')],
+              [
+                textSpan('› ', 'user', { bold: true }),
+                textSpan(entry.text, 'user', { bold: true }),
+              ],
               options.width - EDGE,
             ).map((row) => ({ ...row, indent: EDGE })),
           ),

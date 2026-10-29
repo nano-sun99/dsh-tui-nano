@@ -90,8 +90,12 @@ export class Completions {
       complete: (query) => {
         const agent = this.options.getAgent()
         const commands = agent ? (this.options.ctx.get('commands')?.list(agent) ?? []) : []
-        return (commands as Array<{ name: string; description: string }>)
+        const builtins = [{ name: 'model', description: '切换模型与推理强度' }]
+        const merged = [...builtins, ...(commands as Array<{ name: string; description: string }>)]
+        const seen = new Set<string>()
+        return merged
           .filter((command) => command.name.startsWith(query.toLowerCase()))
+          .filter((command) => (seen.has(command.name) ? false : (seen.add(command.name), true)))
           .map((command) => ({
             label: `/${command.name}`,
             insert: `/${command.name} `,
@@ -255,13 +259,13 @@ export class Completions {
     if (items.length === 0) {
       lines.push(createElement(Text, { dim: true }, '  （没有匹配）'))
     }
-    items.slice(0, 8).forEach((item, index) => {
+    items.slice(0, 6).forEach((item, index) => {
       const selected = index === this.session.selectedIndex
       lines.push(
         createElement(
           Text,
           { ...(selected ? { reverse: true } : {}) },
-          `  ${item.label}${item.description ? `  ${item.description}` : ''}`,
+          `  ${item.label}${item.description ? ` — ${truncate(item.description, Math.max(12, width - 24))}` : ''}`,
         ),
       )
     })
@@ -270,6 +274,11 @@ export class Completions {
     }
     return createElement(Box, { flexDirection: 'column', width }, ...lines)
   }
+}
+
+/** 单行截断，避免补全描述换行把列表挤爆。 */
+function truncate(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, Math.max(1, max - 1))}…`
 }
 
 /** 从光标往回找触发符：`@` 在开头或空白后；`/` 只在整行开头。 */
