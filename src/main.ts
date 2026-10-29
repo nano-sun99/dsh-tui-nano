@@ -21,9 +21,11 @@ import {
   writeLastRoot,
 } from './boot/root.ts'
 import { ConversationController } from './conversation/controller.ts'
+import { Features } from './controls/feature-host.ts'
 import { HistoryStore } from './input/history.ts'
 import { Renderer } from './render/renderer.ts'
 import { Terminal } from './runtime/terminal.ts'
+import { featureBootPatches } from './sessions/boot-patches.ts'
 import { activeTheme } from './theme/theme.ts'
 
 interface CliArgs {
@@ -79,6 +81,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       home: paths.home,
       cwd: process.cwd(),
       rootId,
+      extraPatches: featureBootPatches(rootId),
     })
   } catch (error) {
     reportVisible(message(error))
@@ -165,6 +168,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       conversation,
       history,
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
+      features: new Features(),
     })
     try {
       await app.start()

@@ -4,6 +4,7 @@
  * re-renders this tree whenever state changes.
  */
 
+import type { ReactNode } from 'react'
 import {
   APPROVAL_OPTIONS,
   type DecisionManager,
@@ -33,6 +34,8 @@ export interface AppSnapshot {
   readonly stickBottom: boolean
   readonly notice?: string
   readonly userName: string
+  /** 接线接缝（S02 spec §1）：S02 的正文区内容；没有 features 时为空。 */
+  readonly featureBody?: ReactNode
 }
 
 export function toneColor(tone: Tone, theme: Theme): [number, number, number] {
@@ -353,6 +356,7 @@ export function App(props: { snapshot: AppSnapshot }) {
     <Box flexDirection="column" width={width} height={height}>
       <Box flexDirection="column" flexGrow={0} height={bodyHeight} paddingX={EDGE} width={width}>
         <Transcript snapshot={snapshot} bodyHeight={bodyHeight} width={width - EDGE * 2} />
+        {snapshot.featureBody}
       </Box>
       <StatusLine snapshot={snapshot} width={width} />
       <InputLine snapshot={snapshot} width={width} />

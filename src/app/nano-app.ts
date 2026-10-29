@@ -3,6 +3,7 @@
  * decision seams and the lifecycle together. One instance owns one root.
  */
 import { createElement } from 'react'
+import type { ReactNode } from 'react'
 import type { CoreBoot } from '../boot/assemble.ts'
 import type { OfficialModules } from '../boot/official.ts'
 import { type MountClaim, releaseMountClaim } from '../boot/root.ts'
@@ -32,6 +33,41 @@ export interface NanoAppOptions {
   readonly conversation: ConversationController
   readonly history: HistoryStore
   readonly writeDiagnostic: (line: string) => void
+  /** 接线接缝（S02 spec §1 接入点例外第 2/3 条）：不传时行为与 α 一致。 */
+  readonly features?: FeatureHost
+}
+
+/** S02 拿到的东西：官方根、渲染/终端句柄，以及回写 S01 状态的两个入口。 */
+export interface FeatureContext {
+  readonly core: CoreBoot
+  readonly official: OfficialModules
+  readonly terminal: Terminal
+  readonly renderer: Renderer
+  readonly conversation: ConversationController
+  readonly decisions: DecisionManager
+  readonly rootId: string
+  readonly dataRoot: string
+  readonly cwd: string
+  /** 请求重画一帧（S02 自己的状态变化时调用）。 */
+  requestRender(): void
+  /** 写一行提示到状态栏；传 undefined 清掉。 */
+  setNotice(text: string | undefined): void
+}
+
+/**
+ * S02 实现的接线对象。全部方法可选：没有 features 时 S01 走原路径。
+ * - `start` 在首帧之前 await，失败即启动失败；
+ * - `dispose` 在关停 drain 阶段调用；
+ * - `handleKey` 先于 S01 处理按键，返回 true 表示已消费；
+ * - `dispatchAction` 接 S01 没消费的 keymap action id；
+ * - `body` 返回正文区内容（可为空）。
+ */
+export interface FeatureHost {
+  start?(context: FeatureContext): void | Promise<void>
+  dispose?(): void | Promise<void>
+  handleKey?(key: Key): boolean
+  dispatchAction?(action: string): boolean
+  body?(): ReactNode
 }
 
 export class NanoApp {
@@ -76,6 +112,23 @@ export class NanoApp {
     this.input.setHistory(history.entries().map((entry) => entry.display))
     this.options.terminal.refreshSize()
     this.options.renderer.resize(this.options.terminal.width, this.options.terminal.height)
+    // S02 的接线先就位再画首帧；抛错即启动失败（main 走恢复终端 + 退出 1）。
+    await this.options.features?.start?.({
+      core,
+      official: this.options.official,
+      terminal: this.options.terminal,
+      renderer: this.options.renderer,
+      conversation,
+      decisions: this.decisions,
+      rootId: this.options.rootId,
+      dataRoot: this.options.dataRoot,
+      cwd: this.options.cwd,
+      requestRender: () => this.scheduleRender(),
+      setNotice: (text) => {
+        this.notice = text
+        this.scheduleRender()
+      },
+    })
     this.render()
     const finish = new Promise<number>((resolve) => {
       this.finishResolve = resolve
@@ -159,6 +212,11 @@ export class NanoApp {
   private handleKey(key: Key): void {
     if (this.decisions.hasDecision) {
       this.handleDecisionKey(key)
+      return
+    }
+    // 接线接缝：S01 的模态优先，之后才轮到 S02 的界面（终端/面板输入）。
+    if (this.options.features?.handleKey?.(key) === true) {
+      this.scheduleRender()
       return
     }
     const scopes = [
@@ -270,6 +328,8 @@ export class NanoApp {
         this.scrollOffset = 0
         return
       default:
+        // 接线接缝：S01 不认识的 keymap action 交给 S02。
+        if (action && this.options.features?.dispatchAction?.(action) === true) return
         break
     }
     if (key.name === 'escape') {
@@ -446,6 +506,7 @@ export class NanoApp {
       scrollOffset: this.scrollOffset,
       stickBottom: this.stickBottom,
       ...(this.notice ? { notice: this.notice } : {}),
+      ...(this.options.features?.body ? { featureBody: this.options.features.body() } : {}),
       userName: '你',
     }
   }
@@ -481,6 +542,14 @@ export class NanoApp {
     this.shutdownStartedAt = Date.now()
     this.options.writeDiagnostic(`nano: 开始关停（${reason}）`)
     const { core, conversation, claim, terminal } = this.options
+    this.lifecycle.register('drain', 'features', async () => {
+      try {
+        await this.options.features?.dispose?.()
+      } catch (error) {
+        this.cleanupFailed = true
+        throw error
+      }
+    })
     this.lifecycle.register('drain', 'conversation', async () => {
       try {
         conversation.stop()
