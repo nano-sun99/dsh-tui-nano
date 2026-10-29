@@ -16,11 +16,11 @@
 2. **boot 后初始化**（`src/app/nano-app.ts`）：`NanoAppOptions` 增加可选 `features`（S02 的 `FeatureHost`，`src/controls/feature-host.ts`，由 `src/main.ts` 构造 `new Features()` 传入）；首帧前 `await features.start(FeatureContext)`，关停 drain 阶段 `features.dispose()`。
 3. **界面与按键**（`src/app/App.tsx`，配合 `nano-app`）：`AppSnapshot` 增加可选 `featureBody` 并在正文区渲染；`nano-app` 在 S01 的模态之后调用 `features.handleKey(key)`（返回 `true` 即消费），并把 `resolveKey()` 解析出、S01 未消费的 action id 交给 `features.dispatchAction(action)`。
 4. **输入框访问**（`src/app/nano-app.ts`，经 `FeatureContext.input`）：把 S01 的 `InputModel` 交给 S02，供补全、`@` 引用、`Tab` 插入与草稿保存读写；S01 自己的文本编辑路径不变。
-5. **有序内容提交**（`src/conversation/controller.ts`）：在纯文本 `submit(text)`/`steer(text)` 旁增加 `submitContent(parts)`/`steerContent(parts)`，`parts` 为官方 content 段（`text`/`image`/文件引用）；纯文本路径的行为、回显与历史记录不变。
+5. **有序内容提交**（`src/conversation/controller.ts`）：在纯文本 `submit(text)`/`steer(text)` 旁增加 `submitContent(prompt)`/`steerContent(prompt)`，`prompt = { content, displayText }`——`content` 为官方 content 段（`text`/`image`/文件引用），`displayText` 是阅读面与历史里显示的文字（只有图时可为空串）；纯文本路径委托同一方法，行为、回显与历史记录不变。
 
 `FeatureHost` 签名以实现为准：`start(context: FeatureContext)` / `dispose()` / `handleKey(key): boolean` / `dispatchAction(action: string): boolean` / `body(): ReactNode`；`FeatureContext` 带 `core`、`official`、`terminal`、`renderer`、`conversation`、`decisions`、`input`、`rootId`、`dataRoot`、`cwd`、`requestRender()`、`setNotice()`。
 
-接缝自身的约束：五个文件（`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx`、`src/conversation/controller.ts`）承载五处接缝；接缝都是可选参数/可选钩子，未装 `features` 且不传 `extraPatches` 时 α 行为、界面与既有单测完全一致；S01 里不留 S02 专用分支条件。**归属拆分**：这些文件的既有行为与回归验收归 S01；S02 只拥有接缝本身与「接缝生效」的验收（传了 `extraPatches`/`features` 之后的新行为）。
+接缝自身的约束：五个文件（`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx`、`src/conversation/controller.ts`）承载五处接缝；接缝都是可选参数/可选钩子，不传 `extraPatches`、不装 `features`、不调 `submitContent`/`steerContent` 时 α 行为、界面与既有单测完全一致；S01 里不留 S02 专用分支条件。**归属拆分**：这些文件的既有行为与回归验收归 S01；S02 只拥有接缝本身与「接缝生效」的验收（传了 `extraPatches`/`features` 之后的新行为）。
 
 ## 2. 输入、会话与控制
 
@@ -98,7 +98,7 @@
 - 键位：经 D01 注册表汇总并可被 S03 生成 README/`--help`。
 - 接入点（boot 前，`extraPatches`）：传了之后 `terminalController` 服务存在、`storage-domain` 路由指向 `nano-schedule-json`、探针通过；不传时 α 行为不变（该项回归归 S01）。
 - 接入点（boot 后，`features`）：装 `FeatureHost` 后 S02 键位经 keymap 派发、`featureBody` 出现在正文区、关停走 `dispose`；不装时界面与 α 一致（该项回归归 S01）。
-- 接入点（输入与提交）：经 `FeatureContext.input` 读写的文本与 S01 输入框一致；`submitContent` 带图/文件引用的消息进入 prompt，纯文本 `submit` 的行为与 α 一致。
+- 接入点（输入与提交）：补全/`Tab` 插入后 S01 输入框里的文本等于插入结果；带一张图片附件的消息经 `submitContent` 发出后，官方 prompt 含 `image` 段、阅读面显示 `displayText`；`steerContent` 同规则；纯文本 `submit`/`steer` 的消息与 α 一致（该项回归归 S01）。
 
 ## 6. 本份机制与自定细节
 
@@ -106,7 +106,7 @@
 - 最小 `sessionController`：只因 base 不含官方 session-controller row（它要 12 个服务 + `nativeOpen`），而 schedule 需要 `ctx.sessionController.resolveAgent(sessionId)`。适配器只实现该方法，`{agent}`/`{error}` 与官方一致；其余会话操作走官方 `sessions`/`agents`，不再造第二套会话服务。v1 已在 `bridge/runtime/host.mjs` 的 `provideSessionController` 用过同一 stub，v2 沿用。
 - handoff：仅用于受控切根；原子写（tmp + fsync + rename）、0600、版本号、读后删除；普通关窗不恢复草稿（`ADR-20261022-input-history` 的显式例外，合并前补 ADR 修订）；不写 `history.jsonl`。
 - 附件暂存/补全排序/Monitor 默认预算/调度租约阈值沿用 v1（30s、0600、`runtime/attachment-staging`、官方目录顺序）；v1 的 48 KiB `nano.attachment.chunk` 是协议分片上限，v2 无协议，不沿用。
-- 接入点：S01 提供三处可选接缝（boot 前 `extraPatches`、boot 后 `features.start/dispose`、界面 `featureBody` 与 `handleKey`/未消费 action 分发），见 [ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)；S02 的全部界面与功能经这三处挂上，不另建入口。
+- 接入点：S01 提供五处可选接缝（boot 前 `extraPatches`、boot 后 `features.start/dispose`、界面 `featureBody` 与 `handleKey`/未消费 action 分发、`FeatureContext.input`、`submitContent`/`steerContent`），见 [ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)；S02 的全部界面与功能经这五处挂上，不另建入口。
 - 键位：S01 持有 `src/input/keymap.ts`；本份只注册功能键；S03 只生成文档。
 - 不新增 Agent 工具、第二份任务表、第二份队列、自建 Cron。
 - bridge 吸收范围见总纲 §8.2：controls/sessions/skills/attachments/jobs/monitor/schedule/subagents/shell/terminal 由本份吸收并验收，S03 只删除。
