@@ -115,7 +115,7 @@
 | 安全 | 审批无答即拒、Monitor `notify` 默认关闭且计费提示、`!` 权限提示、terminal 不进 Agent 工具表 |
 | 跨会话 | transcript/草稿/队列/附件/审批/问卷/终端/Monitor/调度九面隔离；双窗口同根拒绝、双 root 并发 |
 | 安装 | 全新安装 → 启动 → 升级 → `nano purge` → 卸载 → 重装；每步前后文件清单/哈希 |
-| 架构 | 单进程、无 `nano.*` 协议、无第二宿主；运行时 stdout/stderr fd 级守护 |
+| 架构 | 单一运行时宿主（runtime 单进程 + 启动器 fd 包装，ADR-20261029-single-process-fd-guard）、无 `nano.*` 协议、无第二宿主；运行时 stdout/stderr fd 级守护 |
 | 证据 | 合成 HOME/DSH_HOME/数据根；真实路径/用户名/主机名/密钥/用户正文脱敏；证据绑定发布产物 |
 
 ## 4. Rust 与 bridge 退场

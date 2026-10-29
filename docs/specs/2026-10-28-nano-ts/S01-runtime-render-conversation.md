@@ -6,7 +6,7 @@
 
 ## 1. 边界与文件 owner
 
-拥有：`package.json`、`src/boot/`、`src/runtime/`、`src/render/`、`src/input/`、`src/theme/`、`src/conversation/`、`src/transcript/`、`src/decisions/`、`tests/unit/`、`docs/evidence/2026-10-28-nano-ts/alpha/`。
+拥有：`package.json`、`package-lock.json`、`tsconfig.json`、`vitest.config.ts`、`biome.json`、`src/boot/`、`src/runtime/`、`src/render/`、`src/input/`、`src/theme/`、`src/conversation/`、`src/transcript/`、`src/decisions/`、`src/app/`、`src/types/`、`src/main.ts`、`src/bin.ts`、`tests/unit/`、`docs/evidence/2026-10-28-nano-ts/alpha/`。
 
 不碰：S02 的 `src/attachments`、`src/sessions`、`src/controls`、`src/skills`、`src/terminal`、`src/jobs`、`src/monitor`、`src/schedule`、`src/subagents`；S03 的 `packaging/`、`tests/e2e/`、`docs/release/`、README；官方存储与凭据。
 
@@ -26,12 +26,12 @@
 ### 2.2 根会话身份与认领
 
 - 解析顺序：`--root <id>` → 数据根下 `last-root`（0600）→ 生成 `<UTC 时间戳>-<8 hex>`。
-- 同一 ID 用于：`session-persistence-jsonl` 根、`storage-json` 根、schedule backend 根（β）、挂载认领、handoff、`sessions.create`。官方 `create` 返回的 ID 与预生成不一致 → 硬失败，不建替代会话。
+- 同一 ID 用于：`session-persistence-jsonl` 根、`storage-json` 根、schedule backend 根（β）、挂载认领、handoff、会话创建/恢复。官方持久化在已有日志上拒绝 `create`（`SessionAlreadyExistsError`），因此启动先 `resume`，仅 `SessionPersistenceNotFoundError` 时 `create`（ADR-20261029-root-session-resume-first）。官方返回的 session id 必须等于预生成根身份，否则硬失败，不建替代会话；恢复时从 `session.deriveMessages()` 回放阅读面。
 - 挂载认领：`<数据根>/mount/<id>.lock` 写本进程 pid；在进备用屏前获取。同根第二窗口在此被拒：不建会话、不进备用屏、stderr 说明占用 pid，退出码非零。
 
 ### 2.3 启动顺序（硬性）
 
-确保 profile → 解析根身份 → 获取挂载认领 → pre-boot 骨架（**进备用屏、接管 fd 0/1、raw mode**）→ fd 级 stdout/stderr 捕获 → `boot()` → 能力快照 → 挂 UI → 正式首帧 → 接受输入。
+（launcher）fd 1/2 重定向到日志 → 确保 profile → 解析根身份 → 获取挂载认领 → pre-boot 骨架（runtime **进备用屏、持 `/dev/tty`、raw mode**）→ `boot()` → 能力快照 → 挂 UI → 正式首帧 → 接受输入。
 
 - 画骨架必须先占终端，不能等 boot；能力快照只能在 boot 后。
 - 启动失败分两段：骨架前失败（profile/版本/认领）直接写 stderr 退出；骨架后失败（boot/快照）恢复终端、写 fd 2、非零退出。未知 harness 版本在骨架前拦截。
@@ -60,11 +60,11 @@
 
 ### 2.5 终端、守护与关停
 
-- 终端所有权：nano 独占 fd 0/1；raw mode、resize、备用屏、鼠标、光标均由 nano 管理；官方日志走文件或受控 sink。
-- stdout/stderr 捕获必须是 **fd 级**：渲染器保留一份 dup 出来的 tty fd，把 fd 1/2 重定向到日志/管道；只包 `process.stdout.write` 抓不到原生模块直写。
+- 终端所有权：runtime 独占 fd 0 与终端写入（`/dev/tty`）；fd 1/2 指向日志；raw mode、resize、备用屏、鼠标、光标均由 runtime 管理；官方日志走文件或受控 sink。
+- stdout/stderr 捕获必须是 **fd 级**：Node 无 `dup2`，实现为启动时 re-exec 一次，把 fd 1/2 绑到 `<数据根>/logs/*.log`，运行态用独立 `/dev/tty` 句柄作唯一终端写入（等价于保留 dup tty fd + fd 1/2 重定向；ADR-20261029-single-process-fd-guard）。只包 `process.stdout.write` 抓不到原生模块直写。代价是 launcher 与 runtime 两个 Node 进程常驻，但唯一宿主与终端写入者仍是 runtime。
 - 能力快照（α）：`ask_user_question`、`fileReferences`、`approval`、`userQuestions`；β 追加 `terminalController`、`sessionController.resolveAgent`、`schedule`。缺失即启动失败并点名。
 - 关停阶段：冻结输入 → 排空生产者（schedule/Monitor/PTY/取消根回合，由 S02 注册的 hooks 执行）→ 排空持久化 → 释放 schedule 租约 → 释放挂载认领 → 恢复终端（finally，预留固定预算）→ 退出。
-- 预算：每阶段独立截止时间；总优雅上限 10s；「3s 强制」= 直接恢复终端并非零退出（单进程没有子进程 TERM/KILL 对象）；重复信号跳到恢复阶段。
+- 预算：每阶段独立截止时间；总优雅上限 10s；「3s 强制」= 直接恢复终端并非零退出（runtime 没有业务子进程的 TERM/KILL 对象；launcher 只做 fd 包装）；重复信号跳到恢复阶段。
 - 报告：逐项 `stopped / failed / unknown`；清理失败保留认领并报告；`uncaughtException`/`unhandledRejection` 走同一路径；SIGKILL 不承诺恢复，下次启动检测脏状态并提示 `reset`。
 - lifecycle hooks 契约（D01）：`registerLifecycleHook(phase, name, fn)` 返回 disposer；阶段固定为 `freeze / drain / flush / release / restore`；每 hook 有截止时间、错误隔离、幂等；关停开始后拒绝注册。S01 只调用阶段，不枚举 S02 资源。
 
@@ -113,7 +113,7 @@
 - 同根第二窗口在进备用屏前被拒，保留占用信息；不创建会话。
 - 启动失败可见：骨架前写 stderr；骨架后恢复终端、写 stderr、非零退出。
 - 首启显示配置/凭据/全局指令的**来源**（profile 路径、settings 路径、凭据来源、全局指令链），不复制任何凭据值（B8）。
-- 真实对话/流式/工具/差异/审批/问卷可用；单进程、无 `nano.*` 协议、无第二宿主。
+- 真实对话/流式/工具/差异/审批/问卷可用；单一运行时宿主（runtime 单进程；launcher 仅 fd 包装）、无 `nano.*` 协议、无第二宿主。
 - 过程显示按 `ADR-20261028-nano-process-display` 验收：思考默认一行、点击展开、提交后消失；连续读取合并；成功工具 0 行、失败 3 行。
 - 1000 行滚动/流式/resize 达到 §3.1 的 p95 目标；5000 行内存有界。
 - CJK/emoji/ZWJ/组合字符、中文输入法组合态、粘贴、鼠标拖选与复制各有测试或人工记录。
@@ -129,9 +129,11 @@
 - React/react-reconciler/Yoga/官方包版本实施时锁定；未知 harness 版本拒绝启动。
 - 备用屏由本份决定并写入 README；图片协议不在本次范围。
 - 进程显示、根身份格式、handoff 路径与格式、启动失败文案由本份自定，写进 D01 接口文件。
+- α 实际实现落在 `src/app/`（App、编排、输入模型、场景、骨架）、`src/main.ts`、`src/bin.ts` 与三份根配置（`tsconfig.json`、`vitest.config.ts`、`biome.json`）；`src/types/` 只放第三方模块声明。S02/S03 不修改这些文件。
 
 ## 7. 审核修订记录
 
 - 2026-10-28 重审 8 份后按发现重写：组装 API、storage 根、v1 承接、终端运行时守护、转义净化、性能阈值、owner；完整清单位于 PR #84 评论。
 - 2026-10-28 轻审修订：补 profile 首次初始化/升级、启动顺序（先占终端再 boot）、能力快照后置、feature 行补齐（session-controller/schedule）、关停改 lifecycle hooks、D01 契约展开、theme ADR 去掉已取代项。
+- 2026-10-29 实施发现修订（用户 2026-10-29 选择「接受并补文档 / 改旧 spec」）：补 `src/app/`、`src/main.ts`、`src/bin.ts`、`src/types/` 与根配置进 owner；根会话改为 resume 优先（ADR-20261029-root-session-resume-first）；fd 守护明确为 re-exec + 独立 `/dev/tty`（ADR-20261029-single-process-fd-guard）。
 - 2026-10-28 二次轻审修订：`initProfile` 不写 `cordis.yml`、空 YAML 必失败、`loadProfileDirectory` 副作用与 `skippedBundles`、根身份与认领前移、不加载官方 session-controller、不 provide storageDomain、fd 级守护、hook 阶段与截止时间、启动失败两段处置、p95 口径、B8 来源验收、phase-0 覆盖范围澄清。
