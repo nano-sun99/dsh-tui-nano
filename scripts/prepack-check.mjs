@@ -21,7 +21,15 @@ const tree = {
   edgesOut: new Map(),
 }
 
-const files = await packlist(tree)
+let files
+try {
+  files = await packlist(tree)
+} catch (error) {
+  console.error('prepack-check: 无法枚举包内文件；先跑 `npm run build`。')
+  console.error(`  ${error instanceof Error ? error.message : String(error)}`)
+  process.exit(1)
+}
+
 const problems = []
 
 const entry = 'dist/bin.js'
@@ -29,6 +37,7 @@ if (!files.includes(entry)) problems.push(`缺少入口 ${entry}（files 是否�
 
 if (files.includes(entry)) {
   const firstLine = readFileSync(join(root, entry), 'utf8').split('\n', 1)[0] ?? ''
+  // 可执行位由 npm 安装 bin 时设置；这里只断言 shebang 存在。
   if (!firstLine.startsWith('#!'))
     problems.push(`${entry} 缺少 shebang（第一行是 ${JSON.stringify(firstLine)}）`)
 }
@@ -37,19 +46,22 @@ for (const required of ['package.json', 'dist/main.js', 'dist/input/keymap.js'])
   if (!files.includes(required)) problems.push(`缺少必需文件 ${required}`)
 }
 
-for (const forbidden of files) {
-  if (forbidden.startsWith('src/')) problems.push(`源码不应进包：${forbidden}`)
-  if (forbidden.startsWith('tests/')) problems.push(`测试不应进包：${forbidden}`)
-  if (forbidden.startsWith('node_modules/')) problems.push(`node_modules 不应进包：${forbidden}`)
-  if (forbidden === 'tsconfig.json' || forbidden === 'biome.json') {
-    problems.push(`开发配置不应进包：${forbidden}`)
+const forbiddenPrefixes = ['src/', 'tests/', 'scripts/', 'docs/', 'packaging/', 'node_modules/']
+const forbiddenFiles = ['tsconfig.json', 'biome.json', 'vitest.config.ts']
+for (const file of files) {
+  for (const prefix of forbiddenPrefixes) {
+    if (file.startsWith(prefix)) problems.push(`不应进包：${file}`)
   }
+  if (forbiddenFiles.includes(file)) problems.push(`不应进包：${file}`)
 }
 
 const bin = pkg.bin?.nano
 if (bin !== entry) problems.push(`package.json bin.nano 是 ${bin}，期望 ${entry}`)
 if (pkg.private !== false) problems.push('package.json private 必须为 false 才能发布')
 if (pkg.name !== 'dsh-tui-nano') problems.push(`包名应为 dsh-tui-nano，实际 ${pkg.name}`)
+if (pkg.files?.length !== 1 || pkg.files[0] !== 'dist') {
+  problems.push(`package.json files 应只含 "dist"，实际 ${JSON.stringify(pkg.files)}`)
+}
 
 if (problems.length > 0) {
   console.error('prepack-check: 失败')

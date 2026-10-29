@@ -254,7 +254,14 @@ function parseArgs(argv: readonly string[]): CliArgs {
   let version = false
   let purge = false
   let yes = false
-  for (const arg of argv) {
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index]
+    // `--root <id>` 的值不是子命令：root id 允许叫 `purge`。
+    if (arg === '--root') {
+      index += 1
+      continue
+    }
+    if (arg?.startsWith('--root=') === true) continue
     if (arg === '--help' || arg === '-h') help = true
     else if (arg === '--version' || arg === '-v') version = true
     else if (arg === 'purge' || arg === '--purge') purge = true
@@ -270,11 +277,11 @@ async function confirmPurge(dataRoot: string, yes: boolean): Promise<boolean> {
     reportVisible('nano: 删除数据根需要交互确认；非交互环境请用 `nano purge --yes`。')
     return false
   }
-  process.stdout.write(
-    `将删除数据根 ${dataRoot}（含 profile、会话、历史），不可撤销。\n输入 yes 继续：`,
-  )
+  // 提示必须落在终端上：stdout 被重定向（`nano purge > log`、管道、IDE 捕获）时
+  // 写 stdout 会让用户只看见光标在等，不知道在等什么。
+  writeToTty(`将删除数据根 ${dataRoot}（含 profile、会话、历史），不可撤销。\n输入 yes 继续：`)
   const { createInterface } = await import('node:readline')
-  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  const rl = createInterface({ input: process.stdin, output: process.stderr })
   try {
     const answer = await new Promise<string>((resolve) => {
       rl.once('line', (line) => resolve(line))
@@ -296,7 +303,7 @@ function helpText(): string {
     '  --help        显示本帮助与键位表',
     '  --version     显示版本',
     '  purge         删除数据根（含 profile；不可撤销；交互确认）',
-    '  --yes         配合 purge，跳过交互确认',
+    '  --yes, -y     配合 purge，跳过交互确认',
     '',
     renderKeymapHelp([...describeBindings(), ...FEATURE_KEYBINDINGS]),
     '',
@@ -320,16 +327,21 @@ function message(error: unknown): string {
 }
 
 /** Write a fatal message to the log and directly to the terminal. */
-function reportVisible(text: string): void {
-  process.stderr.write(`${text}\n`)
+/** 同时写 stderr 与 `/dev/tty`；没有控制终端时至少 stderr 有。 */
+function writeToTty(text: string): void {
+  process.stderr.write(text)
   try {
     const fd = openSync('/dev/tty', 'w')
     try {
-      writeSync(fd, `${text}\n`)
+      writeSync(fd, text)
     } finally {
       closeSync(fd)
     }
   } catch {
     // No controlling terminal; stderr already carries the message.
   }
+}
+
+function reportVisible(text: string): void {
+  writeToTty(`${text}\n`)
 }

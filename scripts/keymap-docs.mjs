@@ -12,9 +12,11 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FEATURE_KEYBINDINGS } from '../dist/controls/feature-keys.js'
-import { describeBindings } from '../dist/input/keymap.js'
-import { renderKeymapMarkdown, replaceKeymapBlock } from '../dist/input/keymap-docs.js'
+// 直接读源码（Node >=22.19 的类型剥离）：读 dist 会在「改了 src 没 build」时
+// 用旧产物做 --check，把过期文档判成最新。
+import { FEATURE_KEYBINDINGS } from '../src/controls/feature-keys.ts'
+import { describeBindings } from '../src/input/keymap.ts'
+import { renderKeymapMarkdown, replaceKeymapBlock } from '../src/input/keymap-docs.ts'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const write = process.argv.includes('--write')
