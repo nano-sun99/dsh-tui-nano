@@ -22,6 +22,22 @@ export interface SubmitResult {
   readonly queued: boolean
 }
 
+/** 有序提交内容（spec §1 第 5 条接缝）：官方 content 段 + 阅读面显示文字。 */
+export interface PromptContent {
+  readonly content: readonly any[]
+  /** 阅读面与历史里显示的文字；只有图时可为空串。 */
+  readonly displayText: string
+}
+
+function hasAttachment(content: readonly any[]): boolean {
+  return content.some((part) => part?.type !== undefined && part.type !== 'text')
+}
+
+function assertContent(display: string, content: readonly any[]): void {
+  // 官方拒绝既无文本又无附件的 prompt；这里先拦，避免发出去再失败。
+  if (display === '' && !hasAttachment(content)) throw new Error('nano: 空输入')
+}
+
 export class ConversationController {
   readonly model = new TranscriptModel()
   private readonly options: ConversationOptions
@@ -268,17 +284,30 @@ export class ConversationController {
 
   /** Submit a prompt. While running, the official followup queues the next turn. */
   submit(text: string): SubmitResult {
-    if (this.disposed) throw new Error('nano: 对话已关闭')
     const trimmed = text.trim()
-    if (trimmed === '') throw new Error('nano: 空输入')
+    return this.submitContent({
+      content: [{ type: 'text', text: trimmed }],
+      displayText: trimmed,
+    })
+  }
+
+  /**
+   * Submit an ordered content list (text + image + file reference). The text
+   * path above is this method with a single text part, so echo, history and
+   * queue behaviour stay identical.
+   */
+  submitContent(prompt: PromptContent): SubmitResult {
+    if (this.disposed) throw new Error('nano: 对话已关闭')
+    const display = prompt.displayText.trim()
+    assertContent(display, prompt.content)
     const requestId = randomUUID()
     const queued = this.statusValue === 'running'
-    this.model.appendUser(trimmed, requestId)
-    this.options.history.record(trimmed)
+    this.model.appendUser(display, requestId)
+    if (display !== '') this.options.history.record(display)
     try {
       this.agent.followup(
         this.options.official.llm.createUserMessage({
-          content: [{ type: 'text', text: trimmed }],
+          content: prompt.content,
           source: { kind: 'user' },
         }),
       )
@@ -293,12 +322,21 @@ export class ConversationController {
   /** Steering goes to the nearest step boundary; an idle agent starts a turn. */
   steer(text: string): void {
     const trimmed = text.trim()
-    if (trimmed === '') return
-    this.model.appendUser(trimmed, randomUUID())
-    this.options.history.record(trimmed)
+    this.steerContent({
+      content: [{ type: 'text', text: trimmed }],
+      displayText: trimmed,
+    })
+  }
+
+  /** Steering with an ordered content list; same admission rule as submit. */
+  steerContent(prompt: PromptContent): void {
+    const display = prompt.displayText.trim()
+    if (display === '' && !hasAttachment(prompt.content)) return
+    this.model.appendUser(display, randomUUID())
+    if (display !== '') this.options.history.record(display)
     this.agent.steer(
       this.options.official.llm.createUserMessage({
-        content: [{ type: 'text', text: trimmed }],
+        content: prompt.content,
         source: { kind: 'user' },
       }),
     )

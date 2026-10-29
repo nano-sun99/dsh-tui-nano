@@ -45,6 +45,8 @@ export interface FeatureContext {
   readonly renderer: Renderer
   readonly conversation: ConversationController
   readonly decisions: DecisionManager
+  /** S01 的输入框实例；S02 的补全/@/草稿读写它（spec §1 第 4 条接缝）。 */
+  readonly input: InputModel
   readonly rootId: string
   readonly dataRoot: string
   readonly cwd: string
@@ -120,6 +122,7 @@ export class NanoApp {
       renderer: this.options.renderer,
       conversation,
       decisions: this.decisions,
+      input: this.input,
       rootId: this.options.rootId,
       dataRoot: this.options.dataRoot,
       cwd: this.options.cwd,
