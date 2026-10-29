@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.2.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
@@ -16,7 +16,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "suspicious": {
         "noExplicitAny": "off",
         "noArrayIndexKey": "off"
@@ -27,10 +27,6 @@
     }
   },
   "files": {
-    "includes": [
-      "src/**",
-      "tests/**",
-      "scripts/**"
-    ]
+    "includes": ["src/**", "tests/**", "scripts/**"]
   }
 }
