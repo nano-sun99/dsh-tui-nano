@@ -10,6 +10,8 @@
 
 不碰：S02 的 `src/attachments`、`src/sessions`、`src/controls`、`src/skills`、`src/terminal`、`src/jobs`、`src/monitor`、`src/schedule`、`src/subagents`；S03 的 `packaging/`、`tests/e2e/`、`docs/release/`、README；官方存储与凭据。
 
+接入点例外：`src/boot/assemble.ts`、`src/main.ts`、`src/app/nano-app.ts`、`src/app/App.tsx` 允许 S02 只加接线（可选参数 `extraPatches` / `features` / `featureBody` 与未消费 action id 的分发），细则以 [S02 §1](S02-input-sessions-terminal.md) 为准；这四处的既有行为与验收仍归本份。
+
 `package.json` 由本份独占；S02/S03 的依赖变更与 npm manifest 清单经 S01 合入。`src/input/keymap.ts` 由本份独占，S02 只经 D01 的注册 API 加功能键。
 
 ## 2. 运行时与组装
@@ -136,4 +138,5 @@
 - 2026-10-28 重审 8 份后按发现重写：组装 API、storage 根、v1 承接、终端运行时守护、转义净化、性能阈值、owner；完整清单位于 PR #84 评论。
 - 2026-10-28 轻审修订：补 profile 首次初始化/升级、启动顺序（先占终端再 boot）、能力快照后置、feature 行补齐（session-controller/schedule）、关停改 lifecycle hooks、D01 契约展开、theme ADR 去掉已取代项。
 - 2026-10-29 实施发现修订（用户 2026-10-29 选择「接受并补文档 / 改旧 spec」）：补 `src/app/`、`src/main.ts`、`src/bin.ts`、`src/types/` 与根配置进 owner；根会话改为 resume 优先（ADR-20261029-root-session-resume-first）；fd 守护明确为 re-exec + 独立 `/dev/tty`（ADR-20261029-single-process-fd-guard）。
+- 2026-10-29 实施发现修订（用户选择「改旧 spec 开三道缝」）：§1 补接入点例外——`extraPatches`、`features`、`featureBody` 与动作分发供 S02 加接线，α 既有行为不变。
 - 2026-10-28 二次轻审修订：`initProfile` 不写 `cordis.yml`、空 YAML 必失败、`loadProfileDirectory` 副作用与 `skippedBundles`、根身份与认领前移、不加载官方 session-controller、不 provide storageDomain、fd 级守护、hook 阶段与截止时间、启动失败两段处置、p95 口径、B8 来源验收、phase-0 覆盖范围澄清。
