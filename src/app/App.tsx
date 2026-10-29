@@ -42,6 +42,8 @@ export interface AppSnapshot {
   /** 补全弹层（正文与状态行之间）。 */
   readonly completionBody?: ReactNode
   readonly completionRows?: number
+  readonly modelPanelBody?: ReactNode
+  readonly modelPanelRows?: number
 }
 
 export function toneColor(tone: Tone, theme: Theme): [number, number, number] {
@@ -181,15 +183,9 @@ function inputLineCount(snapshot: AppSnapshot, width: number): number {
 }
 
 /** 输入块上/下边框：左侧按上下文占比着色，右侧为普通边框色。 */
-function ContextRule(props: {
-  theme: Theme
-  width: number
-  ratio?: number
-  edge: 'top' | 'bottom'
-}) {
+function ContextRule(props: { theme: Theme; width: number; ratio?: number }) {
   const bar = Math.max(1, props.width - EDGE * 2)
-  // 贴边细线：上边框用下半格、下边框用上半格，视觉上更贴近输入文字。
-  const line = props.edge === 'top' ? '▁' : '▔'
+  const line = '─'
   const filled =
     props.ratio === undefined ? 0 : Math.max(0, Math.min(bar, Math.round(props.ratio * bar)))
   const tone: Tone =
@@ -249,7 +245,7 @@ function InputLine(props: { snapshot: AppSnapshot; width: number }) {
   const lineCount = Math.min(4, Math.max(1, rows.length))
   return (
     <Box flexDirection="column" width={props.width}>
-      <Box height={1} />
+      <ContextRule theme={snapshot.theme} width={props.width} ratio={snapshot.contextRatio} />
       <Box flexDirection="column" paddingX={EDGE} width={props.width} height={lineCount}>
         <Box flexDirection="row">
           <Text color={snapshot.theme.accent} bold>
@@ -262,12 +258,7 @@ function InputLine(props: { snapshot: AppSnapshot; width: number }) {
           </Box>
         </Box>
       </Box>
-      <ContextRule
-        theme={snapshot.theme}
-        width={props.width}
-        ratio={snapshot.contextRatio}
-        edge="bottom"
-      />
+      <ContextRule theme={snapshot.theme} width={props.width} ratio={snapshot.contextRatio} />
     </Box>
   )
 }
@@ -430,8 +421,10 @@ export function App(props: { snapshot: AppSnapshot }) {
   // 跟 Claude Code 的输入区高度：上方一行留白 + 输入行 + 一条下边框。
   const inputHeight = inputLineCount(snapshot, width) + 2
   const completionRows = snapshot.completionRows ?? 0
+  const modelRows = snapshot.modelPanelRows ?? 0
   const headerHeight = 3
-  const bodyHeight = Math.max(1, height - 1 - inputHeight - completionRows - headerHeight)
+  const bottomRows = modelRows > 0 ? modelRows : inputHeight + 1
+  const bodyHeight = Math.max(1, height - bottomRows - completionRows - headerHeight)
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Box height={1} />
@@ -442,8 +435,14 @@ export function App(props: { snapshot: AppSnapshot }) {
         {snapshot.featureBody}
       </Box>
       {snapshot.completionBody}
-      <StatusLine snapshot={snapshot} width={width} />
-      <InputLine snapshot={snapshot} width={width} />
+      {modelRows > 0 ? (
+        snapshot.modelPanelBody
+      ) : (
+        <>
+          <InputLine snapshot={snapshot} width={width} />
+          <StatusLine snapshot={snapshot} width={width} />
+        </>
+      )}
       <DecisionOverlay snapshot={snapshot} width={width} height={height} />
     </Box>
   )

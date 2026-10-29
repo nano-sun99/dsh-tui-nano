@@ -52,15 +52,15 @@ describe('input frame', () => {
     renderer.unmount()
   })
 
-  it('输入区高度：上方一行留白、输入行、下方一条边框', () => {
+  it('输入区：上下各一条边框，夹住输入行', () => {
     const renderer = rendererFor()
     renderer.update(createElement(App, { snapshot: snapshot('hello') }))
     renderer.flushFrame()
     const lines = renderer.snapshotLines()
     const row = lines.findIndex((line) => line.includes('hello'))
     expect(row).toBeGreaterThan(0)
-    expect(lines[row - 1]?.trim()).toBe('')
-    expect(lines[row + 1]?.trimStart().startsWith('▔')).toBe(true)
+    expect(lines[row - 1]?.trimStart().startsWith('─')).toBe(true)
+    expect(lines[row + 1]?.trimStart().startsWith('─')).toBe(true)
     renderer.unmount()
   })
 })

@@ -84,12 +84,26 @@ test('官方调用失败：界面显示回合出错且进程不崩', () => {
   assert.match(screen, /no API key for provider route/, '应带出官方 missing-credential 原文')
 })
 
-test('/model 列出目录、切换模型，目录外模型被拒', () => {
+test('/model 打开模型选择面板（标题/列表/强度）', () => {
+  const { code, screen } = runInteractive('/model', {
+    sendWait: 4,
+    extraEnv: {
+      DEEPSEEK_API_KEY: 'sk-test-00000000000000000000000000000000',
+      DEEPSEEK_BASE_URL: 'http://127.0.0.1:9',
+    },
+  })
+  assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
+  assert.match(screen, /模型/, '应显示面板标题')
+  assert.match(screen, /当前：deepseek-flash/, '应显示当前模型')
+  assert.match(screen, /deepseek-flash/, '应列出当前模型')
+  assert.match(screen, /off/, '应列出官方强度')
+})
+
+test('/model 直接切换与目录外拒绝', () => {
   const { code, screen } = runInteractive(
-    '/model\n/model deepseek-official/deepseek-flash\n/model deepseek-official/nope-model',
+    '/model deepseek-official/deepseek-flash\n/model deepseek-official/nope-model',
     {
       sendWait: 3,
-      // 目录由 adapter 自报，但要有凭据才激活；假 key + 不可达端点即可离线列目录。
       extraEnv: {
         DEEPSEEK_API_KEY: 'sk-test-00000000000000000000000000000000',
         DEEPSEEK_BASE_URL: 'http://127.0.0.1:9',
@@ -97,8 +111,6 @@ test('/model 列出目录、切换模型，目录外模型被拒', () => {
     },
   )
   assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
-  assert.match(screen, /当前模型：deepseek-official\/deepseek-flash/, '应显示当前模型')
-  assert.match(screen, /用法：\/model/, '应给出用法')
   assert.match(screen, /模型已切换：deepseek-official\/deepseek-flash/, '应切换成功')
   assert.match(screen, /模型不在目录/, '目录外模型应被拒绝')
 })

@@ -32,6 +32,7 @@ import {
   TERMINAL_TOGGLE_ACTION,
 } from './feature-keys.ts'
 import { InfoPanel } from './info-panel.ts'
+import { ModelPanel } from './model-panel.ts'
 
 function isTerminalToggle(key: Key): boolean {
   return key.name === 'char' && key.ctrl === true && key.text === 't'
@@ -55,6 +56,7 @@ export class Features implements FeatureHost {
   private schedule: ScheduleRuntime | undefined
   private terminal: TerminalPane | undefined
   private completions: Completions | undefined
+  private modelPanel: ModelPanel | undefined
   private jobs: JobsPanel | undefined
   private monitor: Monitor | undefined
   private sessions: SessionsPanel | undefined
@@ -148,6 +150,11 @@ export class Features implements FeatureHost {
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
     })
     this.completions.install()
+    this.modelPanel = new ModelPanel({
+      conversation: context.conversation,
+      onChange: () => context.requestRender(),
+      notice: (text, tone) => context.conversation.model.appendNotice(text, tone),
+    })
 
     // 6) 任务面板：官方 jobs 只读。
     this.monitor = new Monitor({
@@ -235,6 +242,7 @@ export class Features implements FeatureHost {
       if (name === 'model' || official) void this.runSlashCommand(text)
       return true
     }
+    if (this.modelPanel?.open && this.modelPanel.handleKey(key)) return true
     if (this.completions?.handleKey(key)) return true
     if (this.info?.handleKey(key)) return true
     if (this.sessions?.handleKey(key)) return true
@@ -326,26 +334,7 @@ export class Features implements FeatureHost {
     const conversation = context.conversation
     const current = conversation.modelSelection
     if (args === '') {
-      const lines: string[] = []
-      lines.push(
-        current
-          ? `当前模型：${current.provider}/${current.model}${current.reasoningEffort ? ` · 强度 ${current.reasoningEffort}` : ' · 强度默认'}`
-          : '当前模型：未知',
-      )
-      if (current) {
-        const models = await conversation.listModels(current.provider)
-        const ids = models
-          .map((entry: any) => String(entry?.id ?? entry?.model ?? entry?.name ?? ''))
-          .filter(Boolean)
-        if (ids.length > 0) {
-          lines.push(`可选：${ids.slice(0, 12).join(' / ')}${ids.length > 12 ? ' …' : ''}`)
-        }
-        const efforts = await conversation.resolveModelEfforts(current.provider, current.model)
-        if (efforts.length > 0) lines.push(`强度：${efforts.join(' / ')}`)
-      }
-      lines.push('用法：/model <provider>/<model> [effort]')
-      for (const line of lines) model.appendNotice(line, 'info')
-      context.requestRender()
+      await this.modelPanel?.openPanel()
       return
     }
     const parts = args.split(/\s+/u)
@@ -512,6 +501,15 @@ export class Features implements FeatureHost {
     if (stack.length === 0) return null
     if (stack.length === 1) return stack[0]
     return createElement(Box, { flexDirection: 'column', width }, ...stack)
+  }
+
+  /** `/model` 面板占底部输入区；打开时替换输入行与状态行。 */
+  modelPanelBody(): ReactNode {
+    return this.modelPanel?.render(this.innerWidth()) ?? null
+  }
+
+  modelPanelRows(): number {
+    return this.modelPanel?.rows() ?? 0
   }
 
   /** 补全弹层单独占正文与状态行之间的槽位，避免被 transcript 裁掉。 */

@@ -65,13 +65,13 @@ function runScreen(raw, { wait = 3 } = {}) {
   }
 }
 
-test('输入 hello 后占位符消失，输入行上方留白、下方一条下边框', () => {
+test('输入 hello 后占位符消失，输入行被上下边框夹住', () => {
   const lines = runScreen('hello')
   const row = lines.findIndex((line) => line.includes('hello'))
   assert.ok(row >= 0, `屏幕上应出现 hello：\n${lines.join('\n')}`)
   assert.ok(!lines.join('\n').includes('输入消息'), '输入后占位符应消失')
-  assert.equal(lines[row - 1]?.trim(), '', '输入行上方应是一行留白')
-  assert.ok(lines[row + 1]?.trimStart().startsWith('▔'), '输入行下方应是下边框')
+  assert.ok(lines[row - 1]?.trimStart().startsWith('─'), '输入行上方应是上边框')
+  assert.ok(lines[row + 1]?.trimStart().startsWith('─'), '输入行下方应是下边框')
 })
 
 test('输入 /mode 时补全弹层可见、最多 5 项、包含 /model', () => {

@@ -94,6 +94,9 @@ export interface FeatureHost {
   /** 补全弹层：正文与状态行之间，独立占行。 */
   completionBody?(): ReactNode
   completionRows?(): number
+  /** `/model` 面板：打开时替换输入行与状态行。 */
+  modelPanelBody?(): ReactNode
+  modelPanelRows?(): number
 }
 
 export class NanoApp {
@@ -545,6 +548,12 @@ export class NanoApp {
         : {}),
       ...(this.options.features?.completionRows
         ? { completionRows: this.options.features.completionRows() }
+        : {}),
+      ...(this.options.features?.modelPanelBody
+        ? { modelPanelBody: this.options.features.modelPanelBody() }
+        : {}),
+      ...(this.options.features?.modelPanelRows
+        ? { modelPanelRows: this.options.features.modelPanelRows() }
         : {}),
       userName: '你',
     }
