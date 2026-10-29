@@ -119,7 +119,7 @@ APPROVAL: {"ok":true,"outcome":"allowed-once"}
 - **审批的自然触发**：受 sandbox 自动放行限制，见 §5。
 - **差异路径**：`meta.diffs` 解析与渲染有单测，真实文件编辑工具未在证据中触发。
 
-## 8. 与 spec 的实现偏差（待用户裁决，未私自改 spec）
+## 8. 与 spec 的实现偏差（用户 2026-10-29 已接受，文档修正见 PR #90）
 
 1. **fd 级守护**：Node 无 `dup2`，改为启动时 re-exec 一次，把 fd 1/2 绑到 `<dataRoot>/logs/*.log`；运行时用独立 `/dev/tty` 句柄渲染。代价是 launcher + runtime 两个 Node 进程常驻，与总纲「单一 Node 进程」字面冲突。
 2. **根会话恢复**：官方持久化拒绝在已有日志上 `create`（`SessionAlreadyExistsError`），因此改为 **resume 优先、NotFound 才 create**，并校验官方返回 id == 根身份；恢复后从 `session.deriveMessages()` 回放阅读面。与 spec §2.2 字面「sessions.create」冲突。
@@ -130,4 +130,4 @@ APPROVAL: {"ok":true,"outcome":"allowed-once"}
 
 已修复：流式 revision（高）、`wrapSpans` 粘词、纯空格 Text 宽度/状态栏对齐、问卷自定义输入吃空格与 c、滚轮方向、覆盖层命中与拖选优先级、宽字符选区复制、Yoga 节点泄漏、Grid 宽字符与 256 色、Alt+Backspace/Enter、ESC 超时卡死、UTF-8 分片、`commitTextUpdate` 净化、历史浏览即时重读、32 KiB 提交上限、状态变化重绘、稳定阅读锚点、3s 强制恢复、清理失败保留认领、thinking 行只留标题、空 assistant unit gap、diff 空文件语义、Prism 语言注册、启动早期信号保护。
 
-未在本轮改（已在 PR 评论中保留）：spec/ADR 四条偏差（见 §8）、Cordis/React 版本锁与单实例校验、区域滚动/overscan、完整位置标注、子代理历史投影与 timed question 细节（D01 已注明的 S02 面）。
+未在本轮改（已在 PR 评论中保留）：四条偏差的文档修正已单独提 PR #90（见 §8）、Cordis/React 版本锁与单实例校验、区域滚动/overscan、完整位置标注、子代理历史投影与 timed question 细节（D01 已注明的 S02 面）。
