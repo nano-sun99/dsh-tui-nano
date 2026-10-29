@@ -63,7 +63,7 @@ Ghostty
 
 - 启动顺序：确保 profile → 解析根身份 → 获取挂载认领 → pre-boot 骨架（进备用屏、接管 fd 0/1、raw mode）→ fd 级 stdout/stderr 捕获 → boot 核心 → 能力快照 → 挂 UI → 正式首帧 → 接受输入。认领失败发生在进备用屏之前；画骨架必须先占终端。
 - 启动失败两段：骨架前（profile/版本/认领）写 stderr 退出；骨架后（boot/快照）恢复终端、写 fd 2、非零退出。
-- 根切换/冷改名：运行时不做在线 storage 路由替换；受控进程重启 = 冻结输入 → 原子写 handoff（tmp+fsync+rename、0600、版本、读后删）→ 停 schedule/Monitor/PTY、取消在飞 → flush → 杀死并核验 PTY 进程组 → 释放 claim → exec self `--root <id>`。新进程提交成功后才删 handoff；认领/boot/handoff/rename 任一失败都恢复终端、保留 handoff、不建替代会话。冷改名即切到该会话（保持单主会话），改名后留在该根。
+- 根切换/冷改名：运行时不做在线 storage 路由替换；受控进程重启 = 冻结输入 → 原子写 handoff（tmp+fsync+rename、0600、版本、读后删；S02 定 payload，S01 落盘）→ 停 schedule/Monitor/PTY、取消在飞 → flush → 杀死并核验 PTY 进程组 → 释放 claim → 经 launcher 顺序拉起 `--root <id>`（Node 无 execve，旧 runtime 等新进程退出；读在新进程 boot 成功之后）。新进程提交成功后才删 handoff；认领/boot/handoff/rename 任一失败都恢复终端、保留 handoff、不建替代会话。冷改名即切到该会话（保持单主会话），改名后留在该根。
 - 关停阶段：冻结输入 → 排空生产者（S02 hooks）→ 排空持久化 → 释放 schedule 租约 → 释放挂载认领 → 恢复终端（finally，预留预算）→ 退出；每阶段独立截止，总优雅 10s；「3s 强制」= 恢复终端并非零退出；清理失败保留认领并报告。
 - `uncaughtException`/`unhandledRejection` 走同一关停路径；SIGINT/SIGTERM/SIGHUP 有界关停并逐项报告；SIGKILL 后下次启动检测脏状态提示 `reset`。
 - 官方 HMR 关闭（`hmr disabled`）；profile/settings 写入由应用自持 profile 承担。

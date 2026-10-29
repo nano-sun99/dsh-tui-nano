@@ -62,7 +62,7 @@
 
 ## 7. S02 使用注意
 
-- **boot 后扩展点**：`startCore(prepared)` 返回的 `core.ctx` 即官方 Cordis 根；S02 在 boot 后按服务名 `ctx.get(...)` 注册 schedule 后端/适配器（D02 契约）。boot 前补丁、界面挂载与输入/提交走 §9 的五处接缝——这些事原本无处安放，必须经接缝改 S01 的五个文件。
+- **boot 后扩展点**：`startCore(prepared)` 返回的 `core.ctx` 即官方 Cordis 根；S02 在 boot 后按服务名 `ctx.get(...)` 注册 schedule 后端/适配器（D02 契约）。boot 前补丁、界面挂载、输入/提交与切根走 §9 的六处接缝——这些事原本无处安放，必须经接缝改 S01 的五个文件。
 - **子代理地址**：`TranscriptModel` 的条目可带 `address`；S02 为每个子代理地址建视图时传 `units({address})`/`layout({address})` 过滤。子代理输入历史来自官方投影，本契约不读 `history.jsonl`。
 - **timed question**：`DecisionManager` 立即返回答案；α 不消费 `request.wait.timed` / `attachWait`。S02 若接 timed 面板，需在 `askQuestions` 之前处理 `wait`（官方契约见 `dsh-user-questions`），不改 S01 的两个 answerer 槽位语义。
 - **补全打开模式**：`CompletionSession.isOpen` 为真时，Enter 必须先 `accept()` 而不是提交；会话关闭后再走 `conversation.submit`。
@@ -85,7 +85,7 @@
 | boot 后初始化 | `src/app/nano-app.ts` 的 `NanoAppOptions.features` | 首帧前 `await features.start(FeatureContext)`；关停 drain 阶段 `features.dispose()`；`src/main.ts` 构造 `new Features()` |
 | 界面与按键 | `src/app/App.tsx` 的 `AppSnapshot.featureBody`；`nano-app` 的 `handleKey` / `dispatchAction` | `body(): ReactNode` 渲染在正文区；`handleKey(key): boolean` 在 S01 模态之后；S01 未消费的 keymap action 交给 `dispatchAction(action)` |
 | 输入框访问 | `FeatureContext.input`（`src/app/nano-app.ts`） | S01 的 `InputModel`（`text`/`cursor`/`insert`/`backspace`）；草稿存储不在此列，S02 自建 `DraftStore` |
-| 受控重启 | `src/app/nano-app.ts`、`src/main.ts` | `FeatureContext.requestRestart({ rootId, handoff? })`：冻结→handoff→drain→放 claim→`--root` 重启；只换根 |
+| 受控重启 | `src/app/nano-app.ts`、`src/main.ts` | `FeatureContext.requestRestart({ rootId, handoff? })`：S02 决定 payload 并读回，S01 冻结→落盘 handoff→drain→放 claim→经 launcher 以 `--root` 顺序拉起；只换根 |
 | 有序内容提交 | `src/conversation/controller.ts` | `submitContent(prompt)` / `steerContent(prompt)`，`prompt = { content: readonly UserContentPart[], displayText: string }`；`content` 段为官方 `text` / `image` / 文件引用，`displayText` 进阅读面与历史（只有图时可为空串）；纯文本 `submit`/`steer` 委托它，行为不变 |
 
-`FeatureHost` 与 `FeatureContext` 的定义在 `src/app/nano-app.ts`；S02 的实现是 `src/controls/feature-host.ts`。不传 `extraPatches`、不装 `features`、不调 `submitContent`/`steerContent` 时，α 的行为、界面与单测完全一致。
+`FeatureHost` 与 `FeatureContext` 的定义在 `src/app/nano-app.ts`；S02 的实现是 `src/controls/feature-host.ts`。不传 `extraPatches`、不装 `features`、不调任何新增方法（`submitContent`/`steerContent`/`requestRestart`）时，α 的行为、界面与单测完全一致。
