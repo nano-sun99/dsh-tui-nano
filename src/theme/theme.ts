@@ -1,7 +1,13 @@
 /**
- * Nano's own colour language (ADR-20261022-independent-tui-theme). The
- * terminal's default background is intentionally never painted; only local
+ * Nano's own colour language (ADR-20261022-independent-tui-theme).
+ *
+ * The terminal's default background is intentionally never painted; only local
  * surfaces (selection, diff, focus) carry an explicit RGB background.
+ *
+ * 色值唯一来源：`docs/specs/2026-10-22-nano-theme-transparency/README.md` §3.2
+ * （与设计稿 preview/index.html 的 CSS 变量一致）。语义角色的别名映射：
+ * user → accent、assistant/code/tool → fg、info → accent、faint → muted、
+ * danger → error。不要在这里另起第二套色板。
  */
 
 export type Rgb = readonly [number, number, number]
@@ -26,53 +32,50 @@ export interface Theme {
   readonly diffDelBg: Rgb
   readonly selectionBg: Rgb
   readonly focusBg: Rgb
-  readonly overlayBg: Rgb
 }
 
 const dark: Theme = {
   name: 'dark',
-  fg: [226, 232, 240],
-  muted: [148, 163, 184],
-  faint: [100, 116, 139],
-  accent: [125, 211, 252],
-  user: [147, 197, 253],
-  assistant: [229, 231, 235],
-  success: [134, 239, 172],
-  warning: [253, 224, 71],
-  danger: [252, 165, 165],
-  info: [196, 181, 253],
-  toolName: [253, 186, 116],
-  code: [191, 219, 254],
-  diffAdd: [187, 247, 208],
-  diffDel: [254, 202, 202],
-  diffAddBg: [20, 83, 45],
-  diffDelBg: [127, 29, 29],
-  selectionBg: [30, 58, 95],
-  focusBg: [51, 65, 85],
-  overlayBg: [30, 41, 59],
+  fg: [232, 230, 224], // #e8e6e0
+  muted: [141, 149, 166], // #8d95a6
+  faint: [141, 149, 166],
+  accent: [125, 161, 222], // #7da1de
+  user: [125, 161, 222],
+  assistant: [232, 230, 224],
+  success: [154, 196, 166], // #9ac4a6
+  warning: [216, 178, 112], // #d8b270
+  danger: [218, 138, 147], // #da8a93
+  info: [125, 161, 222],
+  toolName: [232, 230, 224],
+  code: [232, 230, 224],
+  diffAdd: [161, 200, 170], // #a1c8aa
+  diffDel: [226, 160, 170], // #e2a0aa
+  diffAddBg: [36, 56, 44], // #24382c
+  diffDelBg: [56, 37, 42], // #38252a
+  selectionBg: [59, 74, 102], // #3b4a66
+  focusBg: [36, 43, 53], // #242b35
 }
 
 const light: Theme = {
   name: 'light',
-  fg: [30, 41, 59],
-  muted: [71, 85, 105],
-  faint: [100, 116, 139],
-  accent: [3, 105, 161],
-  user: [29, 78, 216],
-  assistant: [15, 23, 42],
-  success: [22, 101, 52],
-  warning: [161, 98, 7],
-  danger: [185, 28, 28],
-  info: [109, 40, 217],
-  toolName: [154, 52, 18],
-  code: [30, 64, 175],
-  diffAdd: [22, 101, 52],
-  diffDel: [185, 28, 28],
-  diffAddBg: [220, 252, 231],
-  diffDelBg: [254, 226, 226],
-  selectionBg: [191, 219, 254],
-  focusBg: [226, 232, 240],
-  overlayBg: [241, 245, 249],
+  fg: [52, 57, 69], // #343945
+  muted: [98, 105, 120], // #626978
+  faint: [98, 105, 120],
+  accent: [54, 95, 157], // #365f9d
+  user: [54, 95, 157],
+  assistant: [52, 57, 69],
+  success: [49, 95, 62], // #315f3e
+  warning: [133, 91, 24], // #855b18
+  danger: [163, 62, 76], // #a33e4c
+  info: [54, 95, 157],
+  toolName: [52, 57, 69],
+  code: [52, 57, 69],
+  diffAdd: [49, 95, 62], // #315f3e
+  diffDel: [143, 53, 69], // #8f3545
+  diffAddBg: [220, 235, 221], // #dcebdd
+  diffDelBg: [241, 220, 223], // #f1dcdf
+  selectionBg: [213, 222, 242], // #d5def2
+  focusBg: [232, 232, 229], // #e8e8e5
 }
 
 let cached: Theme | undefined
