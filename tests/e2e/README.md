@@ -8,7 +8,7 @@ npm run test:e2e
 NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 ```
 
-前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。两个套件串行跑（`--test-concurrency=1`）。
+前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 24 个用例：安装 16 + 视觉 3 + 能力 1 + 交互 2 + 跨会话 2。
 
 ## `release.test.mjs`（16）
 
@@ -39,9 +39,29 @@ NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 
 **边界**：PTY 只证明 nano 发了什么颜色，不证明 Ghostty 的合成、透明、字体与窗口观感；后者仍要真机截图，不能用本文件替代。
 
+## `capability.test.mjs`（1）
+
+boot 官方核心后读工具注册表：断言 terminal 不在 Agent 工具表里，且 `ask_user_question` 存在。
+
+## `interaction-pty.test.mjs`（2）
+
+真 PTY 里输入并观察界面：
+
+- 无凭据发送消息：界面显示「回合出错」与官方原因，进程不崩。
+- `!echo nano-bang`：显示命令行、输出与退出码。
+
+## `cross-session.test.mjs`（2）
+
+共用一份数据根的两个真 PTY 进程：
+
+- 同根第二窗口被拒，并说明被哪个进程占用。
+- 双 root 并发都能起界面；`sessions` 根共享、叶子目录按 root 分开，`runtime-data/<root>/storage` 各自独立；root-b 的界面与会话日志都不含 root-a 的输入（含正控）。
+
+边界：这里覆盖目录与进程层；九面（草稿/队列/附件/审批/问卷/终端/Monitor/调度）的内存内容隔离仍要专项证据。
+
 ## 隔离与边界
 
-- 使用合成 `HOME` / `DSH_HOME` / `NANO_DATA_ROOT` / npm 安装前缀；npm cache 固定在系统临时目录，不写 `~/.npm`。
+- 使用合成 `HOME` / `DSH_HOME` / `NANO_DATA_ROOT` / npm 安装前缀，并清掉继承的 `DEEPSEEK_API_KEY` 等凭据变量；npm cache 固定在系统临时目录，不写 `~/.npm`。`capability.test.mjs` 在进程内临时改 `process.env`，finally 恢复。
 - 所有 PTY 测试都不开窗口、不抢焦点、不动剪贴板；`pty-start.py` 的 `waitpid` 带超时，卡住时 `killpg` 整组。
 - 「升级」用的 0.2.1 包是从 0.2.0 tarball 解包改版本号重打的，只验证升级安装路径，不是发布物。
 - 需要桌面合成、透明与字体的 Ghostty 视觉验收不在此自动化范围内，按需人工跑并在发布结论里注明证据来源。
