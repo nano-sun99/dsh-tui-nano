@@ -12,8 +12,10 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -331,6 +333,25 @@ test('强杀残留：陈旧挂载锁让下次启动提示 reset', () => {
   const { code, output } = startInPty(ctx.prefix, ctx.env)
   assert.match(output, /reset/, '启动应在界面提示 reset')
   assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
+})
+
+test('核心加载失败：装入不支持的 harness 版本后有可见错误且非零退出', () => {
+  const pkgDir = path.join(ctx.prefix, 'lib', 'node_modules', 'dsh-tui-nano')
+  const pkgRequire = createRequire(path.join(pkgDir, 'package.json'))
+  const anchor = pkgRequire.resolve('@deepseek-ai/dsh/package.json')
+  const backup = `${anchor}.e2e-backup`
+  cpSync(anchor, backup)
+  const pkg = JSON.parse(readFileSync(anchor, 'utf8'))
+  pkg.version = '9.9.9'
+  writeFileSync(anchor, JSON.stringify(pkg, null, 2))
+  try {
+    const { code, output } = startInPty(ctx.prefix, ctx.env)
+    assert.notEqual(code, 0, 'core 加载失败应非零退出')
+    assert.match(output, /版本不受支持/, '应在终端留下可见错误')
+  } finally {
+    cpSync(backup, anchor)
+    rmSync(backup, { force: true })
+  }
 })
 
 // 本机没有对应 Node 时跳过；发布证据运行会显式设置这两个变量。
