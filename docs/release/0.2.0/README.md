@@ -12,7 +12,7 @@
 | `version-matrix.md` | 产物哈希、官方依赖、Node/Ghostty/macOS/CPU、复现命令 |
 | `known-limitations.md` | 必须披露的限制与证据未覆盖项 |
 | `evidence/tests-unit-feature.txt` | `npm run build && npm test`（单元 84 + 功能 25） |
-| `evidence/e2e-release.txt` | 发布级 e2e 15 个用例（安装/启动/升级/purge/卸载/重装/Node 矩阵/门禁） |
+| `evidence/e2e-release.txt` | 发布级 e2e 19 个用例（安装/启动/升级/purge/卸载/重装/Node 矩阵/门禁 + 视觉 token 3） |
 
 ## 复核方式
 

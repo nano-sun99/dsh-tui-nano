@@ -10,36 +10,36 @@
 
  RUN  v3.2.7 <repo>
 
- ✓ tests/unit/seams.test.ts (3 tests) 6ms
- ✓ tests/unit/text.test.ts (10 tests) 4ms
- ✓ tests/unit/decisions.test.ts (7 tests) 31ms
- ✓ tests/unit/boot.test.ts (9 tests) 18ms
- ✓ tests/unit/d01.test.ts (9 tests) 4ms
- ✓ tests/unit/renderer.test.ts (8 tests) 31ms
- ✓ tests/unit/transcript.test.ts (10 tests) 16ms
+ ✓ tests/unit/seams.test.ts (3 tests) 4ms
  ✓ tests/unit/input.test.ts (10 tests) 3ms
- ✓ tests/unit/fixes.test.ts (14 tests) 19ms
- ✓ tests/unit/perf.test.ts (4 tests) 377ms
+ ✓ tests/unit/d01.test.ts (9 tests) 3ms
+ ✓ tests/unit/decisions.test.ts (7 tests) 30ms
+ ✓ tests/unit/boot.test.ts (9 tests) 30ms
+ ✓ tests/unit/renderer.test.ts (8 tests) 18ms
+ ✓ tests/unit/transcript.test.ts (10 tests) 21ms
+ ✓ tests/unit/text.test.ts (10 tests) 5ms
+ ✓ tests/unit/fixes.test.ts (14 tests) 25ms
+ ✓ tests/unit/perf.test.ts (4 tests) 361ms
 
  Test Files  10 passed (10)
       Tests  84 passed (84)
-   Start at  15:09:34
-   Duration  677ms (transform 372ms, setup 0ms, collect 986ms, tests 508ms, environment 1ms, prepare 369ms)
+   Start at  15:23:44
+   Duration  677ms (transform 373ms, setup 0ms, collect 1.05s, tests 501ms, environment 1ms, prepare 369ms)
 
 
  RUN  v3.2.7 <repo>
 
  ✓ tests/feature/bash-mode.test.ts (3 tests) 1ms
- ✓ tests/feature/handoff.test.ts (2 tests) 11ms
+ ✓ tests/feature/handoff.test.ts (2 tests) 14ms
  ✓ tests/feature/jobs.test.ts (2 tests) 1ms
- ✓ tests/feature/info-panel.test.ts (3 tests) 2ms
- ✓ tests/feature/monitor.test.ts (4 tests) 3ms
- ✓ tests/feature/subagents.test.ts (3 tests) 3ms
- ✓ tests/feature/attachments.test.ts (6 tests) 50ms
+ ✓ tests/feature/monitor.test.ts (4 tests) 2ms
+ ✓ tests/feature/subagents.test.ts (3 tests) 6ms
+ ✓ tests/feature/info-panel.test.ts (3 tests) 4ms
+ ✓ tests/feature/attachments.test.ts (6 tests) 52ms
  ✓ tests/feature/cross-root.test.ts (2 tests) 2ms
 
  Test Files  8 passed (8)
       Tests  25 passed (25)
-   Start at  15:09:35
-   Duration  272ms (transform 178ms, setup 0ms, collect 413ms, tests 74ms, environment 1ms, prepare 274ms)
+   Start at  15:23:45
+   Duration  248ms (transform 154ms, setup 0ms, collect 360ms, tests 82ms, environment 0ms, prepare 303ms)
 
