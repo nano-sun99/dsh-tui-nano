@@ -5,15 +5,28 @@
  * 阶段调用。这里按顺序把 S02 的功能面挂上官方根——顺序本身是约束：
  * 命名后端 + 服务键要在 `storageDomain` 之前，探针要在 schedule 之前。
  */
+import type { ReactNode } from 'react'
 import type { FeatureContext, FeatureHost } from '../app/nano-app.ts'
+import { registerKeybinding } from '../input/keymap.ts'
+import type { Key } from '../input/parser.ts'
 import { ScheduleRuntime } from '../schedule/service.ts'
 import { ScheduleStorage } from '../schedule/storage.ts'
 import { SessionControllerAdapter } from '../sessions/session-controller-adapter.ts'
+import { TerminalPane } from '../terminal/pane.ts'
+
+/** 终端面板开关（owner s02）：Ctrl+T。 */
+export const TERMINAL_TOGGLE_ACTION = 'terminal.toggle'
+
+function isTerminalToggle(key: Key): boolean {
+  return key.name === 'char' && key.ctrl === true && key.text === 't'
+}
 
 export class Features implements FeatureHost {
   private context: FeatureContext | undefined
   private storage: ScheduleStorage | undefined
   private schedule: ScheduleRuntime | undefined
+  private terminal: TerminalPane | undefined
+  private disposeKeys: (() => void)[] = []
 
   async start(context: FeatureContext): Promise<void> {
     this.context = context
@@ -38,9 +51,62 @@ export class Features implements FeatureHost {
     })
     this.schedule = schedule
     await schedule.mount()
+
+    // 4) 终端面板：只用官方 terminalController。
+    const pane = new TerminalPane({
+      ctx,
+      sessionId: context.rootId,
+      getAgent: () => context.conversation.agent,
+      onChange: () => context.requestRender(),
+      writeDiagnostic: (line) => context.renderer // 诊断走 stderr
+        ? process.stderr.write(`${line}\n`)
+        : undefined,
+    })
+    this.terminal = pane
+    this.disposeKeys.push(
+      registerKeybinding({
+        id: TERMINAL_TOGGLE_ACTION,
+        keys: [{ name: 'char', text: 't', ctrl: true }],
+        scopes: ['idle', 'input', 'running'],
+        description: '打开/关闭终端面板',
+        owner: 's02',
+      }),
+    )
+  }
+
+  handleKey(key: Key): boolean {
+    if (!this.terminal) return false
+    // 开关必须交回 keymap：否则面板聚焦时会把 Ctrl+T 当成终端输入吃掉。
+    if (isTerminalToggle(key)) return false
+    return this.terminal.handleKey(key, false)
+  }
+
+  dispatchAction(action: string): boolean {
+    if (action !== TERMINAL_TOGGLE_ACTION) return false
+    if (!this.terminal) return false
+    if (this.terminal.visible) this.terminal.hide()
+    else void this.terminal.open(this.innerWidth(), this.innerHeight())
+    return true
+  }
+
+  body(): ReactNode {
+    if (!this.terminal?.visible) return null
+    return this.terminal.render(this.innerWidth(), this.innerHeight())
+  }
+
+  private innerWidth(): number {
+    return Math.max(20, (this.context?.terminal.width ?? 80) - 2)
+  }
+
+  private innerHeight(): number {
+    return Math.max(6, Math.min(20, (this.context?.terminal.height ?? 24) - 12))
   }
 
   async dispose(): Promise<void> {
+    for (const dispose of this.disposeKeys) dispose()
+    this.disposeKeys = []
+    await this.terminal?.close().catch?.(() => {})
+    this.terminal = undefined
     this.schedule?.dispose()
     this.schedule = undefined
     await this.storage?.dispose()

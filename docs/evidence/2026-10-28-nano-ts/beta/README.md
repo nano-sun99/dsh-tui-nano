@@ -51,3 +51,48 @@ DSH_HOME=/tmp/nano-spike-0b/home NANO_DATA_ROOT=/tmp/nano-spike-0b/data \
 1. **路由会让 `storageDomain` 整体延后激活**。`storage-domain` 的 `routes` 指向命名后端时，官方 facility 会等该后端的 service key；boot 期间 `session-projection-cache` 报 `pending (waiting for service: storageDomain)`。所以后端注册 + 服务键必须在 boot 后**最靠前**完成，任一失败即启动失败——与 spec §3.5 的单一结论一致，且影响面比 schedule 本身更大。
 2. 探针域路径就是 `<数据根>/runtime-data/<root>/schedule-storage/nano_probe.json`；schedule 任务表同目录 `schedule.json`，per-root 隔离由 root 本身提供。
 3. 终端 `create` 需要 `AbortSignal` 第三参；`setup` 回调必须返回 `undefined`（否则 agent-loop 会把它当 `{commit}` 用）。
+
+## 1. 终端附着（in-process Remote）
+
+`terminalController.attach()` 要求 `ctx.invocation`，直接调方法会抛
+「Terminal attachment requires a Remote invocation」。可行路径是自建 owner Peer，
+经 `ctx.typertGateway.stream()` 打开：
+
+```text
+new Peer(ctx, { principal: { kind: 'owner' }, interactions: 'none' })
+ctx.get('typertGateway').stream({
+  namespace: 'terminal', method: 'attach',
+  args: { agentId: <根会话 id>, id: <WebTerminalId> },
+  uplink, peer, signal,
+})
+```
+
+证据（`beta/tools/terminal-attach-probe.mjs`）：
+
+```json
+{
+  "created": { "id": "probe-term-1", "shell": "/bin/zsh", "state": "running" },
+  "sawSnapshot": true,
+  "snapshotHead": "",
+  "frames": ["snapshot", "output"],
+  "raw": ["{\"type\":\"snapshot\",\"sequence\":0,\"screen\":\"\",\"info\":{…}}",
+          "{\"type\":\"output\",\"sequence\":1,\"data\":\"echo nano-terminal-probe\\r\\n\"}"],
+  "echo": true,
+  "closed": true
+}
+```
+
+要点：
+
+1. 附着后第一帧是 `snapshot`（`screen` 可能是空串），随后是 `output` 原始 VT 字节 —— 直接喂
+   `CellGrid.feed()`。
+2. 上行是 `TerminalInput`（`write` / `resize`，各自带连续 `sequence`）；用推送队列喂
+   `uplink` 异步迭代器。
+3. 真机驱动（`script` PTY，Ctrl+T 开面板 → 输入 `echo nano-pane-ok` → Ctrl+T 关 → Ctrl+C 退出）：
+   屏幕出现 `nano-pane-ok`，退出码 0，关停七项全 `stopped`，中断不计为失败。
+
+## 2. 自定细节
+
+- 终端面板开关键位：`Ctrl+T`（owner `s02`，经 D01 keymap 注册）。
+- 面板高度上限 20 行、宽度 = 终端宽 - 2；隐藏保留 PTY，`close()` 才释放。
+- 诊断行（打开/关闭失败、流中断）写 stderr（即日志文件），不进 transcript。
