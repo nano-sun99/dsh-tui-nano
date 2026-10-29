@@ -96,3 +96,7 @@ ctx.get('typertGateway').stream({
 - 终端面板开关键位：`Ctrl+T`（owner `s02`，经 D01 keymap 注册）。
 - 面板高度上限 20 行、宽度 = 终端宽 - 2；隐藏保留 PTY，`close()` 才释放。
 - 诊断行（打开/关闭失败、流中断）写 stderr（即日志文件），不进 transcript。
+- 功能面测试入口：根 `vitest.config.ts`（S01 拥有）只收 `tests/unit`，S02 的用例放 `tests/feature/` 并用自己的 `tests/feature/vitest.config.ts`：
+  `npx vitest run --config tests/feature/vitest.config.ts`。
+- 附件链：`@` 引用只在行首/空白后触发；图片按扩展名判定（png/jpg/jpeg/webp/gif），提交前
+  `saveImages` → `admitPromptContent`，任何一张被拒整条消息失败并保留草稿；通用文件链待接。

@@ -14,6 +14,7 @@ import { ScheduleRuntime } from '../schedule/service.ts'
 import { ScheduleStorage } from '../schedule/storage.ts'
 import { SessionControllerAdapter } from '../sessions/session-controller-adapter.ts'
 import { TerminalPane } from '../terminal/pane.ts'
+import { assemblePrompt, findReferences } from '../attachments/prompt.ts'
 import { Completions } from './completions.ts'
 
 /** 终端面板开关（owner s02）：Ctrl+T。 */
@@ -92,8 +93,36 @@ export class Features implements FeatureHost {
     // 开关必须交回 keymap：否则面板聚焦时会把 Ctrl+T 当成终端输入吃掉。
     if (isTerminalToggle(key)) return false
     if (this.completions?.handleKey(key)) return true
-    if (!this.terminal) return false
-    return this.terminal.handleKey(key, false)
+    if (this.terminal?.visible && this.terminal.handleKey(key, false)) return true
+    // 带图片引用时 Enter 走附件链：持久化 + 官方准入后再提交。
+    if (key.name === 'enter' && !key.shift && !key.ctrl && !key.alt) {
+      const text = this.context?.input.text ?? ''
+      if (findReferences(text).some((reference) => reference.image)) {
+        void this.submitWithAttachments(text)
+        return true
+      }
+    }
+    return false
+  }
+
+  /** 附件链提交：失败保留草稿并提示，不静默吞掉。 */
+  private async submitWithAttachments(text: string): Promise<void> {
+    const context = this.context
+    if (!context) return
+    try {
+      const assembled = await assemblePrompt({
+        ctx: context.core.ctx,
+        cwd: context.cwd,
+        text,
+      })
+      if (assembled.rejected.length > 0) throw new Error(assembled.rejected.join('；'))
+      context.conversation.submitContent({ content: assembled.content, displayText: text })
+      context.input.take()
+      context.setNotice(undefined)
+    } catch (error) {
+      const message = String((error as Error)?.message ?? error)
+      context.setNotice(`附件提交失败：${message}（草稿已保留）`)
+    }
   }
 
   dispatchAction(action: string): boolean {
