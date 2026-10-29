@@ -294,9 +294,16 @@ export class Features implements FeatureHost {
         if (result.text) model.appendNotice(result.text, 'info')
       } else if (result?.kind === 'error') {
         model.appendNotice(`命令失败：${result.text}`, 'danger')
+        if (name === 'permission') {
+          // 权限失败不乐观更新：保留原值，提示可能已部分生效。
+          model.appendNotice('可能已部分生效，请重开 /permission 核对', 'warning')
+        }
       }
     } catch (error) {
       model.appendNotice(`命令失败：${String((error as Error)?.message ?? error)}`, 'danger')
+      if (name === 'permission') {
+        model.appendNotice('可能已部分生效，请重开 /permission 核对', 'warning')
+      }
     }
     context.requestRender()
   }
