@@ -27,6 +27,6 @@
 - **v2 的 Ghostty 真机视觉**：深/浅主题、间距、process-display、diff 8 行、CJK/窄屏有实现与单测，PTY 无头验证也确认了主题 RGB 与 60/100 列；但没有 0.2.0 的 Ghostty 截图，合成、透明、字体与窗口观感未验证；`docs/release/0.1.0/evidence/ghostty/` 的截图属于已退场的 Rust 实现，不能替代。
 - **IME 组合态**：parser 按 UTF-8 / grapheme 处理，组合中的预编辑文本由终端负责；真实输入法组合未自动模拟。
 - **鼠标拖选与剪贴板**：选区提取、宽字符起点、OSC 52 / pbcopy 有单测；Ghostty 实际拖选手感未取证。
+- **主链路只对 mock 验证**：`tests/e2e/main-chain.test.mjs` 用本地 Anthropic Messages SSE mock 跑通对话/工具/差异/审批/完成，未连接真实模型服务。
 - **断网**：未模拟真实网络不可达；「官方调用失败」路径已有 e2e（无凭据时界面显示回合出错且不崩）。
-- **`!` 权限提示**：S08 §2.2 要求首次使用时提示「以用户权限运行、不是 Agent 授权」，当前界面只显示 `$ cmd`，属于 S02 未实现项。
 - **跨会话九面内容隔离**：session/storage 目录隔离、同根第二窗口拒绝、双 root 并发已有 e2e；草稿 / 队列 / 附件 / 审批 / 问卷 / 终端 / Monitor / 调度八面的内容隔离仍未逐面取证。
