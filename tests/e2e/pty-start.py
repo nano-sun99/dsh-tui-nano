@@ -30,6 +30,11 @@ def main() -> int:
     # 就绪后往终端里打一行（自动回车），再等 --send-wait 秒收集输出。
     parser.add_argument("--send", default=None)
     parser.add_argument("--send-wait", type=float, default=3.0)
+    # 被测进程的工作目录（默认继承调用方）。
+    parser.add_argument("--cwd", default=None)
+    # --send 之后按一串命名键（逗号分隔：up/down/left/right/enter/esc/tab）。
+    parser.add_argument("--keys", default=None)
+    parser.add_argument("--keys-wait", type=float, default=5.0)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
@@ -38,6 +43,8 @@ def main() -> int:
         command = command[1:]
     if not command:
         parser.error("missing command")
+    if args.cwd:
+        os.chdir(args.cwd)
 
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", args.rows, args.cols, 0, 0))
@@ -96,6 +103,36 @@ def main() -> int:
             pass
         send_deadline = time.time() + args.send_wait
         while time.time() < send_deadline:
+            ready, _, _ = select.select([master], [], [], 0.2)
+            if not ready:
+                continue
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            collected.extend(chunk)
+
+    key_bytes = {
+        "up": b"\x1b[A",
+        "down": b"\x1b[B",
+        "left": b"\x1b[D",
+        "right": b"\x1b[C",
+        "enter": b"\r",
+        "esc": b"\x1b",
+        "tab": b"\t",
+    }
+    if args.keys:
+        payload = b"".join(
+            key_bytes[name.strip()] for name in args.keys.split(",") if name.strip() in key_bytes
+        )
+        try:
+            os.write(master, payload)
+        except OSError:
+            pass
+        keys_deadline = time.time() + args.keys_wait
+        while time.time() < keys_deadline:
             ready, _, _ = select.select([master], [], [], 0.2)
             if not ready:
                 continue

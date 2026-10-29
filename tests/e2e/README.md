@@ -8,7 +8,7 @@ npm run test:e2e
 NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 ```
 
-前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 24 个用例：安装 16 + 视觉 3 + 能力 1 + 交互 2 + 跨会话 2。
+前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 26 个用例：安装 16 + 视觉 3 + 能力 1 + 交互 2 + 跨会话 2 + 主链路 2。
 
 ## `release.test.mjs`（16）
 
@@ -58,6 +58,15 @@ boot 官方核心后读工具注册表：断言 terminal 不在 Agent 工具表�
 - 双 root 并发都能起界面；`sessions` 根共享、叶子目录按 root 分开，`runtime-data/<root>/storage` 各自独立；root-b 的界面与会话日志都不含 root-a 的输入（含正控）。
 
 边界：这里覆盖目录与进程层；九面（草稿/队列/附件/审批/问卷/终端/Monitor/调度）的内存内容隔离仍要专项证据。
+
+## `main-chain.test.mjs`（2）+ `mock-model.mjs`
+
+用本地 Anthropic Messages SSE mock 当模型（`DEEPSEEK_BASE_URL` 指向它，假 key），真 PTY 跑主链路：
+
+- read → edit：文件被改写，差异块折叠可展开，收到最终回复。
+- bash 提权：审批卡弹出、默认焦点在「拒绝」；↑+Enter 选「允许一次」后命令执行并完成。
+
+mock 监听随机端口，不触真实网络与真实凭据。
 
 ## 隔离与边界
 

@@ -10,10 +10,10 @@
 | 项 | 值 |
 | --- | --- |
 | 文件 | `packaging/dist/dsh-tui-nano-0.2.0.tgz` |
-| 大小 | 159,559 字节（约 156 KiB） |
+| 大小 | 159,759 字节（约 156 KiB） |
 | 文件数 | 116 |
-| SHA-256 | `1a2d53571ee1f697ffd88d2d58f17f5351fdf2060615321bbd9af9015caddf88` |
-| 期望 `dist.integrity` | `sha512-1cOtd1HzXYnpxJvKp/+FSdZxEFwr0GS3d17Y+5vuUWakzo96AZB491nDXPQrhQGwIC0fnM41/IBO59guIe1t5g==` |
+| SHA-256 | `26ebee16482100c7adf901c40fc9579249bfc143d07a46d0211ed7d5ec800f19` |
+| 期望 `dist.integrity` | `sha512-c8N5/GbEbtiwG1ZKXom3b0YLuysZM1IeNG07tklAK8Ag/wKXA4Ka6hlQ6czPty17lkWU62087ArrkhUPdouyIg==` |
 
 期望 integrity 按 npm 的算法（tarball 的 SHA-512，base64）本地计算；只有发布到 registry 后才能用 `npm view dsh-tui-nano@0.2.0 dist.integrity` 核对。见 `release-conclusion.md` 的未验证项。
 
