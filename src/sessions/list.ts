@@ -21,6 +21,8 @@ export interface SessionsPanelOptions {
   readonly rootId: string
   readonly onChange: () => void
   readonly writeDiagnostic: (line: string) => void
+  /** 切根：交给受控重启；失败由 S01 的失败矩阵处理。 */
+  readonly onSwitch?: (rootId: string) => void
 }
 
 export class SessionsPanel {
@@ -113,7 +115,12 @@ export class SessionsPanel {
     if (key.name === 'enter') {
       const row = this.rows[this.selected]
       if (row && !row.current) {
-        this.notice = '切换会话需要受控重启（未开放），当前根不变'
+        if (this.options.onSwitch) {
+          this.notice = `正在切换到 ${row.id}…`
+          this.options.onSwitch(row.id)
+        } else {
+          this.notice = '切换会话需要受控重启，当前根不变'
+        }
       }
       return true
     }

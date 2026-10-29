@@ -7,7 +7,8 @@ import { closeSync, existsSync, openSync, rmSync, writeSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createElement } from 'react'
-import { AppExit, NanoApp } from './app/nano-app.ts'
+import { spawn } from 'node:child_process'
+import { AppExit, AppRestart, NanoApp } from './app/nano-app.ts'
 import { Skeleton } from './app/skeleton.tsx'
 import { type PreparedCore, prepareCore, startCore } from './boot/assemble.ts'
 import { loadOfficial, type OfficialModules } from './boot/official.ts'
@@ -174,6 +175,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       await app.start()
       return 0
     } catch (error) {
+      if (error instanceof AppRestart) return await relaunchInto(error.rootId)
       if (error instanceof AppExit) return error.code
       throw error
     }
@@ -193,6 +195,26 @@ export async function main(argv: readonly string[]): Promise<number> {
     for (const signal of earlySignals) process.off(signal, earlySignalHandler)
     terminal.restore()
   }
+}
+
+/**
+ * 受控重启：终端已恢复、认领已释放，交回 launcher 以 `--root <rootId>` 重新拉起。
+ * 清掉 `NANO_GUARDED`，让新进程重新走 fd 守护。
+ */
+function relaunchInto(rootId: string): Promise<number> {
+  return new Promise((resolve) => {
+    const env = { ...process.env }
+    delete env.NANO_GUARDED
+    const child = spawn(process.execPath, [process.argv[1] as string, '--root', rootId], {
+      stdio: ['inherit', 'inherit', 'inherit'],
+      env,
+    })
+    child.on('error', (error) => {
+      reportVisible(`nano: 重启失败：${String(error)}`)
+      resolve(1)
+    })
+    child.on('exit', (code, signal) => resolve(signal ? 1 : (code ?? 1)))
+  })
 }
 
 /** B8: show where configuration, credentials and global instructions came from. */

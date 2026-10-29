@@ -10,6 +10,7 @@ import type { FeatureContext, FeatureHost } from '../app/nano-app.ts'
 import { registerKeybinding } from '../input/keymap.ts'
 import type { Key } from '../input/parser.ts'
 import { Box } from '../render/components.ts'
+import { takeHandoff } from '../runtime/handoff.ts'
 import { ScheduleRuntime } from '../schedule/service.ts'
 import { ScheduleStorage } from '../schedule/storage.ts'
 import { SessionControllerAdapter } from '../sessions/session-controller-adapter.ts'
@@ -88,6 +89,21 @@ export class Features implements FeatureHost {
     this.schedule = schedule
     await schedule.mount()
 
+    // 受控重启的落点：读走 handoff（读后删），只认目标根一致的那份。
+    try {
+      const handoff = takeHandoff(context.dataRoot)
+      if (handoff && handoff.rootId === context.rootId) {
+        const draft = handoff.payload?.draft
+        if (typeof draft === 'string' && draft !== '') {
+          context.input.insert(draft)
+          context.setNotice('已从上一次受控切换恢复草稿')
+        }
+      }
+    } catch (error) {
+      // handoff 损坏：官方 takeHandoff 已删除并报错；这里不猜、不静默继续。
+      throw new Error(`nano: handoff 损坏，停止启动：${String((error as Error)?.message ?? error)}`)
+    }
+
     // 能力快照（spec §2.5）：β 必需项缺一即启动失败并点名。
     const missing: string[] = []
     if (!ctx.get('terminalController')) missing.push('terminalController')
@@ -147,6 +163,7 @@ export class Features implements FeatureHost {
       rootId: context.rootId,
       onChange: () => context.requestRender(),
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
+      onSwitch: (rootId) => context.requestRestart({ rootId, reason: 'root-switch', payload: { draft: context.input.text } }),
     })
     this.jobs = new JobsPanel({
       ctx,

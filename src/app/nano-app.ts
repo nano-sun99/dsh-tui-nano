@@ -14,6 +14,7 @@ import { resolveKey } from '../input/keymap.ts'
 import type { InputEvent, Key } from '../input/parser.ts'
 import { INPUT_BYTE_LIMIT } from '../input/segments.ts'
 import type { Renderer } from '../render/renderer.ts'
+import { writeHandoff } from '../runtime/handoff.ts'
 import { formatShutdownReport, Lifecycle } from '../runtime/lifecycle.ts'
 import type { Terminal } from '../runtime/terminal.ts'
 import { EDGE } from '../theme/spacing.ts'
@@ -37,6 +38,22 @@ export interface NanoAppOptions {
   readonly features?: FeatureHost
 }
 
+/** 受控重启请求（spec §1 第 6 条接缝）：只换根，不建替代会话。 */
+export interface RestartRequest {
+  readonly rootId: string
+  readonly reason?: 'root-switch' | 'cold-rename'
+  readonly payload?: Record<string, unknown>
+}
+
+/** 受控重启：main 捕获后交回 launcher 以 `--root <rootId>` 重新拉起。 */
+export class AppRestart extends Error {
+  readonly rootId: string
+  constructor(rootId: string) {
+    super(`nano: 受控重启到根 ${rootId}`)
+    this.rootId = rootId
+  }
+}
+
 /** S02 拿到的东西：官方根、渲染/终端句柄，以及回写 S01 状态的两个入口。 */
 export interface FeatureContext {
   readonly core: CoreBoot
@@ -54,6 +71,8 @@ export interface FeatureContext {
   requestRender(): void
   /** 写一行提示到状态栏；传 undefined 清掉。 */
   setNotice(text: string | undefined): void
+  /** 受控重启：冻结输入 → 写 handoff → 既有关停 → 以新根重新拉起。 */
+  requestRestart(request: RestartRequest): void
 }
 
 /**
@@ -95,6 +114,7 @@ export class NanoApp {
   private lastUnknownLog = 0
   private finishResolve: ((code: number) => void) | undefined
   private coreDisposed = false
+  private pendingRestart: RestartRequest | undefined
 
   constructor(options: NanoAppOptions) {
     this.options = options
@@ -131,6 +151,7 @@ export class NanoApp {
         this.notice = text
         this.scheduleRender()
       },
+      requestRestart: (request) => this.requestRestart(request),
     })
     this.render()
     const finish = new Promise<number>((resolve) => {
@@ -141,6 +162,7 @@ export class NanoApp {
     void conversation.onChange(() => this.scheduleRender())
     this.decisions.onChange(() => this.scheduleRender())
     return finish.then((code) => {
+      if (this.pendingRestart) throw new AppRestart(this.pendingRestart.rootId)
       throw new AppExit(code)
     })
   }
@@ -532,6 +554,14 @@ export class NanoApp {
     }
   }
 
+  /** 记录重启意图并走既有关停；关停里写 handoff，start() 结束时抛 AppRestart。 */
+  private requestRestart(request: RestartRequest): void {
+    if (this.pendingRestart) return
+    this.pendingRestart = request
+    this.exitCode = 0
+    void this.shutdown(`restart ${request.rootId}`)
+  }
+
   private async shutdown(reason: string): Promise<void> {
     if (this.stopping) {
       // The terminal delivers Ctrl+C to the launcher and the runtime; the
@@ -544,6 +574,22 @@ export class NanoApp {
     this.stopping = true
     this.shutdownStartedAt = Date.now()
     this.options.writeDiagnostic(`nano: 开始关停（${reason}）`)
+    if (this.pendingRestart) {
+      // 冻结输入之后、drain 之前：handoff 先落地，失败就放弃重启并报错。
+      try {
+        writeHandoff(this.options.dataRoot, {
+          rootId: this.pendingRestart.rootId,
+          sessionId: this.options.rootId,
+          reason: this.pendingRestart.reason ?? 'root-switch',
+          ...(this.pendingRestart.payload ? { payload: this.pendingRestart.payload } : {}),
+        })
+      } catch (error) {
+        this.pendingRestart = undefined
+        this.options.writeDiagnostic(
+          `nano: handoff 写入失败，取消重启：${String((error as Error)?.message ?? error)}`,
+        )
+      }
+    }
     const { core, conversation, claim, terminal } = this.options
     this.lifecycle.register('drain', 'features', async () => {
       try {
