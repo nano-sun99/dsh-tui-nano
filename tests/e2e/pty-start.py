@@ -12,6 +12,7 @@ import fcntl
 import os
 import pty
 import select
+import signal
 import struct
 import sys
 import termios
@@ -72,8 +73,14 @@ def main() -> int:
         pass
 
     # 再给关停一点时间；3s 强制恢复之后还没退出就收尾。
+    # waitpid 必须带超时：被测进程若卡住，python 不能永久阻塞并把 nano 留成孤儿。
+    status = None
     quiet_deadline = time.time() + 8.0
     while time.time() < quiet_deadline:
+        done, waited = os.waitpid(pid, os.WNOHANG)
+        if done == pid:
+            status = waited
+            break
         ready, _, _ = select.select([master], [], [], 0.2)
         if not ready:
             continue
@@ -85,7 +92,17 @@ def main() -> int:
             break
         chunks.append(chunk)
 
-    _, status = os.waitpid(pid, 0)
+    if status is None:
+        # 子进程是 setsid 出来的，pgid == pid；整组杀掉，避免遗留持有挂载锁。
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except OSError:
+            pass
+        try:
+            _, status = os.waitpid(pid, 0)
+        except ChildProcessError:
+            status = 0
+
     exit_code = os.waitstatus_to_exitcode(status)
 
     with open(args.out, "wb") as handle:

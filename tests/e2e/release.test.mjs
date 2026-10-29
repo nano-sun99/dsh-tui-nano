@@ -1,6 +1,6 @@
 // 发布级 e2e（S03 §6）：用合成 HOME / DSH_HOME / 数据根 / 安装前缀，对
 // `npm pack` 产物做「全新安装 → 启动 → 升级 → purge → 卸载 → 重装」，
-// 每步记录文件清单与哈希。不读写用户真实目录。
+// 每步记录文件清单与哈希。npm 的 cache 固定在系统临时目录，不写用户的 ~/.npm。
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -23,6 +23,10 @@ const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 const nodeBin = process.execPath
 const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'))
 const expectedVersion = packageJson.version
+
+// 所有 npm 命令共用一份合成 HOME 与固定 cache；跨运行复用，避免每次重下整棵官方依赖树。
+const sharedHome = mkdtempSync(path.join(os.tmpdir(), 'nano-e2e-home-'))
+const sharedNpmCache = path.join(os.tmpdir(), 'nano-e2e-npm-cache')
 
 function tempDir(prefix) {
   return mkdtempSync(path.join(os.tmpdir(), `${prefix}-`))
@@ -52,11 +56,10 @@ function sha256File(file) {
 }
 
 function baseEnv(extra = {}) {
-  // 不覆盖 npm cache：合成一份空 cache 会把整棵官方依赖树重新下载一遍，
-  // 慢且容易在网络上抖。安装前缀、HOME、DSH_HOME、数据根仍然是合成的。
   return {
-    PATH: process.env.PATH,
-    HOME: process.env.HOME,
+    ...process.env,
+    HOME: sharedHome,
+    npm_config_cache: sharedNpmCache,
     ...extra,
   }
 }
@@ -67,7 +70,7 @@ function run(command, args, { env, cwd, input } = {}) {
     env: env ?? baseEnv(),
     encoding: 'utf8',
     input,
-    timeout: 180000,
+    timeout: 240000,
   })
 }
 
@@ -104,7 +107,7 @@ function packTo(destination) {
  */
 function packUpgradeVariant(tarball, destination, nextVersion) {
   const work = tempDir('nano-e2e-upgrade-src')
-  mustRun('tar', ['-xzf', tarball, '-C', work])
+  mustRun('tar', ['-xzf', tarball, '-C', work], { env: baseEnv() })
   const pkgPath = path.join(work, 'package', 'package.json')
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
   pkg.version = nextVersion
@@ -176,31 +179,68 @@ function startInPty(prefix, env, { waitMs = 7000, nodeBin: extraNode } = {}) {
 
 // ── 一次打包，全文件共用 ────────────────────────────────────────────────
 
-const ctx = { artifacts: tempDir('nano-e2e-artifacts') }
+const ctx = {
+  artifacts: tempDir('nano-e2e-artifacts'),
+  home: sharedHome,
+  dshHome: path.join(sharedHome, '.dsh'),
+  dataRoot: path.join(sharedHome, '.dsh-tui-nano'),
+  prefix: tempDir('nano-e2e-prefix'),
+}
+ctx.env = { HOME: ctx.home, DSH_HOME: ctx.dshHome, NANO_DATA_ROOT: ctx.dataRoot }
+
+/** 记录每步前后的清单与摘要哈希；证据文件里能看到每步的真实状态。 */
+function snapshot(label) {
+  const trees = {
+    dataRoot: hashTree(ctx.dataRoot),
+    dshHome: hashTree(ctx.dshHome),
+    installed: hashTree(path.join(ctx.prefix, 'lib', 'node_modules', 'dsh-tui-nano')),
+  }
+  const summary = Object.fromEntries(
+    Object.entries(trees).map(([key, files]) => {
+      const digest = createHash('sha256').update(JSON.stringify(files)).digest('hex').slice(0, 16)
+      return [key, { files: Object.keys(files).length, digest }]
+    }),
+  )
+  console.log(`STEP ${label} ${JSON.stringify(summary)}`)
+  return trees
+}
 
 test.before(() => {
+  mkdirSync(ctx.dshHome, { recursive: true })
   ctx.packed = packTo(path.join(ctx.artifacts, 'pack'))
+  const second = packTo(path.join(ctx.artifacts, 'pack-2'))
+  assert.equal(
+    ctx.packed.sha256,
+    second.sha256,
+    `两次 npm pack 的 SHA-256 应一致：${ctx.packed.sha256} != ${second.sha256}`,
+  )
+  console.log(`PACK sha256=${ctx.packed.sha256} integrity=${integrityOf(ctx.packed.tarball)}`)
   const packFiles = ctx.packed.files
   assert.ok(packFiles.includes('dist/bin.js'), 'tarball 必须包含 dist/bin.js')
   assert.ok(!packFiles.some((file) => file.startsWith('src/')), 'tarball 不应包含 src/')
   assert.ok(!packFiles.some((file) => file.startsWith('tests/')), 'tarball 不应包含 tests/')
   const entry = path.join(repoRoot, 'dist', 'bin.js')
   assert.match(readFileSync(entry, 'utf8').split('\n')[0], /^#!/, 'dist/bin.js 必须带 shebang')
-  ctx.prefix = tempDir('nano-e2e-prefix')
-  ctx.home = tempDir('nano-e2e-home')
-  ctx.dshHome = path.join(ctx.home, '.dsh')
-  ctx.dataRoot = path.join(ctx.home, '.dsh-tui-nano')
-  mkdirSync(ctx.dshHome, { recursive: true })
-  ctx.env = { HOME: ctx.home, DSH_HOME: ctx.dshHome, NANO_DATA_ROOT: ctx.dataRoot }
 })
 
-test('pack 产物与哈希可复现', () => {
+function integrityOf(file) {
+  return `sha512-${createHash('sha512').update(readFileSync(file)).digest('base64')}`
+}
+
+test('pack 产物可复现且与版本矩阵一致', () => {
   assert.match(ctx.packed.sha256, /^[0-9a-f]{64}$/)
   assert.ok(ctx.packed.tarball.endsWith(`dsh-tui-nano-${expectedVersion}.tgz`))
+  const matrix = readFileSync(path.join(repoRoot, 'docs/release/0.2.0/version-matrix.md'), 'utf8')
+  assert.ok(
+    matrix.includes(ctx.packed.sha256),
+    `version-matrix.md 未记录当前 tarball 的 SHA-256（${ctx.packed.sha256}）`,
+  )
 })
 
 test('全新安装后 nano --version 可用', () => {
+  snapshot('before-install')
   installGlobal(ctx.packed.tarball, ctx.prefix)
+  snapshot('after-install')
   assert.ok(existsSync(nanoBin(ctx.prefix)))
   const result = runNano(ctx.prefix, ['--version'], ctx.env)
   assert.equal(result.status, 0, result.stderr)
@@ -220,14 +260,32 @@ test('purge 无 --yes 且非交互时拒绝并保留数据根', () => {
   mkdirSync(ctx.dataRoot, { recursive: true })
   const marker = path.join(ctx.dataRoot, 'marker.txt')
   writeFileSync(marker, 'keep')
+  snapshot('before-purge-refused')
   const result = runNano(ctx.prefix, ['purge'], ctx.env)
+  snapshot('after-purge-refused')
   assert.notEqual(result.status, 0, '非交互 purge 必须失败')
   assert.match(result.stderr, /--yes/)
   assert.ok(existsSync(marker), '数据根不能被删除')
 })
 
+test('--root purge 不会被当成 purge 子命令（回归：数据丢失）', () => {
+  mkdirSync(ctx.dataRoot, { recursive: true })
+  const marker = path.join(ctx.dataRoot, 'root-purge-marker.txt')
+  writeFileSync(marker, 'keep')
+  for (const args of [
+    ['--root', 'purge', '--yes'],
+    ['--root=purge', '--yes'],
+  ]) {
+    const result = runNano(ctx.prefix, args, ctx.env)
+    assert.notEqual(result.status, 0, `${args.join(' ')} 在非 TTY 下应失败，而不是删数据根`)
+    assert.ok(existsSync(marker), `${args.join(' ')} 不得删除数据根`)
+  }
+})
+
 test('purge --yes 删除数据根', () => {
+  snapshot('before-purge')
   const result = runNano(ctx.prefix, ['purge', '--yes'], ctx.env)
+  snapshot('after-purge')
   assert.equal(result.status, 0, result.stderr)
   assert.equal(existsSync(ctx.dataRoot), false, '数据根应被删除')
 })
@@ -245,7 +303,7 @@ test('启动冒烟：真 PTY 下起骨架并干净退出，$DSH_HOME 只允许�
   )
   assert.deepEqual(changed, [], '$DSH_HOME 既有文件不应被改动')
   assert.ok(existsSync(ctx.dataRoot), '启动后应创建数据根')
-  assert.match(output, /nano|DeepSeek/i, 'PTY 输出应包含界面内容')
+  assert.match(output, /正在启动官方核心/, 'PTY 输出应出现 pre-boot 骨架')
   assert.ok(code === 0 || code === 130, `退出码异常：${code}\n${output.slice(0, 2000)}`)
 })
 
@@ -280,11 +338,21 @@ const node22 = process.env.NANO_NODE_22
 const node20 = process.env.NANO_NODE_20
 
 test('Node 22.19（下限）里能启动', { skip: node22 ? false : '未设置 NANO_NODE_22' }, () => {
+  const actual = run(node22, ['-p', 'process.versions.node'], { env: baseEnv() })
+  assert.equal(actual.status, 0, actual.stderr)
+  assert.equal(actual.stdout.trim(), '22.19.0', 'NANO_NODE_22 必须真的指向 22.19.0')
   const version = run(node22, [path.join(repoRoot, 'dist', 'bin.js'), '--version'], {
     env: baseEnv({ NANO_DATA_ROOT: ctx.dataRoot }),
   })
   assert.equal(version.status, 0, version.stderr)
   assert.match(version.stdout, new RegExp(`nano ${expectedVersion.replaceAll('.', '\\.')}`))
+  // 确认 PTY 的 PATH 真的会解析到 22.19.0，而不是悄悄用了默认 node。
+  const resolved = run(
+    'env',
+    [`PATH=${path.dirname(node22)}:${process.env.PATH}`, 'node', '-p', 'process.versions.node'],
+    { env: baseEnv() },
+  )
+  assert.equal(resolved.stdout.trim(), '22.19.0')
   const { code, output } = startInPty(ctx.prefix, ctx.env, { nodeBin: node22 })
   assert.ok(code === 0 || code === 130, `22.19 启动退出码异常：${code}\n${output.slice(0, 1500)}`)
 })
@@ -300,7 +368,9 @@ test('低于 22.19 拒绝启动并给可操作错误', { skip: node20 ? false : 
 
 test('升级：安装更高版本后 --version 跟着变', () => {
   const next = packUpgradeVariant(ctx.packed.tarball, path.join(ctx.artifacts, 'upgrade'), '0.2.1')
+  snapshot('before-upgrade')
   installGlobal(next, ctx.prefix)
+  snapshot('after-upgrade')
   const upgraded = runNano(ctx.prefix, ['--version'], ctx.env)
   assert.equal(upgraded.status, 0, upgraded.stderr)
   assert.match(upgraded.stdout, /nano 0\.2\.1/)
@@ -312,15 +382,18 @@ test('升级：安装更高版本后 --version 跟着变', () => {
   )
 })
 
-test('普通卸载保留数据根，重装后仍可启动', () => {
+test('普通卸载保留数据根，重装后能真正启动', () => {
   mkdirSync(ctx.dataRoot, { recursive: true })
   writeFileSync(path.join(ctx.dataRoot, 'profile-marker'), 'keep')
+  snapshot('before-uninstall')
   uninstallGlobal(ctx.prefix)
+  snapshot('after-uninstall')
   assert.equal(existsSync(nanoBin(ctx.prefix)), false, '卸载后 bin 应消失')
   assert.ok(existsSync(path.join(ctx.dataRoot, 'profile-marker')), '普通卸载必须保留数据根')
   installGlobal(ctx.packed.tarball, ctx.prefix)
-  const result = runNano(ctx.prefix, ['--version'], ctx.env)
-  assert.equal(result.status, 0, result.stderr)
+  snapshot('after-reinstall')
+  const { code, output } = startInPty(ctx.prefix, ctx.env)
+  assert.ok(code === 0 || code === 130, `重装后启动失败：${code}\n${output.slice(0, 1500)}`)
 })
 
 test('keymap 文档与源码一致', () => {
