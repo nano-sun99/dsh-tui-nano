@@ -114,6 +114,38 @@ const handler = (req, res) => {
       res.end()
       return
     }
+    if (mode === 'slow') {
+      sse(res)
+      res.on('error', () => {})
+      start(res, body.model)
+      setTimeout(() => {
+        try {
+          text(res, LONG_TEXT)
+          send(res, 'message_stop', { type: 'message_stop' })
+          res.end()
+        } catch {
+          // 客户端已退出：不再写。
+        }
+      }, 4000)
+      return
+    }
+    if (mode === 'question' && withTools) {
+      sse(res)
+      start(res, body.model)
+      toolUse(res, 'toolu_question', 'ask_user_question', {
+        questions: [
+          {
+            id: 'q1',
+            header: '跨会话问题',
+            question: 'QUESTION_MARKER：只应出现在发起会话',
+            options: [{ label: '继续' }],
+          },
+        ],
+      })
+      send(res, 'message_stop', { type: 'message_stop' })
+      res.end()
+      return
+    }
     const results = collectToolResults(body.messages)
     const failed = results.some((result) => result.is_error === true)
     sse(res)
