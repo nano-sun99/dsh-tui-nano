@@ -100,3 +100,27 @@ ctx.get('typertGateway').stream({
   `npx vitest run --config tests/feature/vitest.config.ts`。
 - 附件链：`@` 引用只在行首/空白后触发；图片按扩展名判定（png/jpg/jpeg/webp/gif），提交前
   `saveImages` → `admitPromptContent`，任何一张被拒整条消息失败并保留草稿；通用文件链待接。
+
+## 3. 验收对照（spec §5）
+
+状态口径：**覆盖** = 有真机或功能测试证据；**部分** = 主路径有证据、负向/边界未取；**未覆盖** = 尚未实现或未取证。
+
+| §5 验收组 | 状态 | 证据 |
+|---|---|---|
+| 输入：多行/IME、`@` 语法、三类补全、补全打开 Enter 只接受、未知 `/name`、32 KiB 限 | 部分 | 补全真机 `@src` 出候选；未知 `/` 命令真机提示「未注入」；32 KiB 仍走 S01 既有路径（S02 附件链按引用字节计） |
+| 附件：官方图片准入、超限/不支持、通用文件 >20MiB、回执复用拒绝 | 部分 | `tests/feature/attachments.test.ts`（5 例：引用识别、纯文本、图片顺序、准入失败、21 MiB 通用文件与新回执） |
+| 会话：列表/恢复/not-found/损坏、冷改名走受控重启、四种失败路径 | 部分 | 列表真机可见；`requestRestart` + handoff 真机验证（切换后草稿恢复）；`tests/feature/handoff.test.ts`（轮转与坏版本）。四种失败路径尚未逐条取证 |
+| 权限：走 `/permission <preset>`、失败保留原值并警告、`never` 后果、模型 changed-by-user | 部分 | `/permission read-only` 真机无报错（走官方命令路径）；失败回滚与警告未取证 |
+| 模型/强度：`provider + model` 身份、只列官方 `efforts`、以官方回执为准 | 部分 | `InfoPanel.readModelIdentity` 单测（缺任一半即未知） |
+| 技能/规矩：命令同名优先、`complete=false` 标注、发现失败保留目录、预览只读 | 部分 | 信息面板实现与 `complete` 标记；发现失败路径单测未覆盖 |
+| 终端：创建/附着/输入/缩放/关闭、缺口/`inputFull`/背压、输出不进 transcript、工具表无 terminal | 部分 | `beta/tools/terminal-attach-probe.mjs`；真机 `Ctrl+T` 回显。缺口与背压未取证 |
+| 任务：游标不推进、停止分类、裁剪/缺口 | 覆盖（逻辑） | `tests/feature/jobs.test.ts`（状态词与停止分类）；`readAt` 绝对偏移不改游标 |
+| `!`：工作区外可写、输出不进 job 表、不构成授权、`!!` inject:false | 部分 | 真机 `!echo`、`!touch /tmp/...`；`tests/feature/bash-mode.test.ts`。inject 的 step boundary 时序未取证 |
+| Monitor：quiet 不唤醒/不产生独立回合、随下次请求计费、初始偏移、settled 补齐、预算耗尽、切根停止 | 部分 | `tests/feature/monitor.test.ts`（初始偏移、预算、settled 补齐）；切根停止已实现未取证 |
+| 调度：后端 + service key、routes/probe、探针后挂载、失败即启动失败、per-root 隔离、无暂停、非严格一次、CAS 冲突 | 部分 | §0（后端/服务键/路由/探针/挂载）与真机探针落盘；per-root 隔离、CAS 冲突未取证 |
+| 子代理：one-shot/external/exact-parent-live/审批 never/fork seed/内容隔离/dock ADR | 部分 | dock 实现 + `tests/feature/subagents.test.ts`（状态词、外部排除由过滤实现；30 秒清理单测）；审批/续聊路径未取证 |
+| 会话控制器：最小 `sessionController` 只暴露 `resolveAgent`、两种形状、能力快照、无重复注册 | 覆盖（逻辑） | §0；`Features.start` 能力快照断言 `sessionController.resolveAgent`；重复注册由 Cordis 拒绝 |
+| 跨根：九个面逐面隔离、双窗口同根拒绝、双 root 并发 | 未覆盖 | 依赖 S01 的认领（已在 α 取证）；S02 九个面尚未逐面取证 |
+| 键位：经 D01 注册表汇总并可被 S03 生成文档 | 覆盖 | 全部 S02 键位经 `registerKeybinding({owner:'s02'})`；`describeBindings()` 可读 |
+
+已知未处理：冷改名的 rename 失败路径、Monitor 切根停止、跨根九面隔离取证；`requestRestart` 的 spec 修订在 PR #94。
