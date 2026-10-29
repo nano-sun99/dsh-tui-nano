@@ -129,6 +129,17 @@ export class ConversationController {
     }
   }
 
+  onChange(listener: () => void): () => void {
+    this.statusListeners.add(listener)
+    return () => this.statusListeners.delete(listener)
+  }
+
+  private readonly statusListeners = new Set<() => void>()
+
+  private notifyStatus(): void {
+    for (const listener of [...this.statusListeners]) listener()
+  }
+
   private attach(): void {
     const ctx = this.options.ctx
     const agent = this.agent
@@ -144,6 +155,7 @@ export class ConversationController {
     const onStatus = (payload: any) => {
       if (payload?.agent !== agent) return
       this.statusValue = payload.status === 'running' ? 'running' : 'idle'
+      this.notifyStatus()
     }
     const onError = (payload: any) => {
       if (payload?.agent !== agent) return
@@ -213,6 +225,7 @@ export class ConversationController {
       }
       case 'turn/end':
         this.statusValue = 'idle'
+        this.notifyStatus()
         break
       case 'session/title':
         if (typeof data.title === 'string') this.options.onTitle?.(data.title)
@@ -235,7 +248,8 @@ export class ConversationController {
       case 'chunk': {
         const current = this.model.preview
         if (!current || current.attemptId !== String(frame.attemptId)) return
-        if (frame.revision !== current.revision) return
+        // Official frames carry a strictly increasing revision per frame, so it
+        // orders frames within one attempt but never identifies the attempt.
         const chunk = frame.chunk
         if (chunk?.type === 'reasoning-delta') {
           this.model.setPreview({ ...current, reasoning: current.reasoning + chunk.text })
@@ -308,11 +322,7 @@ export class ConversationController {
     this.disposed = true
     for (const dispose of this.disposers) dispose()
     this.disposers = []
-    try {
-      await this.handle?.dispose?.()
-    } catch {
-      // Agent disposal failures are reported by the caller's shutdown report.
-    }
+    await this.handle?.dispose?.()
   }
 
   get selectionInfo(): string {

@@ -178,7 +178,7 @@ function applyBoxProps(node: YogaNode, props: AnyProps): void {
     )
   }
 
-  setEdge(node, 'padding', props.padding ?? props.paddingY ?? props.paddingX, 'padding')
+  if (props.padding !== undefined) node.setPadding(Edge.All, props.padding)
   if (props.paddingTop !== undefined) node.setPadding(Edge.Top, props.paddingTop)
   if (props.paddingBottom !== undefined) node.setPadding(Edge.Bottom, props.paddingBottom)
   if (props.paddingLeft !== undefined) node.setPadding(Edge.Left, props.paddingLeft)
@@ -241,11 +241,6 @@ function applyDimension(
   else node.setHeightPercent(percent)
 }
 
-function setEdge(node: YogaNode, _edge: string, value: number | undefined, kind: 'padding'): void {
-  if (value === undefined) return
-  if (kind === 'padding') node.setPadding(Edge.All, value)
-}
-
 /** Style contributed by a Text host, inherited by nested raw text. */
 export function textStyle(props: TextProps): Style {
   return {
@@ -271,10 +266,12 @@ function installMeasure(node: TextNode | RawTextNode): void {
   node.yoga.setMeasureFunc((width, widthMode) => {
     const available =
       widthMode === MeasureMode.Undefined ? Number.POSITIVE_INFINITY : Math.max(1, width)
+    const whitespaceOnly = node.text !== '' && node.text.trim() === ''
     const wrap = node.kind === 'text' ? (node.props.wrap ?? true) : true
-    const lines = wrap
-      ? wrapText(node.text, Number.isFinite(available) ? available : 4000)
-      : node.text.split('\n')
+    const lines =
+      wrap && !whitespaceOnly
+        ? wrapText(node.text, Number.isFinite(available) ? available : 4000)
+        : node.text.split('\n')
     node.lines = lines
     node.measuredWidth = Number.isFinite(available)
       ? Math.min(available, Math.max(0, ...lines.map((line) => displayWidth(line))))
@@ -438,6 +435,7 @@ export const hostConfig = {
     removeChildNode(parent, child)
   },
   clearContainer(container: RootContainer): void {
+    for (const child of container.children) freeSubtree(child)
     container.children = []
     container.onCommit()
   },
@@ -445,7 +443,11 @@ export const hostConfig = {
     const index = container.children.indexOf(child)
     if (index >= 0) container.children.splice(index, 1)
     child.parent = null
+    freeSubtree(child)
     container.onCommit()
+  },
+  detachDeletedInstance(instance: HostNode): void {
+    freeSubtree(instance)
   },
   commitUpdate(instance: HostNode, _type: string, _prev: AnyProps, next: AnyProps): void {
     instance.props = next
@@ -464,8 +466,9 @@ export const hostConfig = {
     } else instance.yoga.markDirty()
   },
   commitTextUpdate(instance: RawTextNode, _old: string, next: string): void {
-    if (instance.text !== next) {
-      instance.text = next
+    const sanitized = sanitizeText(next)
+    if (instance.text !== sanitized) {
+      instance.text = sanitized
       markDirty(instance)
     }
   },
@@ -480,7 +483,6 @@ export const hostConfig = {
   resolveEventType: () => null,
   resolveEventTimeStamp: () => -1.1,
   shouldAttemptEagerTransition: () => false,
-  detachDeletedInstance: () => {},
   getInstanceFromNode: () => null,
   preparePortalMount: () => {},
   resetTextContent: () => {},
@@ -542,6 +544,28 @@ function removeChildNode(parent: ParentNode, child: HostNode): void {
   parent.children.splice(index, 1)
   parent.yoga.removeChild(child.yoga)
   child.parent = null
+}
+
+/** Free a detached subtree's Yoga nodes; the host objects are garbage after this. */
+export function freeSubtree(node: HostNode): void {
+  if ((node as { freed?: boolean }).freed === true) return
+  ;(node as { freed?: boolean }).freed = true
+  if (node.kind === 'box') {
+    const children = node.children.slice()
+    node.children = []
+    // Detach before freeing: a freed child must not remain attached.
+    while (node.yoga.getChildCount() > 0) {
+      const child = node.yoga.getChild(0)
+      if (!child) break
+      node.yoga.removeChild(child)
+    }
+    for (const child of children) freeSubtree(child)
+  }
+  try {
+    node.yoga.free()
+  } catch {
+    // Already freed; React may report the same deletion twice.
+  }
 }
 
 function appendRootChild(container: RootContainer, child: HostNode, before: HostNode | null): void {

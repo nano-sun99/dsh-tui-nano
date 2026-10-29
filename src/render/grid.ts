@@ -6,7 +6,7 @@
 
 import type { Rgb } from '../theme/theme.ts'
 import { BLANK, type Cell, type Style } from './ansi.ts'
-import { sanitizeText } from './text.ts'
+import { graphemeWidth, sanitizeText } from './text.ts'
 
 const ANSI_PALETTE: Rgb[] = [
   [0, 0, 0],
@@ -140,14 +140,23 @@ export class CellGrid {
     if (safe === '') return
     const row = this.rows[this.cursorRow]
     if (!row) return
-    row[this.cursorCol] = { grapheme: safe, style: this.style }
-    if (safe.length > 1 || this.cursorCol + 1 >= this.width) {
-      // Wide grapheme or last column: occupy one cell for VT simplicity.
-      if (this.cursorCol + 1 >= this.width) this.pendingWrap = true
-      else this.cursorCol++
-    } else {
-      this.cursorCol++
+    const width = Math.min(2, Math.max(1, graphemeWidth(safe)))
+    if (width === 2 && this.cursorCol + 1 >= this.width) {
+      // A wide grapheme cannot start in the last column.
+      this.cursorCol = 0
+      this.lineFeed()
+      this.writeChar(char)
+      return
     }
+    row[this.cursorCol] = { grapheme: safe, style: this.style }
+    if (width === 2) {
+      row[this.cursorCol + 1] = { grapheme: '', style: this.style, continuation: true }
+      if (this.cursorCol + 2 >= this.width) this.pendingWrap = true
+      else this.cursorCol += 2
+      return
+    }
+    if (this.cursorCol + 1 >= this.width) this.pendingWrap = true
+    else this.cursorCol++
   }
 
   private lineFeed(): void {
@@ -404,12 +413,28 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
+/** xterm 256-colour palette: 16 system colours, 6x6x6 cube, 24 greys. */
+function xtermColor(index: number): Rgb {
+  const n = clamp(Math.floor(index), 0, 255)
+  if (n < 16) return ANSI_PALETTE[n] ?? [200, 200, 200]
+  if (n < 232) {
+    const value = n - 16
+    const r = Math.floor(value / 36)
+    const g = Math.floor((value % 36) / 6)
+    const b = value % 6
+    const channel = (v: number) => (v === 0 ? 0 : 55 + v * 40)
+    return [channel(r), channel(g), channel(b)]
+  }
+  const grey = 8 + (n - 232) * 10
+  return [grey, grey, grey]
+}
+
 function readColor(numbers: number[], start: number): { color: Rgb; next: number } | undefined {
   const mode = numbers[start]
   if (mode === 5) {
     const index = numbers[start + 1]
     if (index === undefined || Number.isNaN(index)) return undefined
-    return { color: ANSI_PALETTE[index % 16] ?? [200, 200, 200], next: start + 2 }
+    return { color: xtermColor(index), next: start + 2 }
   }
   if (mode === 2) {
     const r = numbers[start + 1]

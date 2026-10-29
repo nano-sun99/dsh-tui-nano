@@ -8,12 +8,14 @@ import type { OfficialModules } from '../boot/official.ts'
 import { type MountClaim, releaseMountClaim } from '../boot/root.ts'
 import type { ConversationController } from '../conversation/controller.ts'
 import { APPROVAL_OPTIONS, type ApprovalOutcome, DecisionManager } from '../decisions/manager.ts'
-import type { HistoryStore } from '../input/history.ts'
+import { HISTORY_LIMIT, type HistoryStore } from '../input/history.ts'
 import { resolveKey } from '../input/keymap.ts'
 import type { InputEvent, Key } from '../input/parser.ts'
+import { INPUT_BYTE_LIMIT } from '../input/segments.ts'
 import type { Renderer } from '../render/renderer.ts'
 import { formatShutdownReport, Lifecycle } from '../runtime/lifecycle.ts'
 import type { Terminal } from '../runtime/terminal.ts'
+import { EDGE } from '../theme/spacing.ts'
 import { activeTheme } from '../theme/theme.ts'
 import { App, type AppSnapshot } from './App.tsx'
 import { InputModel } from './input-model.ts'
@@ -43,6 +45,8 @@ export class NanoApp {
   private stickBottom = true
   private selectionStart: { row: number; col: number } | undefined
   private selectionActive = false
+  private pendingPressId: string | undefined
+  private lastTotalLines: number | undefined
   private notice: string | undefined
   private renderScheduled = false
   private stopping = false
@@ -78,6 +82,7 @@ export class NanoApp {
     })
     this.registerSignals()
     void conversation.model.onChange(() => this.scheduleRender())
+    void conversation.onChange(() => this.scheduleRender())
     this.decisions.onChange(() => this.scheduleRender())
     return finish.then((code) => {
       throw new AppExit(code)
@@ -116,7 +121,14 @@ export class NanoApp {
   }
 
   handleInput(events: readonly InputEvent[]): void {
-    if (this.stopping) return
+    if (this.stopping) {
+      for (const event of events) {
+        if (event.type === 'key' && event.key.ctrl && event.key.text === 'c') {
+          void this.lifecycle.requestShutdown('user force', true)
+        }
+      }
+      return
+    }
     for (const event of events) {
       switch (event.type) {
         case 'paste':
@@ -158,6 +170,10 @@ export class NanoApp {
       case 'conversation.submit': {
         const text = this.input.text
         if (text.trim() !== '') {
+          if (Buffer.byteLength(text, 'utf8') > INPUT_BYTE_LIMIT) {
+            this.notice = '超过 32 KiB 上限，未发送（草稿保留）'
+            return
+          }
           try {
             this.options.conversation.submit(text)
             this.input.take()
@@ -179,6 +195,10 @@ export class NanoApp {
         return
       case 'conversation.steer': {
         const text = this.input.text
+        if (Buffer.byteLength(text, 'utf8') > INPUT_BYTE_LIMIT) {
+          this.notice = '超过 32 KiB 上限，未发送（草稿保留）'
+          return
+        }
         if (text.trim() !== '') {
           this.options.conversation.steer(text)
           this.input.take()
@@ -229,6 +249,11 @@ export class NanoApp {
         this.input.end()
         return
       case 'history.prev':
+        if (!this.input.isHistoryBrowsing) {
+          this.input.setHistory(
+            this.options.history.entries(HISTORY_LIMIT).map((entry) => entry.display),
+          )
+        }
         this.input.previousHistory()
         return
       case 'history.next':
@@ -278,7 +303,19 @@ export class NanoApp {
       }
       return
     }
-    // Question overlay
+    // Question overlay: while typing a custom answer every printable key is
+    // text, including space and the letter "c".
+    const question = prompt.questions[prompt.current]
+    const draft = question ? prompt.drafts.get(question.id) : undefined
+    if (draft?.customMode) {
+      if (key.name === 'escape') this.decisions.toggleCustom()
+      else if (key.name === 'enter') this.decisions.advanceQuestion()
+      else if (key.name === 'backspace') this.decisions.backspaceCustom()
+      else if (key.name === 'char' && key.text && !key.ctrl && !key.alt) {
+        this.decisions.typeCustom(key.text)
+      }
+      return
+    }
     if (key.name === 'up') this.decisions.move(-1)
     else if (key.name === 'down') this.decisions.move(1)
     else if (key.name === 'enter') this.decisions.advanceQuestion()
@@ -301,37 +338,41 @@ export class NanoApp {
     const row = event.y - 1
     const col = event.x - 1
     if (event.kind === 'wheel') {
-      this.scrollBy((event.wheel ?? 0) * -3)
+      // Parser: wheel up is +1 and scrollBy(+n) moves towards older content.
+      this.scrollBy((event.wheel ?? 0) * 3)
       return
     }
     if (event.kind === 'press' && event.button === 'left') {
-      const pressId = this.options.renderer.pressIdAt(col, row)
-      if (pressId) {
-        this.handlePress(pressId)
-        return
-      }
+      this.pendingPressId = this.options.renderer.pressIdAt(col, row)
       this.selectionStart = { row, col }
       this.selectionActive = false
       return
     }
     if (event.kind === 'move' && this.selectionStart) {
-      this.selectionActive = true
-      this.options.renderer.selection = normalizeSelection(
-        this.selectionStart.row,
-        this.selectionStart.col,
-        row,
-        col,
-      )
+      if (row !== this.selectionStart.row || col !== this.selectionStart.col) {
+        this.selectionActive = true
+        this.options.renderer.selection = normalizeSelection(
+          this.selectionStart.row,
+          this.selectionStart.col,
+          row,
+          col,
+        )
+      }
       return
     }
     if (event.kind === 'release') {
-      if (this.selectionActive && this.selectionStart) {
-        const range = normalizeSelection(this.selectionStart.row, this.selectionStart.col, row, col)
+      const start = this.selectionStart
+      if (this.selectionActive && start) {
+        const range = normalizeSelection(start.row, start.col, row, col)
         const text = this.options.renderer.extractText(range)
         if (text.trim() !== '') this.options.terminal.copyToClipboard(text)
+      } else if (this.pendingPressId && start && start.row === row && start.col === col) {
+        // A click without a drag activates the pressable row.
+        this.handlePress(this.pendingPressId)
       }
       this.selectionStart = undefined
       this.selectionActive = false
+      this.pendingPressId = undefined
       this.options.renderer.selection = undefined
     }
   }
@@ -380,6 +421,16 @@ export class NanoApp {
   }
 
   private snapshot(): AppSnapshot {
+    const width = this.options.terminal.width
+    const lines = this.options.conversation.model.layout({
+      width: Math.max(1, width - EDGE * 2),
+      expanded: this.expanded,
+    })
+    const total = lines.length
+    if (!this.stickBottom && this.lastTotalLines !== undefined && total > this.lastTotalLines) {
+      this.scrollOffset += total - this.lastTotalLines
+    }
+    this.lastTotalLines = total
     return {
       transcript: this.options.conversation.model,
       decisions: this.decisions,
@@ -465,6 +516,9 @@ export class NanoApp {
         throw error
       }
     })
+    this.lifecycle.onResult = (result) => {
+      if (result.status !== 'stopped') this.cleanupFailed = true
+    }
     this.lifecycle.register('release', 'mount-claim', async () => {
       if (this.cleanupFailed) throw new Error('清理失败，保留认领')
       releaseMountClaim(claim)
@@ -472,7 +526,12 @@ export class NanoApp {
     this.lifecycle.register('restore', 'terminal', async () => {
       terminal.restore()
     })
+    const forceTimer = setTimeout(() => {
+      terminal.restore()
+      this.exitCode = this.exitCode || 1
+    }, 3000)
     const report = await this.lifecycle.requestShutdown(reason)
+    clearTimeout(forceTimer)
     this.removeProcessListeners()
     const failed = report.results.some((result) => result.status !== 'stopped')
     if (failed) this.exitCode = this.exitCode || 1

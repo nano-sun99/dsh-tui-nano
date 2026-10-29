@@ -88,6 +88,11 @@ export class InputParser {
       this.pending = ''
       return [{ type: 'key', key: { ...key('char', sequence), text: ch, alt: true } }]
     }
+    if (this.pending.startsWith('\x1b')) {
+      // An incomplete escape sequence past the timeout is dropped whole, so it
+      // cannot swallow the next keystroke as its final byte.
+      this.pending = ''
+    }
     return []
   }
 
@@ -156,6 +161,15 @@ export class InputParser {
       const end = bel >= 0 && (st < 0 || bel < st) ? bel + 1 : st >= 0 ? st + 2 : -1
       if (end < 0) return 0
       return end
+    }
+    const secondCode = text.charCodeAt(1)
+    if (secondCode === 0x7f) {
+      events.push({ type: 'key', key: { ...key('backspace', text.slice(0, 2)), alt: true } })
+      return 2
+    }
+    if (secondCode === 0x0d || secondCode === 0x0a) {
+      events.push({ type: 'key', key: { ...key('enter', text.slice(0, 2)), alt: true } })
+      return 2
     }
     // Alt + key.
     const codePoint = text.codePointAt(1) ?? 0

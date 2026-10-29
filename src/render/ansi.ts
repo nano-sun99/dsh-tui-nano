@@ -225,6 +225,9 @@ export const CONTROL = {
   disableBracketedPaste: '\x1b[?2004l',
   enableFocusReporting: '\x1b[?1004h',
   disableFocusReporting: '\x1b[?1004l',
+  // Kitty keyboard protocol: modifiers (notably Shift+Enter) become visible.
+  enableKittyKeyboard: '\x1b[>1u',
+  disableKittyKeyboard: '\x1b[<u',
   saveTitle: '\x1b[22;0t',
   restoreTitle: '\x1b[23;0t',
 } as const

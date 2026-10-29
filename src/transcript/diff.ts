@@ -40,7 +40,7 @@ export function diffsFromMeta(meta: unknown): FileDiff[] | undefined {
 
 /** Myers line diff (sufficiently small inputs; huge files fall back to replace). */
 export function diffLines(oldText: string | null, newText: string): DiffLine[] {
-  const before = oldText === null ? [] : oldText.split('\n')
+  const before = oldText === null || oldText === '' ? [] : oldText.split('\n')
   const after = newText.split('\n')
   if (before.length * after.length > 4_000_000) {
     return [

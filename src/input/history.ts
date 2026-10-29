@@ -6,6 +6,8 @@
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, writeSync } from 'node:fs'
 import { dirname } from 'node:path'
 
+export const HISTORY_LIMIT = 100
+
 export interface HistoryEntry {
   readonly display: string
   readonly timestamp: number
@@ -44,7 +46,7 @@ export class HistoryStore {
   }
 
   /** History for the current project, newest first, at most `limit` entries. */
-  entries(limit = 100): HistoryEntry[] {
+  entries(limit = HISTORY_LIMIT): HistoryEntry[] {
     if (!existsSync(this.path)) return []
     const entries: HistoryEntry[] = []
     for (const line of readTailLines(this.path, 256 * 1024)) {

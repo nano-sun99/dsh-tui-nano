@@ -4,6 +4,8 @@
  * result rows, failures keep three, streaming thinking is one row that
  * disappears once committed, and only in-place clicks expand a row.
  */
+
+import { graphemes } from '../render/text.ts'
 import { EDGE, INDENT } from '../theme/spacing.ts'
 import { diffsFromMeta, type FileDiff, renderDiffs } from './diff.ts'
 import { renderMarkdown } from './markdown.ts'
@@ -19,6 +21,8 @@ export type Entry = UserEntry | AssistantEntry | ToolEntry | NoticeEntry
 export interface UserEntry {
   readonly kind: 'user'
   readonly id: string
+  /** D01: subagent address; the root session uses `root`. */
+  readonly address?: string
   readonly text: string
   readonly requestId?: string
   readonly pending?: boolean
@@ -28,6 +32,7 @@ export interface UserEntry {
 export interface AssistantEntry {
   readonly kind: 'assistant'
   readonly id: string
+  readonly address?: string
   readonly seq: number
   readonly blocks: readonly Block[]
 }
@@ -35,6 +40,7 @@ export interface AssistantEntry {
 export interface ToolEntry {
   readonly kind: 'tool'
   readonly id: string
+  readonly address?: string
   readonly callId: string
   readonly name: string
   readonly args: string
@@ -46,6 +52,7 @@ export interface ToolEntry {
 export interface NoticeEntry {
   readonly kind: 'notice'
   readonly id: string
+  readonly address?: string
   readonly text: string
   readonly tone: 'info' | 'warning' | 'danger'
 }
@@ -76,6 +83,8 @@ export interface Unit {
 export interface RenderOptions {
   readonly width: number
   readonly expanded: ReadonlySet<string>
+  /** Which subagent address to render; defaults to the root. */
+  readonly address?: string
 }
 
 const READ_LIKE = new Set([
@@ -186,8 +195,14 @@ export class TranscriptModel {
     this.notify()
   }
 
-  appendNotice(text: string, tone: NoticeEntry['tone'] = 'info'): void {
-    this.entries.push({ kind: 'notice', id: `notice-${this.entries.length}`, text, tone })
+  appendNotice(text: string, tone: NoticeEntry['tone'] = 'info', address?: string): void {
+    this.entries.push({
+      kind: 'notice',
+      id: `notice-${this.entries.length}`,
+      text,
+      tone,
+      ...(address !== undefined ? { address } : {}),
+    })
     this.notify()
   }
 
@@ -231,14 +246,20 @@ export class TranscriptModel {
 
   units(options: RenderOptions): Unit[] {
     const units: Unit[] = []
+    const address = options.address ?? 'root'
     let index = 0
     while (index < this.entries.length) {
       const entry = this.entries[index] as Entry
+      if ((entry.address ?? 'root') !== address) {
+        index++
+        continue
+      }
       if (entry.kind === 'tool' && isReadLike(entry.name)) {
         const group: ToolEntry[] = [entry]
         let cursor = index + 1
         while (cursor < this.entries.length) {
           const next = this.entries[cursor] as Entry
+          if ((next.address ?? 'root') !== address) break
           if (next.kind !== 'tool' || !isReadLike(next.name)) break
           group.push(next)
           cursor++
@@ -372,11 +393,12 @@ export class TranscriptModel {
    * thousands of row wrappers per frame.
    */
   layout(options: RenderOptions): ReadonlyArray<{ row: Row; key: string }> {
-    const key = `${options.width}|${[...options.expanded].sort().join(',')}|${this.revision}`
+    const key = `${options.width}|${options.address ?? 'root'}|${[...options.expanded].sort().join(',')}|${this.revision}`
     if (this.layoutCache?.key === key) return this.layoutCache.lines
     const lines: Array<{ row: Row; key: string }> = []
     const units = this.units(options)
     for (const unit of units) {
+      if (unit.rows.length === 0) continue
       if (unit.gapBefore !== 'None' && lines.length > 0) {
         lines.push({ row: { spans: [textSpan('', 'normal')] }, key: `${unit.id}-gap` })
       }
@@ -400,10 +422,7 @@ export class TranscriptModel {
     if (preview.reasoning !== '') {
       const mark = expanded ? THINKING_MARK.expanded : THINKING_MARK.collapsed
       rows.push({
-        spans: [
-          textSpan(`${mark} 思考中`, 'muted'),
-          ...(expanded ? [] : [textSpan(` · ${firstLine(preview.reasoning)}`, 'faint')]),
-        ],
+        spans: [textSpan(`${mark} 思考中`, 'muted')],
         indent: EDGE,
         pressId: id,
       })
@@ -421,11 +440,6 @@ export class TranscriptModel {
 
 function isReadLike(name: string): boolean {
   return READ_LIKE.has(name.toLowerCase())
-}
-
-function firstLine(text: string): string {
-  const line = text.split('\n')[0] ?? ''
-  return line.length > 80 ? `${line.slice(0, 79)}…` : line
 }
 
 interface ParsedArgs {
@@ -491,7 +505,8 @@ function failureRows(entry: ToolEntry, width: number): Row[] {
 
 function truncate(text: string, length: number): string {
   const line = text.split('\n')[0] ?? ''
-  return line.length > length ? `${line.slice(0, length - 1)}…` : line
+  const chars = graphemes(line)
+  return chars.length > length ? `${chars.slice(0, length - 1).join('')}…` : line
 }
 
 export { EDGE, INDENT }

@@ -5,6 +5,16 @@
  */
 import { Lexer, type Token, type Tokens } from 'marked'
 import Prism from 'prismjs'
+import 'prismjs/components/prism-typescript.js'
+import 'prismjs/components/prism-jsx.js'
+import 'prismjs/components/prism-tsx.js'
+import 'prismjs/components/prism-json.js'
+import 'prismjs/components/prism-bash.js'
+import 'prismjs/components/prism-python.js'
+import 'prismjs/components/prism-rust.js'
+import 'prismjs/components/prism-yaml.js'
+import 'prismjs/components/prism-markdown.js'
+import 'prismjs/components/prism-diff.js'
 import { EDGE, NESTED } from '../theme/spacing.ts'
 import { type Row, type Span, textSpan, wrapSpans } from './spans.ts'
 

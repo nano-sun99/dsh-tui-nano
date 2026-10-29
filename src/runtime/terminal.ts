@@ -7,6 +7,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { closeSync, openSync, writeSync } from 'node:fs'
+import { StringDecoder } from 'node:string_decoder'
 import { type InputEvent, InputParser } from '../input/parser.ts'
 import { CONTROL, osc52 } from '../render/ansi.ts'
 
@@ -19,6 +20,7 @@ export interface TerminalOptions {
 export class Terminal {
   private fd: number | undefined
   private parser = new InputParser()
+  private decoder = new StringDecoder('utf8')
   private escapeTimer: NodeJS.Timeout | undefined
   private active = false
   private readonly options: TerminalOptions
@@ -42,7 +44,7 @@ export class Terminal {
     this.refreshSize()
     process.stdin.setRawMode?.(true)
     process.stdin.resume()
-    this.inputHandler = (chunk: Buffer) => this.handleChunk(chunk.toString('utf8'))
+    this.inputHandler = (chunk: Buffer) => this.handleChunk(this.decoder.write(chunk))
     process.stdin.on('data', this.inputHandler)
     this.resizeHandler = () => {
       this.refreshSize()
@@ -55,6 +57,7 @@ export class Terminal {
         CONTROL.enableMouse +
         CONTROL.enableBracketedPaste +
         CONTROL.enableFocusReporting +
+        CONTROL.enableKittyKeyboard +
         CONTROL.clear,
     )
     this.active = true
@@ -66,7 +69,8 @@ export class Terminal {
     this.active = false
     try {
       this.write(
-        CONTROL.disableFocusReporting +
+        CONTROL.disableKittyKeyboard +
+          CONTROL.disableFocusReporting +
           CONTROL.disableBracketedPaste +
           CONTROL.disableMouse +
           CONTROL.showCursor +

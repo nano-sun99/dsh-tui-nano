@@ -55,6 +55,8 @@ export class Lifecycle {
   private forceRestore = false
   private report: ShutdownReport | undefined
   private shutdownPromise: Promise<ShutdownReport> | undefined
+  /** Called with every hook result as it settles; lets the app react to timeouts. */
+  onResult: ((result: LifecycleHookResult) => void) | undefined
 
   get isShuttingDown(): boolean {
     return this.shuttingDown
@@ -103,7 +105,9 @@ export class Lifecycle {
       const phaseStart = Date.now()
       if (this.forceRestore && phase !== 'restore') {
         for (const hook of this.hooks.filter((entry) => entry.phase === phase)) {
-          results.push({ phase, name: hook.name, status: 'unknown' })
+          const skipped: LifecycleHookResult = { phase, name: hook.name, status: 'unknown' }
+          this.onResult?.(skipped)
+          results.push(skipped)
         }
         continue
       }
@@ -121,7 +125,9 @@ export class Lifecycle {
           continue
         }
         const deadline = Math.max(1, Math.min(hook.deadlineMs, remainingBudget))
-        results.push(await runHook(hook, deadline, controller))
+        const result = await runHook(hook, deadline, controller)
+        this.onResult?.(result)
+        results.push(result)
       }
       void phaseStart
     }
@@ -162,6 +168,17 @@ async function runHook(
   const result = await Promise.race([execution, timeout])
   if (timer) clearTimeout(timer)
   return result
+}
+
+/** D01 spelling: register one lifecycle hook on an instance. */
+export function registerLifecycleHook(
+  lifecycle: Lifecycle,
+  phase: LifecyclePhase,
+  name: string,
+  run: (signal: AbortSignal) => void | Promise<void>,
+  deadlineMs?: number,
+): () => void {
+  return lifecycle.register(phase, name, run, deadlineMs)
 }
 
 /** Human-readable one-line summary for the shutdown report. */

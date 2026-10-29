@@ -94,7 +94,11 @@ export function wrapSpans(spans: readonly Span[], width: number): Row[] {
       continue
     }
     if (lineWidth + gw > maxWidth && line.length > 0) {
-      if (breakIndex > 0) {
+      if (item.g === ' ') {
+        emit()
+        continue
+      }
+      if (breakIndex > 0 && breakIndex < line.length) {
         const carried = line.slice(breakIndex)
         const head = line.slice(0, breakIndex)
         rows.push({ spans: toSpans(trimTrailing(head)) })

@@ -11,6 +11,7 @@ import type { Rgb } from '../theme/theme.ts'
 import { BLANK, createScreen, encodeDiff, type Screen, type Style, styleEquals } from './ansi.ts'
 import {
   type AnyProps,
+  freeSubtree,
   type GridNode,
   type HostNode,
   hostConfig,
@@ -23,6 +24,8 @@ import { graphemes, graphemeWidth, wrapText } from './text.ts'
 
 export interface HitRegion {
   readonly id: string
+  readonly left: number
+  readonly right: number
   readonly top: number
   readonly bottom: number
 }
@@ -137,6 +140,22 @@ export class Renderer {
     this.mounted = false
     this.reconciler.updateContainerSync(null, this.root, null, null)
     this.flushFrame()
+    // Detach still-attached roots before any node is freed.
+    for (const child of this.attached) {
+      try {
+        this.rootYoga.removeChild(child.yoga)
+      } catch {
+        // Already removed.
+      }
+    }
+    this.attached = []
+    for (const child of this.container.children) freeSubtree(child)
+    this.container.children = []
+    try {
+      this.rootYoga.free()
+    } catch {
+      // Already freed.
+    }
   }
 
   resize(width: number, height: number): void {
@@ -234,7 +253,13 @@ export class Renderer {
   private collectHitRegions(node: HostNode): void {
     const id = node.props.onPress
     if (typeof id === 'string' && !node.hidden) {
-      this.hitRegions.push({ id, top: node.top, bottom: node.top + Math.max(1, node.height) })
+      this.hitRegions.push({
+        id,
+        left: node.left,
+        right: node.left + Math.max(1, node.width),
+        top: node.top,
+        bottom: node.top + Math.max(1, node.height),
+      })
     }
     if (node.kind === 'box') {
       for (const child of node.children) this.collectHitRegions(child)
@@ -369,7 +394,10 @@ export class Renderer {
       const start = row === range.startRow ? range.startCol : 0
       const end = row === range.endRow ? range.endCol : screen.width - 1
       let text = ''
-      for (let col = Math.max(0, start); col <= Math.min(screen.width - 1, end); col++) {
+      let from = Math.max(0, start)
+      // Starting inside a wide grapheme selects that whole grapheme.
+      if (line[from]?.continuation) from = Math.max(0, from - 1)
+      for (let col = from; col <= Math.min(screen.width - 1, end); col++) {
         const cell = line[col]
         if (!cell || cell.continuation) continue
         text += cell.grapheme === '' ? ' ' : cell.grapheme
@@ -391,11 +419,14 @@ export class Renderer {
     )
   }
 
-  /** Row index at a screen coordinate, used by mouse hits. */
+  /** Topmost pressable region at a screen coordinate (overlays win). */
   pressIdAt(x: number, y: number): string | undefined {
-    void x
-    for (const region of this.hitRegions) {
-      if (y >= region.top && y < region.bottom) return region.id
+    for (let index = this.hitRegions.length - 1; index >= 0; index--) {
+      const region = this.hitRegions[index]
+      if (!region) continue
+      if (y >= region.top && y < region.bottom && x >= region.left && x < region.right) {
+        return region.id
+      }
     }
     return undefined
   }

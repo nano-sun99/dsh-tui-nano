@@ -109,8 +109,18 @@ export async function main(argv: readonly string[]): Promise<number> {
   })
   let app: NanoApp | undefined
   let core: Awaited<ReturnType<typeof startCore>> | undefined
+  const earlySignals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const
+  const earlySignalHandler = (signal: NodeJS.Signals) => {
+    terminal.restore()
+    releaseMountClaim(claim)
+    reportVisible(`nano: 启动被 ${signal} 中断`)
+    process.exit(1)
+  }
   try {
     terminal.enter()
+    // Protect the window between taking the terminal and NanoApp registering
+    // its own handlers: a signal here must still restore the terminal.
+    for (const signal of earlySignals) process.once(signal, earlySignalHandler)
     const renderer = new Renderer({
       write: (bytes) => terminal.write(bytes),
       width: terminal.width,
@@ -142,6 +152,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     })
     conversation.model.appendNotice(buildStartupSources(paths, prepared), 'info')
     await conversation.start()
+    for (const signal of earlySignals) process.off(signal, earlySignalHandler)
     app = new NanoApp({
       core,
       official,
@@ -175,6 +186,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     reportVisible(`nano: 启动失败：${message(error)}`)
     return 1
   } finally {
+    for (const signal of earlySignals) process.off(signal, earlySignalHandler)
     terminal.restore()
   }
 }
@@ -189,10 +201,16 @@ function buildStartupSources(paths: Paths, prepared: PreparedCore): string {
     [join(paths.home, 'AGENTS.md'), join(homedir(), '.agents', 'AGENTS.md')]
       .filter((path) => existsSync(path))
       .join(' → ') || '无'
+  const layers = Array.isArray(prepared.profile.layers)
+    ? prepared.profile.layers
+        .map((layer: any) => String(layer.packageName ?? layer.name ?? '?'))
+        .slice(0, 6)
+    : []
   return [
     '已加载来源：',
     `profile ${prepared.ensuredProfile.dir}`,
     `settings ${prepared.ensuredProfile.patchPath}`,
+    `生效层 ${layers.length > 0 ? layers.join('、') : '无'}`,
     `凭据 ${credentials}`,
     `全局指令 ${globalInstructions}`,
   ].join(' ')

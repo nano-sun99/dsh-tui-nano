@@ -32,7 +32,7 @@
 | 导出 | 说明 |
 |---|---|
 | `ConversationController` | `start()` 建/恢复根 agent（sessionId = 根身份）；`submit/steer/stop/clear`；`model` 可订阅；`selectionInfo` |
-| `TranscriptModel` | `appendUser`、`confirmUser`、`appendAssistant`、`appendTool`、`completeTool`、`appendNotice`、`setPreview`、`clearPreview`、`units()`、`layout()`；合成条目：`appendNotice` 可承载 `bash-mode`、`role=user/source=monitor` 等展示文案 |
+| `TranscriptModel` | `appendUser`、`confirmUser`、`appendAssistant`、`appendTool`、`completeTool`、`appendNotice`、`setPreview`、`clearPreview`、`units()`、`layout()`；条目可选 `address`，`units({address})` 按子代理地址过滤；合成条目：`appendNotice(..., address)` 可承载 `bash-mode`、`role=user/source=monitor` 等展示文案 |
 | `renderMarkdown` / `highlightCode` | Markdown 子集、Prism 高亮 |
 | `renderDiffs` / `diffsFromMeta` | 工具结果的 `meta.diffs`（`{path, oldText, newText}`）；3 行上下文、8 行预算、无坐标不填行号 |
 | 过程显示规则 | `TranscriptModel.units()` 内实现 ADR-20261028：连续读取合并、成功 0 行/失败 3 行、流式思考一行、提交后消失 |
@@ -41,7 +41,7 @@
 
 | 导出 | 说明 |
 |---|---|
-| `Lifecycle.register(phase, name, fn, deadlineMs)` | 阶段固定 `freeze / drain / flush / release / restore`；截止时间、错误隔离、幂等；关停开始后拒绝注册（S02 注册 drain：schedule/Monitor/PTY/取消根回合） |
+| `Lifecycle.register(...)` / `registerLifecycleHook(lifecycle, phase, name, fn, deadlineMs)` | 阶段固定 `freeze / drain / flush / release / restore`；截止时间、错误隔离、幂等；关停开始后拒绝注册（S02 注册 drain：schedule/Monitor/PTY/取消根回合）；`onResult` 回调让应用看到超时 |
 | `writeHandoff` / `takeHandoff` / `HANDOFF_VERSION` | `<dataRoot>/handoff.json`；tmp+fsync+rename、0600、版本化、读后删 |
 | `resolveRootId` / `acquireMountClaim` / `releaseMountClaim` | 根身份 `--root → last-root → <UTC>-<8hex>`；`<dataRoot>/mount/<id>.lock` 先于备用屏 |
 | `prepareCore` / `startCore` / `snapshotCapabilities` | 两段装配；能力快照（α：`ask_user_question`、`fileReferences`、`approval`、`userQuestions`） |
@@ -60,7 +60,15 @@
 - fd 级守护：`src/runtime/fd-guard.ts` 在启动时 re-exec 一次，把 fd 1/2 绑到 `<dataRoot>/logs/*.log`；运行时的唯一终端写入是 `/dev/tty`。偏差说明：Node 无 `dup2`，等价实现为「stdio 重定向 + 独立 tty 句柄」。
 - 根切换 handoff、关停顺序、信号处理均在 `src/app/nano-app.ts`；S02 只注册 hook。
 
-## 7. 自定细节（spec 要求写进本文件）
+## 7. S02 使用注意
+
+- **boot 后扩展点**：`startCore(prepared)` 返回的 `core.ctx` 即官方 Cordis 根；S02 在 boot 后按服务名 `ctx.get(...)` 注册 schedule 后端/适配器（D02 契约），不需要改 S01。
+- **子代理地址**：`TranscriptModel` 的条目可带 `address`；S02 为每个子代理地址建视图时传 `units({address})`/`layout({address})` 过滤。子代理输入历史来自官方投影，本契约不读 `history.jsonl`。
+- **timed question**：`DecisionManager` 立即返回答案；α 不消费 `request.wait.timed` / `attachWait`。S02 若接 timed 面板，需在 `askQuestions` 之前处理 `wait`（官方契约见 `dsh-user-questions`），不改 S01 的两个 answerer 槽位语义。
+- **补全打开模式**：`CompletionSession.isOpen` 为真时，Enter 必须先 `accept()` 而不是提交；会话关闭后再走 `conversation.submit`。
+- **有序输入段**：`InputSegments` 与提交文本一致；提交前用 `exceedsLimit()` 检查 32 KiB，本份已接入 submit/steer 的文本路径，附件段由 S02 追加。
+
+## 8. 自定细节（spec 要求写进本文件）
 
 - 根身份格式：`<UTC 时间戳 YYYYMMDD-HHMMSS>-<8 hex>`，仅 `[A-Za-z0-9._-]`。
 - 启动失败文案：骨架前写 `/dev/tty` + stderr（如「nano: 根 "x" 已被进程 123 占用…」）；骨架后「nano: 启动失败：…」。

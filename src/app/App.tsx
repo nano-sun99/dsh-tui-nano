@@ -10,7 +10,7 @@ import {
   type QuestionPrompt,
 } from '../decisions/manager.ts'
 import { Box, Overlay, Text } from '../render/components.ts'
-import { graphemes, truncateText } from '../render/text.ts'
+import { displayWidth, graphemes, truncateText } from '../render/text.ts'
 import { EDGE, INLINE } from '../theme/spacing.ts'
 import type { Theme } from '../theme/theme.ts'
 import { renderMarkdown } from '../transcript/markdown.ts'
@@ -73,7 +73,7 @@ function RowView(props: { row: Row; theme: Theme; width: number }) {
   const indent = row.indent ?? 0
   return (
     <Box flexDirection="row" width={width} {...(row.pressId ? { onPress: row.pressId } : {})}>
-      {indent > 0 ? <Text>{' '.repeat(indent)}</Text> : null}
+      {indent > 0 ? <Box width={indent} /> : null}
       {row.spans.map((span, index) => (
         <Text
           key={`${row.pressId ?? 'row'}-${index}`}
@@ -122,12 +122,19 @@ function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
         : 'Enter 发送 · Ctrl+C 退出'
   const left = `nano 0.2.0 · ${snapshot.modelLabel} · ${state}`
   const right = hint
-  const gap = Math.max(1, props.width - left.length - right.length - 2 * EDGE)
+  const available = Math.max(1, props.width - 2 * EDGE)
+  const showRight = displayWidth(left) + displayWidth(right) < available
   return (
-    <Box flexDirection="row" height={1} paddingX={EDGE} width={props.width}>
-      <Text color={snapshot.theme.muted}>{left}</Text>
-      <Text>{' '.repeat(gap)}</Text>
-      <Text color={snapshot.theme.faint}>{right}</Text>
+    <Box flexDirection="row" height={1} flexShrink={0} paddingX={EDGE} width={props.width}>
+      <Text color={snapshot.theme.muted} wrap={false}>
+        {left}
+      </Text>
+      <Box flexGrow={1} />
+      {showRight ? (
+        <Text color={snapshot.theme.faint} wrap={false}>
+          {right}
+        </Text>
+      ) : null}
     </Box>
   )
 }
@@ -344,7 +351,7 @@ export function App(props: { snapshot: AppSnapshot }) {
   const bodyHeight = Math.max(1, height - 1 - inputHeight)
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box flexDirection="column" flexGrow={1} paddingX={EDGE} width={width}>
+      <Box flexDirection="column" flexGrow={0} height={bodyHeight} paddingX={EDGE} width={width}>
         <Transcript snapshot={snapshot} bodyHeight={bodyHeight} width={width - EDGE * 2} />
       </Box>
       <StatusLine snapshot={snapshot} width={width} />

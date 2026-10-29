@@ -23,12 +23,15 @@ export class InputModel {
     const head = chars.slice(0, this.cursor).join('')
     const tail = chars.slice(this.cursor).join('')
     this.text = head + text + tail
-    this.cursor += graphemes(text).length
+    // Recompute from the merged prefix: a combining mark joins the previous
+    // grapheme instead of adding a cursor position.
+    this.cursor = graphemes(head + text).length
   }
 
   backspace(): void {
-    if (this.cursor === 0) return
     const chars = this.graphemes
+    this.cursor = Math.min(this.cursor, chars.length)
+    if (this.cursor === 0) return
     chars.splice(this.cursor - 1, 1)
     this.text = chars.join('')
     this.cursor -= 1
