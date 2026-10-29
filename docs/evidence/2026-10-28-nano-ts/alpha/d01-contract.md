@@ -84,5 +84,7 @@
 | boot 前补丁 | `src/boot/assemble.ts` 的 `CoreBootOptions.extraPatches` | 追加在 α 的四个 patch 之后；`src/main.ts` 传 S02 的 `featureBootPatches(rootId)`（`src/sessions/boot-patches.ts`） |
 | boot 后初始化 | `src/app/nano-app.ts` 的 `NanoAppOptions.features` | 首帧前 `await features.start(FeatureContext)`；关停 drain 阶段 `features.dispose()`；`src/main.ts` 构造 `new Features()` |
 | 界面与按键 | `src/app/App.tsx` 的 `AppSnapshot.featureBody`；`nano-app` 的 `handleKey` / `dispatchAction` | `body(): ReactNode` 渲染在正文区；`handleKey(key): boolean` 在 S01 模态之后；S01 未消费的 keymap action 交给 `dispatchAction(action)` |
+| 输入框访问 | `FeatureContext.input`（`src/app/nano-app.ts`） | S01 的 `InputModel`；S02 用它读写文本框（补全、`@` 引用、`Tab` 插入、草稿） |
+| 有序内容提交 | `src/conversation/controller.ts` | `submitContent(parts)` / `steerContent(parts)`，`parts` 为官方 content 段；纯文本 `submit`/`steer` 行为不变 |
 
 `FeatureHost` 与 `FeatureContext` 的定义在 `src/app/nano-app.ts`；S02 的实现是 `src/controls/feature-host.ts`。不传 `features`、不传 `extraPatches` 时，α 的行为、界面与单测完全一致。
