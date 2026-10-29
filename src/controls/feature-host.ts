@@ -60,6 +60,8 @@ export class Features implements FeatureHost {
   private sessions: SessionsPanel | undefined
   private dock: SubagentDock | undefined
   private info: InfoPanel | undefined
+  /** 首次人工命令的权限提示只出现一次（S08 §2.2）。 */
+  private bangHintShown = false
   private disposeKeys: (() => void)[] = []
 
   async start(context: FeatureContext): Promise<void> {
@@ -298,6 +300,13 @@ export class Features implements FeatureHost {
     const context = this.context
     if (!context) return
     const model = context.conversation.model
+    if (!this.bangHintShown) {
+      this.bangHintShown = true
+      model.appendNotice(
+        '! 以你的用户权限运行，不是 Agent 授权；输出会作为上下文注入，但不会立即唤醒模型。',
+        'warning',
+      )
+    }
     model.appendNotice(`$ ${command}`, 'info')
     context.input.take()
     context.requestRender()

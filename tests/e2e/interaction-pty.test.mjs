@@ -90,4 +90,10 @@ test('人工命令：!echo 立即执行并显示输出与退出码', () => {
   assert.match(screen, /\$ echo nano-bang/, '应显示命令行')
   assert.match(screen, /nano-bang/, '应显示命令输出')
   assert.match(screen, /退出码 0/, '应显示退出码')
+  // S08 §2.2：首次使用 ! 明确提示「以用户权限运行、不是 Agent 授权」。
+  assert.match(screen, /以你的用户权限运行，不是 Agent 授权/, '首次 ! 应提示权限边界')
+  assert.ok(
+    screen.indexOf('以你的用户权限运行') < screen.indexOf('$ echo nano-bang'),
+    '权限提示应出现在命令行之前',
+  )
 })

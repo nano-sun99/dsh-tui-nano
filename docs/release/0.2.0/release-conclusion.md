@@ -17,7 +17,7 @@
 | B2 | 凭据 / 用户内容泄漏 | 通过 | nano 不复制、不显示凭据值；`$DSH_HOME` 只允许新增 `.anonymous-user-id`（e2e 启动冒烟逐文件哈希）；首启来源只显示路径（alpha §1#6） |
 | B3 | 跨会话串内容 | 未验证 | 同根第二窗口拒绝、双 root 并发、session/storage 目录隔离有 e2e；但九面（transcript/草稿/队列/附件/审批/问卷/终端/Monitor/调度）的内容隔离没有逐面证据（beta §3 自评「未覆盖」） |
 | B4 | 无法启动 / 退出 | 通过 | e2e：全新安装 → 启动（真 PTY）→ Ctrl+C 退出 → purge → 卸载 → 重装 → 再启动，全部通过 |
-| B5 | 权限 / 审批绕过 | 未验证 | 审批 waterfall、默认焦点、无答即拒有单测；能力探针证明 terminal 不在 Agent 工具表；**`!` 权限提示缺失**（S08 §2.2 要求首次使用时提示，当前只显示 `$ cmd`） |
+| B5 | 权限 / 审批绕过 | 通过 | 审批 waterfall、默认焦点、无答即拒有单测；能力探针证明 terminal 不在 Agent 工具表；`!` 首次使用权限提示已实现并有用例 |
 | B6 | 会话无法恢复 | 通过 | alpha §2：同根二次启动 resume 后历史回放可见 |
 | B7 | 交付物缺失 / 契约冲突 | 通过 | 包入口、keymap 文档、prepack 检查、发布文档齐全；键位单一源生成 README 与 `--help`（e2e「keymap 文档与源码一致」「--help 含用法与键位段」）。视觉未验证不影响「交付物存在」的判定，但会作为独立行阻断 |
 | B8 | 首启来源缺失 | 通过 | alpha §1#6：首帧 notice 显示 profile / settings / 生效层 / 凭据 / 全局指令来源 |
@@ -41,7 +41,7 @@
 | 视觉 | 主题/间距 ADR、process-display ADR、深/浅、60/100 列、diff 8 行、CJK/窄屏 | 未验证 | PTY 无头验证通过：深/浅主题分别命中各自色盘的 RGB、均无 ANSI 命名色；60/100 列骨架行不超宽且有一行铺满（`vision-pty.test.mjs`）；仍缺 0.2.0 的 Ghostty 真机截图（合成/透明/字体），0.1.0 截图属已退场的 Rust 实现 |
 | 长会话 | 1000 行 p95、5000 行内存 | 通过 | alpha §6：滚动 2.80ms / 流式 1.61ms / resize 6.99ms；5000 行与 1000 行堆增长同量级 |
 | 异常 | 断网、官方异常、SIGTERM、SIGKILL、终端残留、reset 提示 | 未验证 | SIGTERM/SIGHUP/3s 与前次强杀 `reset` 提示通过；e2e「官方调用失败」证明模型调用失败时界面显示回合出错且不崩；断网（真实网络不可达）未模拟 |
-| 安全 | 审批无答即拒、Monitor `notify` 默认关闭且计费提示、`!` 权限提示、terminal 不进 Agent 工具表 | 未验证 | 能力探针证明 terminal 不在 Agent 工具表、`ask_user_question` 存在；审批与 Monitor 有单测；**`!` 权限提示缺失**——S08 §2.2 要求首次使用时提示「以用户权限运行、不是 Agent 授权」，当前只显示 `$ cmd`，需退回 S02 补实现 |
+| 安全 | 审批无答即拒、Monitor `notify` 默认关闭且计费提示、`!` 权限提示、terminal 不进 Agent 工具表 | 通过 | 审批 waterfall/默认焦点/无答即拒有单测；Monitor `notify` 行显示「会唤醒模型并计费」且默认 `quiet`；`!` 首次使用提示在界面出现并有用例（S08 §2.2）；能力探针证明 terminal 不在 Agent 工具表、`ask_user_question` 存在 |
 | 跨会话 | 九面隔离；双窗口同根拒绝、双 root 并发 | 未验证 | e2e：同根第二窗口被拒、双 root 并发；sessions 根共享、叶子目录按 root 分开，runtime-data/<root>/storage 各自独立；root-b 界面与会话日志都不含 root-a 的输入；九面（草稿/队列/附件/审批/问卷/终端/Monitor/调度）的内容隔离仍未逐面取证 |
 | 安装 | 全新安装 → 启动 → 升级 → `nano purge` → 卸载 → 重装；每步前后文件清单/哈希 | 通过 | e2e 24 个用例（安装链 16 + 视觉 3 + 能力 1 + 交互 2 + 跨会话 2）；每步 `snapshot` 记录数据根 / `$DSH_HOME` / 安装目录的文件数与摘要哈希；卸载后重装再跑一次真 PTY 启动 |
 | 架构 | 单一运行时宿主（ADR-20261029-single-process-fd-guard）、无 `nano.*` 协议、无第二宿主；fd 级守护 | 通过 | ADR + `src/bin.ts` / `src/runtime/fd-guard.ts`；alpha §5 启动期 stdout 写入 0；e2e「架构门禁」为空（门禁只覆盖旧工具链/路径字符串，不替代结构审查） |
@@ -56,8 +56,7 @@
 3. **功能面**：beta 自评多项「部分」。
 4. **视觉**：0.2.0 无 Ghostty 真机截图。
 5. **异常**：断网（真实网络不可达）未模拟；官方调用失败路径已有 e2e。
-6. **安全**：`!` 权限提示缺失（S08 §2.2 要求首次提示，需回 S02 补实现）；terminal 已由能力探针取证。
-7. **版本**：`dist.integrity` 需发布后 `npm view` 核对。
+6. **版本**：`dist.integrity` 需发布后 `npm view` 核对。
 
 解除条件：逐项补齐可核证据（命令输出、截图或录屏），或由子件退回补实现/取证后重新出结论。必测项不接受「已知问题」降级。
 
@@ -66,6 +65,7 @@
 - 档位：**重审**（用户 2026-10-29 在闸卡上当场选择）。
 - 执行：2 个只读 agent（规格符合性、对抗找 bug），共 31 条发现；两路原文已贴 PR #95 评论。
 - 说明：两个 agent 由实施方派出，**不是独立第三方**；本次结论不把它当外部裁决。
+- 2026-10-29 用户指示补 `!` 首次使用权限提示（S08 §2.2，S02 行为）：界面在第一条人工命令前显示「以用户权限运行，不是 Agent 授权」；e2e 断言其出现且位于命令行之前。
 - 2026-10-29 第二轮轻审（PR #97 自动化证据）：10 条发现（能力探针读写真实 `~/.dsh`、凭据环境变量继承导致假绿/真实请求、文档矛盾、跨会话无正控、同根竞态、信号与失败路径清理），用户选「改」，已全部修复并重跑 24/24。
 - 处置：用户选择「改」。本轮已修——
   - 数据丢失：`--root purge` 不再被当成子命令（含 `--root=purge` 回归用例）；
@@ -101,6 +101,7 @@
 | 用户数据边界 | 普通卸载保留数据根；`purge` 交互确认、`--yes`/`-y` 跳过；`$DSH_HOME` 只写 `.anonymous-user-id` | e2e |
 | 能力面 | 能力探针：terminal 不在 Agent 工具表、ask_user_question 存在 | `tests/e2e/capability.test.mjs` |
 | 交互异常 | 模型调用失败时界面显示回合出错且不崩；`!echo` 显示输出与退出码 | `tests/e2e/interaction-pty.test.mjs` |
+| `!` 权限提示 | 首次人工命令前显示权限边界提示 | `tests/e2e/interaction-pty.test.mjs` |
 | 跨会话（目录层） | 同根第二窗口被拒、双 root 并发、会话/storage 目录按根隔离 | `tests/e2e/cross-session.test.mjs` |
 | 视觉 token | PTY 无头验证：深/浅主题只发真彩色、无 ANSI 命名色、60/100 列可起界面（不开窗口、不抢键鼠） | `tests/e2e/vision-pty.test.mjs`；`evidence/e2e-release.txt` |
 | 骨架后核心加载失败 | 注入 `startCore` 抛错：骨架可见、错误可见、退出 1 | e2e「骨架后核心加载失败」 |

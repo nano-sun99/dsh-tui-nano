@@ -12,7 +12,7 @@
 
 不碰：业务功能实现；发现功能缺失时报告并退回对应子件。`package.json` 在 α/β 期由 S01 独占；γ 发布期 S01 已交付，manifest 由本份落盘，内容以 §2.1 为准。
 
-入口级例外（2026-10-29 用户拍板，改旧 spec）：S03 可改 `src/bin.ts`、`src/main.ts`、`src/input/keymap.ts` 与 `src/controls/feature-host.ts` 的入口/文档接缝——Node 下限检查、`nano purge` 交互确认与 `--yes`、`--help` 的键位段生成、功能键改为从静态清单注册；不改 α/β 的业务行为，回归由 S01 单测、S02 功能测试与 S03 e2e 覆盖。新增 `src/input/keymap-docs.ts`（键位文档渲染）与 `src/controls/feature-keys.ts`（S02 功能键静态清单，运行时与文档共用）归本份。发布期 manifest 落盘会改 `package.json` / `package-lock.json`；`biome.json` 的检查范围扩到 `tests/**`、`scripts/**`，并做一次只含格式与 import 排序的扫尾（无行为变化）。
+入口级例外（2026-10-29 用户拍板，改旧 spec）：S03 可改 `src/bin.ts`、`src/main.ts`、`src/input/keymap.ts` 与 `src/controls/feature-host.ts` 的入口/文档接缝——Node 下限检查、`nano purge` 交互确认与 `--yes`、`--help` 的键位段生成、功能键改为从静态清单注册；不改 α/β 的业务行为，回归由 S01 单测、S02 功能测试与 S03 e2e 覆盖。新增 `src/input/keymap-docs.ts`（键位文档渲染）与 `src/controls/feature-keys.ts`（S02 功能键静态清单，运行时与文档共用）归本份。用户 2026-10-29 指示补 `!` 首次使用权限提示（S08 §2.2）；实现落在 `feature-host.ts`，属于本次授权的 S02 行为补缺。发布期 manifest 落盘会改 `package.json` / `package-lock.json`；`biome.json` 的检查范围扩到 `tests/**`、`scripts/**`，并做一次只含格式与 import 排序的扫尾（无行为变化）。
 
 ## 2. 包结构与安装
 
@@ -162,5 +162,6 @@ git ls-files -z -- src package.json packaging tests scripts README.md README.en.
 - 2026-10-28 轻审修订：npm manifest 完整清单、harness 精确/其余跟随口径、普通卸载保留 profile 与 `--purge` 区分、B1–B8 阻断表、发布审计档位、Rust 退场 grep 限定范围与旧 packaging 文件清单。
 - 2026-10-28 二次轻审修订：manifest 可直接落盘（全名/版本/devDeps/type/license/bin/files/overrides）、`nano purge` 作为可执行入口且不依赖 npm 生命周期、版本 `0.2.0` 与 `docs/release/0.2.0`、B1–B8 逐条覆盖 v1 S13 并补首启来源、B8 改由 S01 实现、grep 用 `git ls-files` 避免假绿与 fatal、p50 删除、Node 22.19 运行时检查、`npm pack` 命令与 integrity、发布档位由用户当场选择。
 - 2026-10-29 实施发现修订（用户选择「改旧 spec」）：bin 对齐 S01 已交付的 `dist/bin.js`（新增 `src/bin.ts` 入口级例外）；依赖对齐已实现的 `@deepseek-ai/dsh` 整包并保留 cordis 五件 overrides；`test` 覆盖 `tests/feature`、新增 `test:e2e`；grep 门禁去掉会误伤语法高亮的裸词 `rust`/`bridge`，改为旧工具链/路径/协议标识；`rust-final` tag 在删除前补打；§5 写明 `keymap:docs` 的 `--write`/`--check` 与 `--help` 渲染来源。
+- 2026-10-29 用户指示补 `!` 首次使用权限提示（S08 §2.2）：`feature-host.ts` 首条人工命令前显示「以用户权限运行，不是 Agent 授权」，e2e 断言。
 - 2026-10-29 补证据两轮（用户选「轻审」并选「改」）：新增视觉/能力/交互/跨会话 e2e；修掉真实 `~/.dsh` 读写、凭据环境变量继承、跨会话无正控与同根竞态。
 - 2026-10-29 实施期重审修订（用户选「重审」并选「改」）：入口级例外补 `feature-host.ts` / `package.json` / `package-lock.json` / `biome.json` 与格式化扫尾；`dist/bin.js` 只断言 shebang（可执行位由 npm 设置）；`test:watch` / `start` 进 manifest；purge 补 `-y` 别名、非 TTY 必须显式跳过、提示写 `/dev/tty`；`keymap-docs` 改为直接 import 源码；pi-ai 版本更正为 1.4.0。

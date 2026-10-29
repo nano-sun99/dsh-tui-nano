@@ -48,7 +48,7 @@ boot 官方核心后读工具注册表：断言 terminal 不在 Agent 工具表�
 真 PTY 里输入并观察界面：
 
 - 无凭据发送消息：界面显示「回合出错」与官方原因，进程不崩。
-- `!echo nano-bang`：显示命令行、输出与退出码。
+- `!echo nano-bang`：首次使用先显示「以用户权限运行，不是 Agent 授权」的提示，再显示命令行、输出与退出码。
 
 ## `cross-session.test.mjs`（2）
 
