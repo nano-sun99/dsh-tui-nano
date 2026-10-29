@@ -12,7 +12,7 @@
 
 ## 1. 目标与非目标
 
-**目标**：在官方 DSH 核心之上，用单一 TypeScript 代码库实现 nano 的终端界面；单 Node 进程、进程内事件、无自造协议；保留 v1 已验收的业务行为（除 §5.2）。
+**目标**：在官方 DSH 核心之上，用单一 TypeScript 代码库实现 nano 的终端界面；单一运行时宿主（runtime 单 Node 进程，CLI launcher 仅做 fd 守护包装，ADR-20261029-single-process-fd-guard）、进程内事件、无自造协议；保留 v1 已验收的业务行为（除 §5.2）。
 
 **非目标**：不重写 Agent/模型/工具/沙箱/会话/权限/持久化；不做多后端、插件市场、远程宿主、MCP 管理、检查点回滚；不引入第二套视觉体系；不做 Rust 与 TS 并存。
 
@@ -21,7 +21,7 @@
 | 决定 | 内容 | 影响 |
 |---|---|---|
 | 实现语言 | TypeScript；Rust 打 `rust-final` tag + `archive/rust-v1` 分支后退场 | 61,395 行 Rust、789 测试退出主线 |
-| 运行形态 | 单一 Node 进程；无第二宿主、无 `nano.*` 协议、无 fd 3/4 | 桥接层与协议契约不再存在 |
+| 运行形态 | 单一运行时宿主（runtime 单 Node 进程 + 启动器 fd 包装，ADR-20261029-single-process-fd-guard）；无第二宿主、无 `nano.*` 协议、无 fd 3/4 | 桥接层与协议契约不再存在；launcher 不持业务 |
 | 组装方式 | 自建 Cordis 根：`loadProfileDirectory` + `readProfilePatches` + `createRuntimeResolution` + `boot()` + `PluginPackages` + `profileContext`/`appReady` | 不使用 `dsh --profile`；**不保留回退**（用户 2026-10-28 决定） |
 | profile 归属 | 应用自持，放在数据根（如 `~/.dsh-tui-nano/profile`）；首次启动自动初始化，升级校验；不写 `$DSH_HOME/profiles` | 卸载默认保留数据根/profile，`--purge` 才删除 |
 | 首帧 | pre-boot 最小首帧；核心就绪后接管 | 避免 0.5–0.8s 空白 |
@@ -34,17 +34,18 @@
 
 ```text
 Ghostty
-  └─ nano（本包 bin，唯一 Node 进程）
-       ├─ 自建 Cordis 根
-       │    ├─ 官方核心 profile（应用自持，dsh-base + 官方行）
-       │    └─ nano 插件（UI / 输入 / 渲染，同一根）
-       └─ 官方 DSH：Agent / 模型 / 工具 / 会话 / 权限 / 持久化
+  └─ nano launcher（fd 守护包装，不持业务）
+       └─ runtime（本包 bin，唯一 Node 宿主 / 终端写入者）
+            ├─ 自建 Cordis 根
+            │    ├─ 官方核心 profile（应用自持，dsh-base + 官方行）
+            │    └─ nano 插件（UI / 输入 / 渲染，同一根）
+            └─ 官方 DSH：Agent / 模型 / 工具 / 会话 / 权限 / 持久化
 ```
 
 ### 3.1 组装配方（核心已实测；β 行另测）
 
 1. **确保应用 profile**：`initProfile(dir, ['@deepseek-ai/dsh-base'])` 写 manifest/patch/workspace，但它**不写 `cordis.yml`**，随后补 `[]`；三份文件逐项检查，缺失才补，禁止 0 字节；损坏先备份再报错，不覆盖 settings。`loadProfileDirectory` 不是纯只读（可能重写 manifest、`skippedBundles` 不抛错），启动后必须检查。
-2. **解析根身份**：`--root` → `last-root` → 生成；同一 ID 用于 storage 根、schedule 根、认领、handoff、`sessions.create`；不一致硬失败。进备用屏前先取挂载认领。
+2. **解析根身份**：`--root` → `last-root` → 生成；同一 ID 用于 storage 根、schedule 根、认领、handoff、会话创建/恢复（resume 优先，NotFound 才 create，ADR-20261029-root-session-resume-first）；不一致硬失败。进备用屏前先取挂载认领。
 3. 追加 patch 行：`tool-ask-user`（默认 blocking；timed 配置落 active preset config）、`file-reference-local { maxResults: 20 }`；β 再加 `@deepseek-ai/dsh-api-terminal-controller`。
 4. 追加 storage patch：`session-persistence-jsonl.root = <数据根>/sessions`、`storage-json.root = <数据根>/runtime-data/<root>/storage`；`storage-domain` 沿用 base `{ backend: 'json' }`；关 HMR。
 5. `createRuntimeResolution` → `boot()`，注入 `profileContext`、`cmdlineArgs`、`appExit`、`appReady`，挂 `PluginPackages`；`appReady.commit()`。不加载官方 `dsh-api-session-controller`（12 个注入服务 + `nativeOpen`，base 缺两项），也不 `provide('storageDomain')`。
@@ -62,7 +63,7 @@ Ghostty
 
 - 启动顺序：确保 profile → 解析根身份 → 获取挂载认领 → pre-boot 骨架（进备用屏、接管 fd 0/1、raw mode）→ fd 级 stdout/stderr 捕获 → boot 核心 → 能力快照 → 挂 UI → 正式首帧 → 接受输入。认领失败发生在进备用屏之前；画骨架必须先占终端。
 - 启动失败两段：骨架前（profile/版本/认领）写 stderr 退出；骨架后（boot/快照）恢复终端、写 fd 2、非零退出。
-- 根切换/冷改名：单进程不做在线 storage 路由替换；受控进程重启 = 冻结输入 → 原子写 handoff（tmp+fsync+rename、0600、版本、读后删）→ 停 schedule/Monitor/PTY、取消在飞 → flush → 杀死并核验 PTY 进程组 → 释放 claim → exec self `--root <id>`。新进程提交成功后才删 handoff；认领/boot/handoff/rename 任一失败都恢复终端、保留 handoff、不建替代会话。冷改名即切到该会话（保持单主会话），改名后留在该根。
+- 根切换/冷改名：运行时不做在线 storage 路由替换；受控进程重启 = 冻结输入 → 原子写 handoff（tmp+fsync+rename、0600、版本、读后删）→ 停 schedule/Monitor/PTY、取消在飞 → flush → 杀死并核验 PTY 进程组 → 释放 claim → exec self `--root <id>`。新进程提交成功后才删 handoff；认领/boot/handoff/rename 任一失败都恢复终端、保留 handoff、不建替代会话。冷改名即切到该会话（保持单主会话），改名后留在该根。
 - 关停阶段：冻结输入 → 排空生产者（S02 hooks）→ 排空持久化 → 释放 schedule 租约 → 释放挂载认领 → 恢复终端（finally，预留预算）→ 退出；每阶段独立截止，总优雅 10s；「3s 强制」= 恢复终端并非零退出；清理失败保留认领并报告。
 - `uncaughtException`/`unhandledRejection` 走同一关停路径；SIGINT/SIGTERM/SIGHUP 有界关停并逐项报告；SIGKILL 后下次启动检测脏状态提示 `reset`。
 - 官方 HMR 关闭（`hmr disabled`）；profile/settings 写入由应用自持 profile 承担。
@@ -159,7 +160,7 @@ Ghostty
 | 应用自持 profile + 首次初始化/升级 | 干净机器首启可用、不写 `$DSH_HOME/profiles`；卸载默认保留、purge 删除 | 用户 2026-10-28 选择；profile/settings 自管 |
 | 最小 sessionController 适配器 | 官方 session-controller 要 12 个服务 + `nativeOpen`，base 缺两项；schedule 只需 `resolveAgent` | 本次新增；S02 经 D01 的 boot 后扩展提供，capability 快照断言 |
 | schedule 命名后端 + 探针后挂载 | 保证 per-root 隔离且探针不过不打开表 | 本次新增；S02 验收 |
-| 单进程切根 = 受控重启 + handoff | 不替换 storage 路由、不产生第二个 live root | 本次新增；代价是切根会重启进程 |
+| 运行时切根 = 受控重启 + handoff | 不替换 storage 路由、不产生第二个 live root | 本次新增；代价是切根会重启进程 |
 | lifecycle hooks | S01 关停能清理 S02 资源且不越界 | 本次新增；D01 契约 |
 | bridge 处置表 | 不并存第二套实现、不静默丢逻辑 | 本次新增；S01/S02 吸收、S03 删除 |
 | pre-boot 最小首帧 | 避免核心加载空白 | 用户 2026-10-28 选择；代价是两套渲染状态 |

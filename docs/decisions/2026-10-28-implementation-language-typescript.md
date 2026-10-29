@@ -1,11 +1,11 @@
 # ADR-20261028-implementation-language-typescript：实现语言改为 TypeScript，运行形态改为单 Node 进程
 
-- 状态：生效中
+- 状态：已被取代
 - 日期：2026-10-28
 - 决策人：用户
 - 适用范围：nano 的全部实现代码、构建、分发与运行时形态
 - 取代：无
-- 被取代：无
+- 被取代：[ADR-20261029-single-process-fd-guard](2026-10-29-single-process-fd-guard.md)（仅运行形态与终端所有权；其余决定按原文继续有效）
 - 决策来源：2026-10-28 用户拍板（本会话选型：纯 TypeScript、单进程、自己组装官方核心、reconciler + Yoga、Rust 归档）；规格 `2026-10-28-nano-ts`
 
 ## 决定

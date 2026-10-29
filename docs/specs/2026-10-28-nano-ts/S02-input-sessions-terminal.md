@@ -8,7 +8,7 @@
 
 拥有：`src/attachments/`、`src/sessions/`（含 `session-controller-adapter.ts`）、`src/controls/`、`src/skills/`、`src/terminal/`、`src/jobs/`、`src/monitor/`、`src/schedule/`、`src/subagents/`、`tests/feature/`、`docs/evidence/2026-10-28-nano-ts/beta/`。
 
-不碰：S01 的全部文件（`src/boot`、`src/runtime`、`src/render`、`src/input`、`src/theme`、`src/conversation`、`src/transcript`、`src/decisions`、`tests/unit`、`docs/evidence/alpha`）、`package.json`、S03 的打包/发布文件。依赖变更经 S01。功能键只经 D01 的 keymap 注册 API，不修改 `src/input`。
+不碰：S01 的全部文件（`src/boot`、`src/runtime`、`src/render`、`src/input`、`src/theme`、`src/conversation`、`src/transcript`、`src/decisions`、`src/app`、`src/types`、`src/main.ts`、`src/bin.ts`、`tests/unit`、`docs/evidence/alpha`）、`package.json` 与根配置（`tsconfig.json`、`vitest.config.ts`、`biome.json`、`package-lock.json`）、S03 的打包/发布文件。依赖变更经 S01。功能键只经 D01 的 keymap 注册 API，不修改 `src/input`。
 
 ## 2. 输入、会话与控制
 

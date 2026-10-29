@@ -11,14 +11,14 @@
 ## 决定
 
 - 启动时先 `ctx.agents.resume({ resumeSessionId: <根身份> })`。
-- 仅当 persistence 报 `SessionPersistenceNotFoundError` 时，才 `ctx.agents.create({ sessionId: <根身份> })` 新建。
+- 仅当 persistence 报 NotFound（错误名 `SessionPersistenceNotFoundError`，或消息匹配 `not found`）时，才 `ctx.agents.create({ sessionId: <根身份> })` 新建；其它错误原样上抛。
 - 两条路径返回的 `session.id` 必须等于预生成根身份；不一致立即硬失败，不创建替代会话。
 - 恢复成功后从 `session.deriveMessages()` 回放阅读面；官方记录仍是唯一事实源，nano 不写第二份历史。
 - 恢复回放暂不携带 `tool/result` 的 `meta`（差异卡会退化为纯文本）；这是已记录的低优先级缺口，不改变本决定。
 
 ## 依据
 
-- 官方 `session-persistence-jsonl` 在发现已有日志时拒绝 `create`（`SessionAlreadyExistsError`），强行 create 会让「同一根二次启动」必然失败（实测：SIGKILL 后同一根重启报 `session "x" already exists`）。
+- 官方 `session-persistence-jsonl` 在发现已有日志时拒绝 `create`（`SessionAlreadyExistsError`），强行 create 会让「同一根二次启动」必然失败；实施复现（SIGKILL 后同根重启报 `session "x" already exists`）见 PR #89 讨论，官方契约见 `@deepseek-ai/dsh-session-persistence` README。
 - 官方 `ResumeAgentOptions` 是恢复既有会话的唯一公开路径；error name 可稳定区分 NotFound。
 - 根身份仍是 session id，认领/存储/调度/handoff 的「同一 ID」不变。
 
@@ -43,5 +43,5 @@
 ## 关联
 
 - Spec：`docs/specs/2026-10-28-nano-ts/S01-runtime-render-conversation.md` §2.2
-- 证据：`docs/evidence/2026-10-28-nano-ts/alpha/README.md` §8/§9
+- 证据：PR #89（合并后 `docs/evidence/2026-10-28-nano-ts/alpha/README.md` §8/§9）
 - 实施：issue #86、PR #89
