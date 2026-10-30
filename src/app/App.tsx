@@ -4,7 +4,7 @@
  * re-renders this tree whenever state changes.
  */
 
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import {
   APPROVAL_OPTIONS,
   type DecisionManager,
@@ -33,7 +33,8 @@ export interface AppSnapshot {
   readonly expanded: ReadonlySet<string>
   readonly scrollOffset: number
   readonly stickBottom: boolean
-  readonly notice?: string
+  readonly notice?: { readonly text: string; readonly tone: 'info' | 'danger' }
+  readonly caretActive?: boolean
   readonly userName: string
   /** 上下文占用 0..1；缺失时不画占比色。 */
   readonly contextRatio?: number
@@ -87,20 +88,31 @@ function RowView(props: { row: Row; theme: Theme; width: number }) {
   return (
     <Box flexDirection="row" width={width} {...(row.pressId ? { onPress: row.pressId } : {})}>
       {indent > 0 ? <Box width={indent} /> : null}
-      {row.spans.map((span, index) => (
-        <Text
-          key={`${row.pressId ?? 'row'}-${index}`}
-          color={toneColor(span.tone, theme)}
-          {...(span.bold ? { bold: true } : {})}
-          {...(span.italic ? { italic: true } : {})}
-          {...(span.underline ? { underline: true } : {})}
-          {...(span.strike ? { strikethrough: true } : {})}
-          {...(span.reverse ? { reverse: true } : {})}
-          wrap={false}
-        >
-          {span.text}
-        </Text>
-      ))}
+      {row.spans.map((span, index) => {
+        const key = `${row.pressId ?? 'row'}-${index}`
+        const textElement = (
+          <Text
+            color={toneColor(span.tone, theme)}
+            {...(span.bold ? { bold: true } : {})}
+            {...(span.italic ? { italic: true } : {})}
+            {...(span.underline ? { underline: true } : {})}
+            {...(span.strike ? { strikethrough: true } : {})}
+            {...(span.reverse ? { reverse: true } : {})}
+            wrap={false}
+          >
+            {span.text}
+          </Text>
+        )
+        if (span.caret !== true) {
+          return <Fragment key={key}>{textElement}</Fragment>
+        }
+        return (
+          <Fragment key={key}>
+            <Box width={0} height={1} cursor />
+            {textElement}
+          </Fragment>
+        )
+      })}
     </Box>
   )
 }
@@ -126,21 +138,26 @@ function Transcript(props: { snapshot: AppSnapshot; bodyHeight: number; width: n
 
 function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
   const { snapshot } = props
-  const state = snapshot.status === 'running' ? '运行中' : '空闲'
   const hint =
     snapshot.status === 'running'
       ? 'Enter 排队 · Ctrl+S 引导 · Ctrl+C 停止'
       : snapshot.text !== ''
         ? 'Enter 发送 · Shift+Enter 换行'
         : 'Enter 发送 · Ctrl+C 退出'
-  const left = displayCwd(snapshot.cwd)
+  const left = snapshot.notice ? snapshot.notice.text : displayCwd(snapshot.cwd)
+  const leftColor = snapshot.notice
+    ? snapshot.notice.tone === 'danger'
+      ? snapshot.theme.danger
+      : snapshot.theme.faint
+    : snapshot.theme.muted
   const right = hint
   const available = Math.max(1, props.width - 2 * EDGE)
-  const showRight = displayWidth(left) + displayWidth(right) < available
+  const showRight = displayWidth(left) + displayWidth(right) + 1 <= available
+  const leftBudget = showRight ? Math.max(1, available - displayWidth(right) - 1) : available
   return (
     <Box flexDirection="row" height={1} flexShrink={0} paddingX={EDGE} width={props.width}>
-      <Text color={snapshot.theme.muted} wrap={false}>
-        {left}
+      <Text color={leftColor} wrap={false}>
+        {truncateText(left, leftBudget)}
       </Text>
       <Box flexGrow={1} />
       {showRight ? (
@@ -159,6 +176,7 @@ function inputInnerWidth(width: number): number {
 /** 输入区内容（提示符右侧）；InputLine 与高度计算共用。 */
 function buildInputSpans(snapshot: AppSnapshot): Span[] {
   const disabled = snapshot.decisions.hasDecision
+  const showCaret = snapshot.caretActive !== false
   const chars = graphemes(snapshot.text)
   const before = chars.slice(0, snapshot.cursor).join('')
   const after = chars.slice(snapshot.cursor).join('')
@@ -166,20 +184,34 @@ function buildInputSpans(snapshot: AppSnapshot): Span[] {
   if (disabled) {
     spans.push({ text: '等待你处理上面的确认…', tone: 'faint' })
   } else if (snapshot.text === '') {
-    spans.push({ text: ' ', tone: 'normal', reverse: true })
+    if (showCaret) spans.push({ text: ' ', tone: 'normal', reverse: true, caret: true })
     spans.push({ text: ' 输入消息…', tone: 'faint' })
   } else {
     spans.push({ text: before, tone: 'normal' })
-    spans.push({ text: ' ', tone: 'normal', reverse: true })
+    if (showCaret) spans.push({ text: ' ', tone: 'normal', reverse: true, caret: true })
     spans.push({ text: after, tone: 'normal' })
   }
-  if (snapshot.notice) spans.push({ text: `  ${snapshot.notice}`, tone: 'faint' })
   return spans
 }
 
-function inputLineCount(snapshot: AppSnapshot, width: number): number {
+/** 输入区可见窗口：高度 1–4 行，以 caret 行为中心滚动（spec §3.2）。 */
+function inputWindow(
+  snapshot: AppSnapshot,
+  width: number,
+): { rows: Row[]; start: number; visible: number } {
   const rows = wrapSpans(buildInputSpans(snapshot), inputInnerWidth(width))
-  return Math.min(4, Math.max(1, rows.length))
+  const visible = Math.min(4, Math.max(1, rows.length))
+  const caretRow = rows.findIndex((row) => row.spans.some((span) => span.caret === true))
+  const anchor = caretRow >= 0 ? caretRow : rows.length - 1
+  const start =
+    rows.length <= visible
+      ? 0
+      : Math.max(0, Math.min(anchor - Math.floor(visible / 2), rows.length - visible))
+  return { rows, start, visible }
+}
+
+function inputLineCount(snapshot: AppSnapshot, width: number): number {
+  return inputWindow(snapshot, width).visible
 }
 
 /** 正文区可见高度；滚动上限与渲染共用这一份算法，别各算各的。 */
@@ -251,18 +283,17 @@ function displayCwd(cwd: string | undefined, max = 44): string {
 function InputLine(props: { snapshot: AppSnapshot; width: number }) {
   const { snapshot } = props
   const innerWidth = inputInnerWidth(props.width)
-  const rows = wrapSpans(buildInputSpans(snapshot), innerWidth)
-  const lineCount = Math.min(4, Math.max(1, rows.length))
+  const { rows, start, visible } = inputWindow(snapshot, props.width)
   return (
     <Box flexDirection="column" width={props.width}>
       <ContextRule theme={snapshot.theme} width={props.width} ratio={snapshot.contextRatio} />
-      <Box flexDirection="column" paddingX={EDGE} width={props.width} height={lineCount}>
+      <Box flexDirection="column" paddingX={EDGE} width={props.width} height={visible}>
         <Box flexDirection="row">
           <Text color={snapshot.theme.accent} bold>
             {'› '}
           </Text>
           <Box flexDirection="column" width={innerWidth}>
-            {rows.slice(0, lineCount).map((row, index) => (
+            {rows.slice(start, start + visible).map((row, index) => (
               <RowView key={`input-${index}`} row={row} theme={snapshot.theme} width={innerWidth} />
             ))}
           </Box>

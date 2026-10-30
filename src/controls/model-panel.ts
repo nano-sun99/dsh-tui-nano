@@ -33,7 +33,7 @@ interface Entry {
 export interface ModelPanelOptions {
   readonly conversation: ConversationController
   readonly onChange: () => void
-  readonly setNotice: (text: string | undefined) => void
+  readonly setNotice: (text: string | undefined, tone?: 'info' | 'danger') => void
   /** 强制下一帧全量重绘，清掉终端侧残留（面板是整块替换底部区域）。 */
   readonly repaint?: () => void
 }
@@ -106,7 +106,7 @@ export class ModelPanel {
     const conversation = this.options.conversation
     const current = conversation.modelSelection
     if (!current) {
-      this.options.setNotice('没有可用的模型')
+      this.options.setNotice('没有可用的模型', 'danger')
       return
     }
     this.provider = current.provider
@@ -347,7 +347,7 @@ export class ModelPanel {
     } catch (error) {
       if (token !== this.submitToken) return
       this.error = `模型切换失败：${String((error as Error)?.message ?? error)}`
-      this.options.setNotice(this.error)
+      this.options.setNotice(this.error, 'danger')
       this.options.onChange()
     }
   }

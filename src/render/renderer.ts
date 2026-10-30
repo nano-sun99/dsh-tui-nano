@@ -93,6 +93,7 @@ export class Renderer {
   private attached: HostNode[] = []
   hitRegions: HitRegion[] = []
   selection: SelectionRange | undefined
+  private cursorCell: { row: number; col: number } | undefined
 
   constructor(options: RendererOptions) {
     this.width = Math.max(1, options.width)
@@ -212,6 +213,7 @@ export class Renderer {
     this.rootYoga.setHeight(this.height)
     this.rootYoga.calculateLayout(this.width, this.height, Direction.LTR)
     this.hitRegions = []
+    this.cursorCell = undefined
     const screen = createScreen(this.width, this.height)
     const clip: Rect = { x0: 0, y0: 0, x1: this.width, y1: this.height }
     for (const child of this.container.children) {
@@ -225,6 +227,12 @@ export class Renderer {
     const bytes = encodeDiff(this.previous, screen)
     this.previous = screen
     if (bytes !== '') this.write(bytes)
+    const cell = this.cursorCell as { row: number; col: number } | undefined
+    if (cell) {
+      const row = Math.min(Math.max(0, Math.floor(cell.row)), this.height - 1)
+      const col = Math.min(Math.max(0, Math.floor(cell.col)), this.width - 1)
+      this.write(`\x1b[${row + 1};${col + 1}H`)
+    }
   }
 
   private syncRootChildren(): void {
@@ -284,6 +292,9 @@ export class Renderer {
           })
         : clip
     if (node.kind === 'box') {
+      if (node.props.cursor === true) {
+        this.cursorCell = { row: node.top, col: node.left }
+      }
       if (node.props.clear) {
         clearRect(screen, node.left, node.top, node.width, node.height, clip)
       }
