@@ -8,7 +8,7 @@ npm run test:e2e
 NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 ```
 
-前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 42 个用例：安装 16 + 视觉 3 + 能力 1 + 交互 6 + 输入 2 + 跨会话 10 + 主链路 2 + Monitor 1 + 调度 1。
+前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 42 个用例：安装 16 + 视觉 3 + 能力 1 + 交互 6 + 输入 2 + 跨会话 10 + 主链路 2 + Monitor 1 + 调度 1。发布证据运行显式设置了 `NANO_NODE_22` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip，42/42 全过。
 
 ## `release.test.mjs`（16）
 
@@ -43,14 +43,16 @@ NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 
 boot 官方核心后读工具注册表：断言 terminal 不在 Agent 工具表里，且 `ask_user_question` 存在。
 
-## `interaction-pty.test.mjs`（4）
+## `interaction-pty.test.mjs`（6）
 
 真 PTY 里输入并观察界面：
 
 - 无凭据发送消息：界面显示「回合出错」与官方原因，进程不崩。
+- 网络不可达：`DEEPSEEK_BASE_URL=http://127.0.0.1:9`（连接被拒）时显示「回合出错」与网络错误原文，进程不崩；没有 DNS 用例。
+- `/model` 打开面板：显示标题、当前模型、官方目录与强度。
+- `/model` 直接切换与目录外拒绝：合法模型切换成功，目录外模型被拒。
 - `!echo nano-bang`：首次使用先显示「以用户权限运行，不是 Agent 授权」的提示，再显示命令行、输出与退出码。
 - `!!` 与 `!` 各自提示一次，文案区分「不注入上下文」与「会作为上下文注入」。
-- `/model`：列出当前模型与官方目录、切换成功、目录外模型被拒。
 
 ## `monitor-policy.test.mjs`（1）
 
@@ -63,7 +65,15 @@ boot 官方核心后读工具注册表：断言 terminal 不在 Agent 工具表�
 - 同根第二窗口被拒，并说明被哪个进程占用。
 - 双 root 并发都能起界面；`sessions` 根共享、叶子目录按 root 分开，`runtime-data/<root>/storage` 各自独立；root-b 的界面与会话日志都不含 root-a 的输入（含正控）。
 
-边界：这里覆盖目录与进程层；九面（草稿/队列/附件/审批/问卷/终端/Monitor/调度）的内存内容隔离仍要专项证据。
+边界：这里覆盖目录与进程层；九面内容隔离由 `cross-surface.test.mjs`（8 项）与 `schedule-surface.test.mjs`（1 项）单独取证。
+
+## `cross-surface.test.mjs`（8）
+
+同一数据根、不同 root 的真 PTY：A 制造内容，B 的界面不得出现。覆盖 transcript、草稿、附件、审批、队列、终端、问题、Monitor；Monitor 的 B 侧先断言任务面板打开且为空（正控），再断言 A 的后台任务 / 监听器不可见。
+
+## `schedule-surface.test.mjs`（1）
+
+boot 两个 root 的官方核心与 nano 调度门面：A 创建任务后，A 门面能看到；B 创建自己的任务后，B 门面能看到自己的、看不到 A 的，A 也看不到 B 的。同时断言门面投影不丢 `id/title/prompt/scheduledAt`。
 
 ## `main-chain.test.mjs`（2）+ `mock-model.mjs`
 

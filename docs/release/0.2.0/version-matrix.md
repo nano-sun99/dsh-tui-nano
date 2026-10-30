@@ -1,8 +1,8 @@
 # 版本矩阵（0.2.0）
 
-- 记录日期：2026-10-29
+- 记录日期：2026-10-30
 - 包名 / 版本：`dsh-tui-nano` / `0.2.0`
-- 源码：`main`（PR #99/#101/#102 合并后）；构建基线 `4d6dc1a`（2026-10-30 面板/记忆修订）；归档基线 `f8a7971`
+- 源码：`main`（PR #99/#101/#102 合并后）；构建基线 `d38fbed`（2026-10-30 面板/记忆 + 调度门面/正控修订）；归档基线 `f8a7971`
 - 归档：tag `rust-final`（`f8a7971`）与分支 `archive/rust-v1`
 
 ## 产物
@@ -10,10 +10,10 @@
 | 项 | 值 |
 | --- | --- |
 | 文件 | `packaging/dist/dsh-tui-nano-0.2.0.tgz` |
-| 大小 | 175,837 字节（约 172 KiB） |
+| 大小 | 175,988 字节（约 172 KiB） |
 | 文件数 | 118 |
-| SHA-256 | `4fe393a93e7d78f0b08e0cd13c448f788fbb0216e83bb53098406e475cf97323` |
-| 期望 `dist.integrity` | `sha512-sS2PkeKDzUhXEqYxWpV4rr8Piq2p79rSX8QLUSfKEkFOs2i6TgV5BaUmJ1Ag3TDGOH/4TNHw37dudLpZV7lJjg==` |
+| SHA-256 | `384215a293fe6d235e05a9539a74210945dee34a633dd2a2822fd3cd59a564bf` |
+| 期望 `dist.integrity` | `sha512-zHWTtUdPvkfco1AvlgRaQOT6srieWr/dcAEJmrkLgQMa20sOE6b30heuVYUeT1qe4gT+rFVSEMArwhTgSnd2HQ==` |
 
 期望 integrity 按 npm 的算法（tarball 的 SHA-512，base64）本地计算；只有发布到 registry 后才能用 `npm view dsh-tui-nano@0.2.0 dist.integrity` 核对。见 `release-conclusion.md` 的未验证项。
 
@@ -35,8 +35,8 @@
 | CPU | Apple M5 |
 | 终端 | Ghostty 1.4.0 |
 | Node（主） | v24.18.0，npm 11.16.0 |
-| Node（下限） | v22.19.0（nvm），启动冒烟通过 |
-| Node（拒绝） | v20.20.0，按预期拒绝启动 |
+| Node（下限） | v22.19.0（nvm），e2e 设置 `NANO_NODE_22` 后启动冒烟通过 |
+| Node（拒绝） | v20.20.0（nvm），e2e 设置 `NANO_NODE_20`，按预期拒绝启动 |
 | 数据根 | 证据运行使用系统临时目录（macOS `/var/folders/...`）下的合成目录 |
 | npm cache | 固定在系统临时目录，不写 `~/.npm` |
 
@@ -44,8 +44,11 @@
 
 ```sh
 npm ci
+npm run build
+NANO_NODE_22="$HOME/.nvm/versions/node/v22.19.0/bin/node" \
+  NANO_NODE_20="$HOME/.nvm/versions/node/v20.20.0/bin/node" \
+  npm run test:e2e
 mkdir -p packaging/dist
 npm pack --pack-destination packaging/dist
 shasum -a 256 packaging/dist/dsh-tui-nano-0.2.0.tgz
-npm run test:e2e
 ```

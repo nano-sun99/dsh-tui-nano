@@ -2,7 +2,7 @@
 
 **结论：不发布。**
 
-依据：`docs/specs/2026-10-28-nano-ts/S03-release.md` §3.2——「未验证不算通过；§3.3 的必测项任一未验证即阻断」。打包、安装链与 Rust/bridge 退场已经完成，但 §3.3 仍有必测项没有 0.2.0 的证据；按该口径不能宣告通过，也不能用「已知问题」降级。
+依据：`docs/specs/2026-10-28-nano-ts/S03-release.md` §3.2——「未验证不算通过」。§3.3 的必测项除用户 2026-10-30 明确认可按边界结案的项外均已取证；本版由用户拍板「不发布」，`dist.integrity` 留作发布后外部核对。按该口径，本版不宣告发布通过，但不再把已认可的边界重复列为阻断。
 
 - 产物与哈希、环境矩阵：见 [`version-matrix.md`](version-matrix.md)。
 - 证据文件：见 [`evidence/`](evidence/)（`tests-unit-feature.txt`、`e2e-release.txt`）。
@@ -15,7 +15,7 @@
 | --- | --- | --- | --- |
 | B1 | 数据丢失 / 损坏 | 通过 | 官方持久化独占会话；普通卸载保留数据根、`purge` 才删（e2e「普通卸载保留数据根」「purge --yes 删除数据根」每步 snapshot）；`--root purge` 误删回归已修并有用例 |
 | B2 | 凭据 / 用户内容泄漏 | 通过 | nano 不复制、不显示凭据值；`$DSH_HOME` 只允许新增 `.anonymous-user-id`（e2e 启动冒烟逐文件哈希）；首启来源只显示路径（alpha §1#6） |
-| B3 | 跨会话串内容 | 通过 | 同根第二窗口拒绝、双 root 并发、session/storage 目录隔离有 e2e；`cross-surface.test.mjs` 8 项覆盖 transcript / 草稿 / 队列 / 附件 / 审批 / 问卷 / 终端 / Monitor，`schedule-surface.test.mjs` 覆盖调度（无 UI，按服务 / 存储隔离） |
+| B3 | 跨会话串内容 | 通过 | 同根第二窗口拒绝、双 root 并发、session/storage 目录隔离有 e2e；`cross-surface.test.mjs` 8 项覆盖 transcript / 草稿 / 队列 / 附件 / 审批 / 问卷 / 终端 / Monitor（Monitor 含 B 面板正控），`schedule-surface.test.mjs` 覆盖调度（A/B 各自正控 + 门面投影；无 UI，按服务 / 存储隔离） |
 | B4 | 无法启动 / 退出 | 通过 | e2e：全新安装 → 启动（真 PTY）→ Ctrl+C 退出 → purge → 卸载 → 重装 → 再启动，全部通过 |
 | B5 | 权限 / 审批绕过 | 通过 | 审批 waterfall、默认焦点、无答即拒有单测；能力探针证明 terminal 不在 Agent 工具表；`!` 首次使用权限提示已实现并有用例 |
 | B6 | 会话无法恢复 | 通过 | alpha §2：同根二次启动 resume 后历史回放可见 |
@@ -27,9 +27,9 @@
 | 维度 | 必测项 | 状态 | 证据 / 缺口 |
 | --- | --- | --- | --- |
 | 版本 | `npm pack` 产物与 SHA-256 | 通过 | e2e 连打两次比 SHA-256 一致，并断言 `version-matrix.md` 记录了该值 |
-| 版本 | `npm view dsh-tui-nano@0.2.0 dist.integrity` | 边界 | 用户 2026-10-30 拍板本版不发布；本地期望值已算（见 version-matrix），`npm view` 留作发布后外部核对 |
+| 版本 | `npm view dsh-tui-nano@0.2.0 dist.integrity` | 未验证 | 用户 2026-10-30 拍板本版不发布；本地期望值已算（见 version-matrix），`npm view` 留作发布后外部核对。按 §3.2 默认口径这是未验证项；用户明确认可其不构成本版阻断 |
 | 版本 | 官方精确版本 / 来源 | 通过 | `package.json` 精确 `0.2.1-rc.2` + `overrides`；e2e「未知 harness 版本拒绝启动」 |
-| 版本 | Node 22.19 与 24.x | 通过 | e2e：先断言 `NANO_NODE_22` 真是 22.19.0、PATH 解析一致，再跑启动冒烟；24.18 跑全流程；20.20 按预期拒绝 |
+| 版本 | Node 22.19 与 24.x | 通过 | e2e 42/42：先断言 `NANO_NODE_22` 真是 22.19.0、PATH 解析一致，再跑启动冒烟；24.18 跑全流程；`NANO_NODE_20` 的 20.20 按预期拒绝 |
 | 版本 | Ghostty / macOS / CPU / 日期 | 通过 | `version-matrix.md`（环境记录，不代表视觉验收） |
 | 启动 | pre-boot 首帧 | 通过 | e2e PTY 输出匹配「正在启动官方核心」；alpha §5 约 0.5s 后正式 UI |
 | 启动 | 二次启动、恢复会话 | 通过 | alpha §2 |
@@ -37,21 +37,21 @@
 | 启动 | 未知 harness 版本拒绝启动 | 通过 | e2e「未知 harness 版本拒绝启动」 |
 | 启动 | 首启显示配置 / 凭据 / 全局指令来源（B8） | 通过 | alpha §1#6 |
 | 主链路 | 对话 → 工具 → 差异 → 审批 → 完成 | 通过 | e2e 用本地 Anthropic Messages SSE mock：① read → edit 改写文件、差异块折叠可展开、最终回复；② bash 提权触发审批卡（默认焦点「拒绝」），↑+Enter 选「允许一次」后命令执行并收到最终回复 |
-| 功能面 | 附件/图片/技能/模型/权限/压缩/终端/任务/Monitor/调度/子代理 | 通过（边界已认可） | 逐项矩阵见 [`feature-matrix.md`](feature-matrix.md)：4 组覆盖、9 组部分、2 组边界；用户 2026-10-30 认可按当前证据结案，边界另开单 |
+| 功能面 | 附件/图片/技能/模型/权限/压缩/终端/任务/Monitor/调度/子代理 | 通过（用户 2026-10-30 认可部分 / 边界结案） | 逐项矩阵见 [`feature-matrix.md`](feature-matrix.md)：16 组中 2 组覆盖、13 组部分、1 组边界（压缩）；另有 5 条边界说明。用户 2026-10-30 认可按当前证据结案，不把部分组当作全量已验证 |
 | 视觉 | 主题/间距 ADR、process-display ADR、深/浅、60/100 列、diff 8 行、CJK/窄屏 | 通过 | 0.2.0 真 Ghostty 截图：`evidence/ghostty/01-dark-100-response.png`、`02-light-60.png`、`03-dark-diff.png`、`04-dark-transparency.png`（`tests/e2e/ghostty-visual.py`，夹具把终端底色设为设计稿的中性页色；nano 本身不画背景）。PTY 断言补充：深/浅色盘 RGB、60/100 行列宽、edit 展开后的 `-old`/`+new`。diff 在 Ghostty 截图中为折叠态，展开态由 PTY e2e 断言 |
 | 长会话 | 1000 行 p95、5000 行内存 | 通过 | alpha §6：滚动 2.80ms / 流式 1.61ms / resize 6.99ms；5000 行与 1000 行堆增长同量级 |
-| 异常 | 断网、官方异常、SIGTERM、SIGKILL、终端残留、reset 提示 | 通过（边界已认可） | SIGTERM/SIGHUP/3s 与前次强杀 `reset` 提示通过；连接被拒与 DNS 不可达用例证明失败路径；物理断网按边界认可 |
+| 异常 | 断网、官方异常、SIGTERM、SIGKILL、终端残留、reset 提示 | 通过（物理断网按边界认可） | SIGTERM/SIGHUP/3s 与前次强杀 `reset` 提示通过；`127.0.0.1:9` 连接被拒用例证明失败路径（仓库没有 DNS 用例，不宣称验证过 DNS）；物理断网按边界认可 |
 | 安全 | 审批无答即拒、Monitor `notify` 默认关闭且计费提示、`!` 权限提示、terminal 不进 Agent 工具表 | 通过 | 审批 waterfall/默认焦点/无答即拒有单测；Monitor `notify` 行显示「会唤醒模型并计费」且默认 `quiet`；`!` 首次使用提示在界面出现并有用例（S08 §2.2）；能力探针证明 terminal 不在 Agent 工具表、`ask_user_question` 存在 |
-| 跨会话 | 九面隔离；双窗口同根拒绝、双 root 并发 | 通过 | e2e：同根第二窗口被拒、双 root 并发；sessions 根共享、叶子目录按 root 分开，runtime-data/<root>/storage 各自独立；`cross-surface.test.mjs` + `schedule-surface.test.mjs` 覆盖九面 |
-| 安装 | 全新安装 → 启动 → 升级 → `nano purge` → 卸载 → 重装；每步前后文件清单/哈希 | 通过 | e2e 42 个用例（安装 16 + 视觉 3 + 能力 1 + 交互 6 + 输入 2 + 跨会话 10 + 主链路 2 + Monitor 1 + 调度 1）；每步 `snapshot` 记录数据根 / `$DSH_HOME` / 安装目录的文件数与摘要哈希；卸载后重装再跑一次真 PTY 启动 |
+| 跨会话 | 九面隔离；双窗口同根拒绝、双 root 并发 | 通过 | e2e：同根第二窗口被拒、双 root 并发；sessions 根共享、叶子目录按 root 分开，runtime-data/<root>/storage 各自独立；`cross-surface.test.mjs` 8 项（Monitor 含 B 正控）+ `schedule-surface.test.mjs` 1 项（A/B 正控 + 门面投影）覆盖九面 |
+| 安装 | 全新安装 → 启动 → 升级 → `nano purge` → 卸载 → 重装；每步前后文件清单/哈希 | 通过 | e2e 42 个用例全过（安装 16 + 视觉 3 + 能力 1 + 交互 6 + 输入 2 + 跨会话 10 + 主链路 2 + Monitor 1 + 调度 1）；每步 `snapshot` 记录数据根 / `$DSH_HOME` / 安装目录的文件数与摘要哈希；卸载后重装再跑一次真 PTY 启动 |
 | 架构 | 单一运行时宿主（ADR-20261029-single-process-fd-guard）、无 `nano.*` 协议、无第二宿主；fd 级守护 | 通过 | ADR + `src/bin.ts` / `src/runtime/fd-guard.ts`；alpha §5 启动期 stdout 写入 0；e2e「架构门禁」为空（门禁只覆盖旧工具链/路径字符串，不替代结构审查） |
-| 证据 | 合成 HOME/DSH_HOME/数据根；脱敏；绑定发布产物 | 通过 | 安装链 e2e 用合成 HOME / DSH_HOME / 数据根 / 安装前缀；视觉 PTY 套件跑仓库 `dist/`（不装 tarball）；npm cache 固定在本机临时目录，不写 `~/.npm`；证据文件已脱敏；tarball SHA-256 与 `version-matrix.md` 双向绑定 |
+| 证据 | 合成 HOME/DSH_HOME/数据根；脱敏；绑定发布产物 | 通过 | 安装链 e2e 用合成 HOME / DSH_HOME / 数据根 / 安装前缀；视觉 PTY 套件跑仓库 `dist/`（不装 tarball）；npm cache 固定在本机临时目录，不写 `~/.npm`；证据文件已把真实路径 / 用户名替换为 `<repo>` / `<user>`；tarball SHA-256 与 `version-matrix.md` 双向绑定 |
 
 ## 3. 阻断项汇总
 
-按 §3.2 口径，下列必测项不是「通过」即构成阻断：
+按 §3.2 的默认口径，未验证项构成阻断。本版唯一保留「未验证」的是 `dist.integrity`（发布后才能外部核对）；用户 2026-10-30 明确认可本版不发布、该项留作发布后核对，功能面 13 组「部分」+1 组边界与物理断网模拟按边界结案，因此本版阻断项记无。
 
-阻断项：无。用户 2026-10-30 认可功能面 9 组「部分」+2 组边界、物理断网模拟边界；本版拍板「不发布」，`dist.integrity` 留作发布后外部核对。
+阻断项：无（除用户 2026-10-30 明确认可的上述边界 / 发布后项外）。
 
 解除条件：逐项补齐可核证据（命令输出、截图或录屏），或由子件退回补实现/取证后重新出结论。必测项不接受「已知问题」降级。
 
@@ -63,6 +63,8 @@
 - 2026-10-29 主链路 e2e（用户指示）：本地 mock 模型跑通「对话 → read → edit（差异）→ 完成」与「bash 提权 → 审批卡（默认拒绝）→ 允许一次 → 完成」。mock 不触真实网络/凭据。
 - 2026-10-29 用户指示补 `!` 首次使用权限提示（S08 §2.2，S02 行为）：界面在第一条人工命令前显示「以用户权限运行，不是 Agent 授权」；e2e 断言其出现且位于命令行之前。
 - 2026-10-29 第二轮轻审（PR #97 自动化证据）：10 条发现（能力探针读写真实 `~/.dsh`、凭据环境变量继承导致假绿/真实请求、文档矛盾、跨会话无正控、同根竞态、信号与失败路径清理），用户选「改」，已全部修复并重跑 24/24。
+- 2026-10-30 PR #103 轻审（用户选「轻审」并选「改」）：14 条发现（5 高 / 4 中 / 5 低）。已修：Node 22.19/20.20 真跑并去掉 skip；发布结论自相矛盾与授权记录；调度 A/B 正控 + 门面投影；功能矩阵重算为 2 覆盖 / 13 部分 / 1 边界并补压缩行；Monitor B 面板正控与 `until` 超时退出；DNS 措辞改为「连接被拒」；单元证据脱敏；README / known-limitations / version-matrix 对齐。重跑 e2e 42/42、单元 112 + 功能 25、typecheck。
+- 2026-10-30 用户拍板原文（闸卡）：「认可边界（推荐）」「不发布（推荐）」——认可功能面部分 / 边界与物理断网模拟按现状结案；本版不发布，`dist.integrity` 留作发布后外部核对。原文已同步 issue #88、PR #103 与本 spec §7。
 - 处置：用户选择「改」。本轮已修——
   - 数据丢失：`--root purge` 不再被当成子命令（含 `--root=purge` 回归用例）；
   - 交互：purge 确认提示写 `/dev/tty` + stderr，stdout 重定向时仍可见；补 `-y` 到 `--help`；
@@ -92,7 +94,7 @@
 | npm 包结构与 manifest | `private:false`、`files:["dist"]`、`bin: nano → dist/bin.js`、`publishConfig`、精确官方依赖与 overrides | `package.json`；`scripts/prepack-check.mjs` |
 | 打包检查 | `npm pack` 自动跑 build + keymap `--check` + packlist 断言 | `prepack`；tarball 118 个文件、入口带 shebang |
 | 安装链 | 全新安装 → 启动 → 升级 → purge → 卸载 → 重装 → 再启动 | `docs/release/0.2.0/evidence/e2e-release.txt` |
-| Node 下限 | 22.19 启动通过；20.20 入口拒绝并给可操作错误 | 同上 |
+| Node 下限 | 22.19 启动通过；20.20 入口拒绝并给可操作错误（e2e 设置 `NANO_NODE_22/20`，42/42） | 同上 |
 | 键位文档 | README 中英区块与 `--help` 都从源码单一源生成，`--check` 挂 `prepack` | `scripts/keymap-docs.mjs`；e2e |
 | Rust / bridge 退场 | 删除 `crates/`、`Cargo.*`、`rust-toolchain.toml`、`protocol/`、`bridge/`；tag `rust-final` + 分支 `archive/rust-v1`；grep 门禁为空 | `version-matrix.md`；e2e「架构门禁」 |
 | 用户数据边界 | 普通卸载保留数据根；`purge` 交互确认、`--yes`/`-y` 跳过；`$DSH_HOME` 只写 `.anonymous-user-id` | e2e |
