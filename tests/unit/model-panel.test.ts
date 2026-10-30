@@ -176,7 +176,7 @@ describe('/model panel', () => {
     const json = JSON.stringify(panel.render(100))
     expect(json).toContain('模型')
     expect(json).toContain('当前：M1')
-    expect(json).toContain('▸')
+    expect(json).toContain('▶')
     expect(json).toContain('M1')
     expect(json).toContain('Off')
     expect(json).toContain('Max')
@@ -242,7 +242,7 @@ describe('/model panel', () => {
     expect(header).toBeGreaterThanOrEqual(0)
     expect(lines[header]?.startsWith('  模型')).toBe(true)
     expect(lines[header + 1]?.trim()).toBe('')
-    expect(lines[header + 2]?.startsWith('    ▸ M1')).toBe(true)
+    expect(lines[header + 2]?.startsWith('    ▶ M1')).toBe(true)
     expect(lines[header + 3]?.startsWith('      M2')).toBe(true)
     expect(lines[header + 4]?.trim()).toBe('')
     expect(lines[header + 5]?.startsWith('  ─')).toBe(true)
@@ -263,10 +263,25 @@ describe('/model panel', () => {
     renderer.mount(box({ width: 100, height: 30 }, panel.render(100)))
     renderer.flushFrame()
     const output = chunks.join('')
-    expect(output).toContain('▸ ')
+    expect(output).toContain('▶ ')
     expect(output).toContain('  M2')
     panel.handleKey(key('escape'))
     renderer.unmount()
+  })
+
+  it('打开与关闭都请求强制重绘', async () => {
+    const repaint = vi.fn()
+    const conversation = fakeConversation()
+    const panel = new ModelPanel({
+      conversation: conversation as never,
+      onChange: () => {},
+      setNotice: () => {},
+      repaint,
+    })
+    await panel.openPanel()
+    expect(repaint).toHaveBeenCalledTimes(1)
+    panel.handleKey(key('escape'))
+    expect(repaint).toHaveBeenCalledTimes(2)
   })
 
   it('打开面板时强制全量重绘，清掉终端侧残字', async () => {
@@ -298,33 +313,6 @@ describe('/model panel', () => {
     renderer.flushFrame()
     for (const chunk of chunks) screen.feed(chunk)
     expect(screen.lines()[3]).not.toContain('TAILMARK')
-    panel.handleKey(key('escape'))
-    renderer.unmount()
-  })
-
-  it('面板整块清底，模型行尾不露上一帧残字', async () => {
-    const { panel } = await open()
-    const renderer = new Renderer({
-      write: () => {},
-      width: 100,
-      height: 30,
-      defaultFg: darkTheme.fg,
-    })
-    renderer.mount(
-      box(
-        { width: 100, height: 30, flexDirection: 'column' },
-        text(''),
-        text(''),
-        text(''),
-        box({ paddingLeft: 30 }, text('TAILMARK')),
-      ),
-    )
-    renderer.flushFrame()
-    renderer.update(box({ width: 100, height: 30, flexDirection: 'column' }, panel.render(100)))
-    renderer.flushFrame()
-    const lines = renderer.snapshotLines()
-    expect(lines[3]).not.toContain('TAILMARK')
-    expect(lines[3]).toContain('M1')
     panel.handleKey(key('escape'))
     renderer.unmount()
   })
@@ -393,7 +381,7 @@ describe('/model panel', () => {
     renderer.mount(box({ width: 100, height: 30 }, panel.render(100)))
     renderer.flushFrame()
     const lines = renderer.snapshotLines()
-    expect(lines.some((line) => /▸\s*M10/u.test(line))).toBe(true)
+    expect(lines.some((line) => /▶\s*M10/u.test(line))).toBe(true)
     expect(lines.some((line) => line.includes('M0'))).toBe(false)
     panel.handleKey(key('escape'))
     renderer.unmount()

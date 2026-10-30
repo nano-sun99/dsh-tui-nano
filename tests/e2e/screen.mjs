@@ -3,6 +3,8 @@
 // 不需要开窗口。
 import stringWidth from 'string-width'
 
+const WIDTH_OVERRIDES = new Map([['▶', 1]])
+
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI ESC is the intended input.
 const CSI = /\x1b\[([0-9;?<>]*)([A-Za-z])/y
 
@@ -48,7 +50,7 @@ export class Screen {
         index += 1
         continue
       }
-      const width = stringWidth(char)
+      const width = WIDTH_OVERRIDES.get(char) ?? stringWidth(char)
       if (width > 0) {
         this.#write(char, width)
       }

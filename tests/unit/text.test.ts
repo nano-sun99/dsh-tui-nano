@@ -2,10 +2,16 @@ import { describe, expect, it } from 'vitest'
 import {
   displayWidth,
   graphemes,
+  graphemeWidth,
   sanitizeText,
   truncateText,
   wrapText,
 } from '../../src/render/text.ts'
+
+it('treats the model pointer ▶ as one cell', () => {
+  expect(graphemeWidth('▶')).toBe(1)
+  expect(displayWidth('▶ ')).toBe(2)
+})
 
 describe('sanitizeText', () => {
   it('removes CSI, OSC (clipboard/title) and control bytes', () => {

@@ -472,15 +472,15 @@ export class ModelPanel {
         createElement(
           Box,
           { flexDirection: 'row', paddingLeft: NESTED, paddingRight: EDGE, width },
-          // `▸` 是 1 格宽；再加 1 格间隙。不要用宽箭头：不同终端对它的宽度判定
-          // 不一致，会让名字整体错位、行尾留下残字。
+          // `▶` 沿用设计稿字形；渲染层把它按 1 格计宽（见 render/text 的覆盖），
+          // 再加 1 格间隙，避免终端宽度表差异把整行推歪。
           createElement(
             Box,
             { width: 2 },
             createElement(
               Text,
               { wrap: false, ...(selected ? { color: theme.accent, bold: true } : {}) },
-              selected ? '▸ ' : '  ',
+              selected ? '▶ ' : '  ',
             ),
           ),
           createElement(
@@ -531,6 +531,6 @@ export class ModelPanel {
     }
     // 面板整块先清成终端默认底色：模型行只画指针 + 名字，行尾格子若不先清，
     // 会露出上一帧的 muted 残字（与指针间隙的 `l` 同类）。
-    return createElement(Box, { flexDirection: 'column', width }, ...lines)
+    return createElement(Box, { flexDirection: 'column', width, clear: true }, ...lines)
   }
 }
