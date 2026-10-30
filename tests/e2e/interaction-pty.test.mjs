@@ -84,7 +84,6 @@ test('官方调用失败：界面显示回合出错且进程不崩', () => {
   assert.match(screen, /no API key for provider route/, '应带出官方 missing-credential 原文')
 })
 
-
 test('网络不可达：连接被拒时界面显示回合出错且进程不崩', () => {
   const { code, screen } = runInteractive('hello-offline', {
     sendWait: 30,

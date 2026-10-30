@@ -153,6 +153,8 @@ function runSequence({ rootId, steps, wait = 10, split, port = 9 }) {
 }
 
 function expectOnlyInA(a, b, marker) {
+  assert.equal(a.status, 0, `A 的 PTY 步骤超时或异常退出：${a.stderr}`)
+  assert.equal(b.status, 0, `B 的 PTY 步骤超时或异常退出：${b.stderr}`)
   assert.match(a.screen, new RegExp(marker), `发起会话应出现 ${marker}`)
   assert.doesNotMatch(b.screen, new RegExp(marker), `另一 root 不应出现 ${marker}`)
 }
@@ -240,7 +242,6 @@ test('队列：A 排队中的下一条不出现在 B', async () => {
   }
 })
 
-
 test('Monitor：A 的后台任务与监听器不出现在 B', async () => {
   const mock = await startMock('monitor')
   try {
@@ -260,9 +261,14 @@ test('Monitor：A 的后台任务与监听器不出现在 B', async () => {
       split: true,
       steps: [{ send: '\u001b[106;5u', until: '任务', timeout: 10 }],
     })
+    assert.equal(a.status, 0, `A 的 PTY 步骤超时或异常退出：${a.stderr}`)
+    assert.equal(b.status, 0, `B 的 PTY 步骤超时或异常退出：${b.stderr}`)
     assert.match(a.screen, /MONITOR_STARTED/, 'A 应完成启动回执')
     assert.match(a.screen, /运行中 sleep 30/, 'A 应出现后台任务')
     assert.match(a.screen, /Monitor bash-/, 'A 应出现监听器')
+    // B 正控：先证明任务面板真的打开且为空，再断言隔离，避免「面板没开」导致负断言假绿。
+    assert.match(b.screen, /任务/, 'B 应打开任务面板')
+    assert.match(b.screen, /没有任务/, 'B 的任务面板应显示空态')
     assert.doesNotMatch(b.screen, /MONITOR_STARTED/, 'B 不应出现 A 的回合回执')
     assert.doesNotMatch(b.screen, /运行中 sleep 30/, 'B 不应出现 A 的后台任务')
     assert.doesNotMatch(b.screen, /Monitor bash-/, 'B 不应出现 A 的监听器')

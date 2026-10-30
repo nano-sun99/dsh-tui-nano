@@ -88,7 +88,7 @@ def main() -> int:
             collected.extend(chunk)
         return target is None or target in collected
 
-    drain(args.until, args.wait)
+    timed_out = not drain(args.until, args.wait)
     for step in steps:
         time.sleep(float(step.get("delay", 0.2)))
         text = str(step.get("send", ""))
@@ -98,7 +98,8 @@ def main() -> int:
             except OSError:
                 break
         if step.get("until"):
-            drain(str(step["until"]), float(step.get("timeout", 10.0)))
+            if not drain(str(step["until"]), float(step.get("timeout", 10.0))):
+                timed_out = True
     drain(None, 1.0)
 
     if args.split_out:
@@ -115,7 +116,7 @@ def main() -> int:
     while time.time() < deadline:
         done, status = os.waitpid(pid, os.WNOHANG)
         if done == pid:
-            return 0
+            return 3 if timed_out else 0
         ready, _, _ = select.select([master], [], [], 0.2)
         if ready:
             try:
@@ -126,7 +127,7 @@ def main() -> int:
         os.killpg(pid, signal.SIGKILL)
     except OSError:
         pass
-    return 0
+    return 3 if timed_out else 0
 
 
 if __name__ == "__main__":

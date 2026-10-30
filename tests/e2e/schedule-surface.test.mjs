@@ -10,9 +10,9 @@ import { fileURLToPath } from 'node:url'
 
 import { prepareCore, startCore } from '../../dist/boot/assemble.js'
 import { loadOfficial } from '../../dist/boot/official.js'
-import { featureBootPatches } from '../../dist/sessions/boot-patches.js'
 import { ScheduleRuntime } from '../../dist/schedule/service.js'
 import { ScheduleStorage } from '../../dist/schedule/storage.js'
+import { featureBootPatches } from '../../dist/sessions/boot-patches.js'
 import { SessionControllerAdapter } from '../../dist/sessions/session-controller-adapter.js'
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
@@ -61,25 +61,45 @@ test.after(() => {
   rmSync(base, { recursive: true, force: true })
 })
 
-test('调度：A 创建的任务不出现在 B 的 catalog', async () => {
+test('调度：A/B 各自可见自己的任务，门面投影与按根隔离都成立', async () => {
   const a = await boot('schedule-a')
+  let b
   try {
-    const created = await a.runtime.service.create('schedule-a', {
+    const createdA = await a.runtime.service.create('schedule-a', {
       title: 'SCHEDULE_MARKER',
       prompt: '只应出现在 A',
       after_seconds: 3600,
     })
-    assert.match(created.title, /SCHEDULE_MARKER/)
-    const rowsA = await a.runtime.service.catalog()
-    assert.ok(rowsA.some((row) => row.title === 'SCHEDULE_MARKER'), 'A 应有任务')
+    assert.match(createdA.title, /SCHEDULE_MARKER/)
+    // 走 nano 门面，不直接读官方 service：投影丢字段会在这一步暴露。
+    const rowsA = await a.runtime.catalog()
+    assert.ok(
+      rowsA.some((row) => row.title === 'SCHEDULE_MARKER'),
+      'A 门面应显示 A 的任务',
+    )
+    assert.ok(
+      rowsA.every((row) => row.id && row.title && row.prompt && row.scheduledAt),
+      '门面投影不应把官方扁平记录字段丢成空串',
+    )
+
+    b = await boot('schedule-b')
+    // B 正控：B 自己能创建并看到自己的任务，排除「catalog 恒空所以隔离看似成立」。
+    const createdB = await b.runtime.service.create('schedule-b', {
+      title: 'B_SCHEDULE_MARKER',
+      prompt: '只应出现在 B',
+      after_seconds: 3600,
+    })
+    assert.match(createdB.title, /B_SCHEDULE_MARKER/)
+    const rowsB = await b.runtime.catalog()
+    assert.ok(
+      rowsB.some((row) => row.title === 'B_SCHEDULE_MARKER'),
+      'B 门面应显示 B 自己的任务（正控）',
+    )
+    assert.ok(!rowsB.some((row) => row.title === 'SCHEDULE_MARKER'), 'B 不应看到 A 的任务')
+    const rowsAAfterB = await a.runtime.catalog()
+    assert.ok(!rowsAAfterB.some((row) => row.title === 'B_SCHEDULE_MARKER'), 'A 不应看到 B 的任务')
   } finally {
     await a.core.dispose()
-  }
-  const b = await boot('schedule-b')
-  try {
-    const rowsB = await b.runtime.service.catalog()
-    assert.ok(!rowsB.some((row) => row.title === 'SCHEDULE_MARKER'), 'B 不应看到 A 的任务')
-  } finally {
-    await b.core.dispose()
+    if (b) await b.core.dispose()
   }
 })
