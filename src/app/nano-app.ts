@@ -70,6 +70,12 @@ export interface FeatureContext {
   readonly decisions: DecisionManager
   /** S01 的输入框实例；S02 的补全/@/草稿读写它（spec §1 第 4 条接缝）。 */
   readonly input: InputModel
+  /** 输入历史：子代理地址切走时按官方投影重设、返回主对话时恢复。 */
+  readonly history: HistoryStore
+  /** S01 的展开集合：子代理详情复用同一套工具卡展开状态。 */
+  readonly expanded: ReadonlySet<string>
+  /** 当前帧正文区高度（详情 / 列表按它裁剪）。 */
+  bodyHeight(): number
   readonly rootId: string
   readonly dataRoot: string
   readonly cwd: string
@@ -94,6 +100,15 @@ export interface FeatureHost {
   dispose?(): void | Promise<void>
   handleKey?(key: Key): boolean
   dispatchAction?(action: string): boolean
+  /** 点击命中（详情返回 / dock 行 / 列表行 / 结果卡）。返回 true 表示已消费。 */
+  handlePress?(id: string): boolean
+  /** 滚轮先给 S02；返回 false 才滚主对话。 */
+  handleWheel?(delta: number): boolean
+  /** 详情 / 列表占满正文区。 */
+  replacesTranscript?(): boolean
+  inputPlaceholder?(): string | undefined
+  inputDisabled?(): boolean
+  inputHidden?(): boolean
   /** 输入框是否接收按键；false 时不停靠硬件光标（面板/终端接管）。 */
   inputActive?(): boolean
   body?(): ReactNode
@@ -119,6 +134,7 @@ export class NanoApp {
   private selectionActive = false
   private pendingPressId: string | undefined
   private lastTotalLines: number | undefined
+  private currentBodyHeight = 1
   private readonly notices = new NoticeState(() => this.scheduleRender())
   private renderScheduled = false
   private stopping = false
@@ -158,6 +174,9 @@ export class NanoApp {
       conversation,
       decisions: this.decisions,
       input: this.input,
+      history: this.options.history,
+      expanded: this.expanded,
+      bodyHeight: () => this.currentBodyHeight,
       rootId: this.options.rootId,
       dataRoot: this.options.dataRoot,
       cwd: this.options.cwd,
@@ -467,7 +486,9 @@ export class NanoApp {
     const col = event.x - 1
     if (event.kind === 'wheel') {
       // Parser: wheel up is +1 and scrollBy(+n) moves towards older content.
-      this.scrollBy((event.wheel ?? 0) * 3)
+      const delta = (event.wheel ?? 0) * 3
+      if (this.options.features?.handleWheel?.(delta) === true) return
+      this.scrollBy(delta)
       return
     }
     if (event.kind === 'press' && event.button === 'left') {
@@ -506,6 +527,10 @@ export class NanoApp {
   }
 
   private handlePress(id: string): void {
+    if (this.options.features?.handlePress?.(id) === true) {
+      this.scheduleRender()
+      return
+    }
     if (id.startsWith('decision:approval:')) {
       const index = Number(id.slice('decision:approval:'.length))
       const option = APPROVAL_OPTIONS[index]
@@ -562,7 +587,10 @@ export class NanoApp {
     }
     this.lastTotalLines = total
     const contextRatio = occupancyRatio(this.options.core.ctx, this.options.conversation.agent)
-    const snapshot: AppSnapshot = {
+    const completionRows = this.options.features?.completionRows?.() ?? 0
+    const modelPanelRows = this.options.features?.modelPanelRows?.() ?? 0
+    const inputPlaceholder = this.options.features?.inputPlaceholder?.()
+    const base: AppSnapshot = {
       transcript: this.options.conversation.model,
       decisions: this.decisions,
       text: this.input.text,
@@ -582,20 +610,25 @@ export class NanoApp {
         : {}),
       caretActive: this.options.features?.inputActive?.() ?? true,
       ...(contextRatio !== undefined ? { contextRatio } : {}),
+      ...(completionRows > 0 ? { completionRows } : {}),
+      ...(modelPanelRows > 0 ? { modelPanelRows } : {}),
+      ...(inputPlaceholder !== undefined ? { inputPlaceholder } : {}),
+      ...(this.options.features?.inputDisabled?.() === true ? { inputDisabled: true } : {}),
+      ...(this.options.features?.inputHidden?.() === true ? { inputHidden: true } : {}),
+      ...(this.options.features?.replacesTranscript?.() === true ? { featureFullBody: true } : {}),
+      userName: '你',
+    }
+    // 正文区高度先算好，S02 的详情 / 列表才能按同一高度裁剪。
+    this.currentBodyHeight = transcriptBodyHeight(base)
+    const snapshot: AppSnapshot = {
+      ...base,
       ...(this.options.features?.body ? { featureBody: this.options.features.body() } : {}),
       ...(this.options.features?.completionBody
         ? { completionBody: this.options.features.completionBody() }
         : {}),
-      ...(this.options.features?.completionRows
-        ? { completionRows: this.options.features.completionRows() }
-        : {}),
       ...(this.options.features?.modelPanelBody
         ? { modelPanelBody: this.options.features.modelPanelBody() }
         : {}),
-      ...(this.options.features?.modelPanelRows
-        ? { modelPanelRows: this.options.features.modelPanelRows() }
-        : {}),
-      userName: '你',
     }
     // 内容变少、窗口变高都会让旧的偏移越过顶部；在出口统一夹住。
     this.maxScroll = Math.max(0, total - transcriptBodyHeight(snapshot))

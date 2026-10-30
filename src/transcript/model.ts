@@ -37,6 +37,13 @@ export interface AssistantEntry {
   readonly blocks: readonly Block[]
 }
 
+function activationTarget(meta: unknown): string | undefined {
+  if (meta === null || typeof meta !== 'object') return undefined
+  const value = meta as { kind?: unknown; subagentId?: unknown }
+  if (value.kind !== 'activation' || typeof value.subagentId !== 'string') return undefined
+  return value.subagentId === '' ? undefined : `subagent:result:${value.subagentId}`
+}
+
 export interface ToolEntry {
   readonly kind: 'tool'
   readonly id: string
@@ -387,7 +394,13 @@ export class TranscriptModel {
       rows.push(...expandedToolRows(entry, width))
     }
     const cached = this.cachedRows(cacheKey, () => rows)
-    return { id, kind: groupKind, gapBefore: 'Block', rows: cached, pressId: id }
+    return {
+      id,
+      kind: groupKind,
+      gapBefore: 'Block',
+      rows: cached,
+      pressId: activationTarget(entry.resultMeta) ?? id,
+    }
   }
 
   /**

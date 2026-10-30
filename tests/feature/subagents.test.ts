@@ -25,9 +25,23 @@ describe('pruneRows', () => {
   it('终态行保留 30 秒后移除，活动行不动', () => {
     const now = 1_000_000
     const rows = [
-      { id: 'a', name: 'a', status: 'running' as const },
-      { id: 'b', name: 'b', status: 'done' as const, finishedAt: now - 10_000 },
-      { id: 'c', name: 'c', status: 'done' as const, finishedAt: now - 31_000 },
+      { id: 'a', name: 'a', mode: 'continuable', local: true, status: 'running' as const },
+      {
+        id: 'b',
+        name: 'b',
+        mode: 'continuable',
+        local: true,
+        status: 'done' as const,
+        terminalAt: now - 10_000,
+      },
+      {
+        id: 'c',
+        name: 'c',
+        mode: 'continuable',
+        local: true,
+        status: 'done' as const,
+        terminalAt: now - 31_000,
+      },
     ]
     expect(pruneRows(rows, now).map((row) => row.id)).toEqual(['a', 'b'])
   })

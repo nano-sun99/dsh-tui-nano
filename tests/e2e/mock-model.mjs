@@ -147,6 +147,34 @@ const handler = (req, res) => {
       res.end()
       return
     }
+    if (mode === 'subagent' && withTools) {
+      const childPrompt = '子任务：核对配置依赖。'
+      const messages = Array.isArray(body.messages) ? body.messages : []
+      const isChild = messages.some(
+        (message) =>
+          message?.role === 'user' &&
+          Array.isArray(message.content) &&
+          message.content.some(
+            (block) => block?.type === 'text' && String(block.text ?? '').includes(childPrompt),
+          ),
+      )
+      const results = collectToolResults(messages)
+      sse(res)
+      start(res, body.model)
+      if (isChild) {
+        text(res, '子任务完成：已核对配置依赖。')
+      } else if (results.length === 0) {
+        toolUse(res, 'toolu_subagent', 'subagent', {
+          description: '查找配置依赖',
+          prompt: childPrompt,
+        })
+      } else {
+        text(res, '父任务完成：子任务已分派。')
+      }
+      send(res, 'message_stop', { type: 'message_stop' })
+      res.end()
+      return
+    }
     if (mode === 'question' && withTools) {
       sse(res)
       start(res, body.model)

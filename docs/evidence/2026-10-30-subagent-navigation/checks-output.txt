@@ -1,0 +1,124 @@
+
+> dsh-tui-nano@0.2.0 typecheck
+> tsc -p tsconfig.json --noEmit
+
+
+> dsh-tui-nano@0.2.0 lint
+> biome check src tests
+
+src/controls/completions.ts:101:89 lint/complexity/noCommaOperator ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! The comma operator is disallowed.
+  
+     99 │         return merged
+    100 │           .filter((command) => command.name.startsWith(query.toLowerCase()))
+  > 101 │           .filter((command) => (seen.has(command.name) ? false : (seen.add(command.name), true)))
+        │                                                                                         ^
+    102 │           .map((command) => ({
+    103 │             label: `/${command.name}`,
+  
+  i Its use is often confusing and obscures side effects.
+  
+
+src/controls/model-panel.ts:63:10 lint/correctness/noUnusedVariables  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━
+
+  ! This function scale is unused.
+  
+    61 │ }
+    62 │ 
+  > 63 │ function scale(color: Rgb, factor: number): Rgb {
+       │          ^^^^^
+    64 │   const clamp = (value: number): number => Math.max(0, Math.min(255, Math.round(value)))
+    65 │   return [clamp(color[0] * factor), clamp(color[1] * factor), clamp(color[2] * factor)]
+  
+  i Unused variables are often the result of typos, incomplete refactors, or other sources of bugs.
+  
+  i Unsafe fix: If this is intentional, prepend scale with an underscore.
+  
+     61  61 │   }
+     62  62 │   
+     63     │ - function·scale(color:·Rgb,·factor:·number):·Rgb·{
+         63 │ + function·_scale(color:·Rgb,·factor:·number):·Rgb·{
+     64  64 │     const clamp = (value: number): number => Math.max(0, Math.min(255, Math.round(value)))
+     65  65 │     return [clamp(color[0] * factor), clamp(color[1] * factor), clamp(color[2] * factor)]
+  
+
+tests/e2e/cross-surface.test.mjs:99:9 lint/correctness/noUnusedVariables  FIXABLE  ━━━━━━━━━━━━━━━━━
+
+  ! This variable stdout is unused.
+  
+     97 │       stdio: ['ignore', 'pipe', 'pipe'],
+     98 │     })
+   > 99 │     let stdout = ''
+        │         ^^^^^^
+    100 │     let stderr = ''
+    101 │     child.stdout.on('data', (chunk) => {
+  
+  i Unused variables are often the result of typos, incomplete refactors, or other sources of bugs.
+  
+  i Unsafe fix: If this is intentional, prepend stdout with an underscore.
+  
+     97  97 │         stdio: ['ignore', 'pipe', 'pipe'],
+     98  98 │       })
+     99     │ - ····let·stdout·=·''
+         99 │ + ····let·_stdout·=·''
+    100 100 │       let stderr = ''
+    101 101 │       child.stdout.on('data', (chunk) => {
+    102     │ - ······stdout·+=·chunk.toString('utf8')
+        102 │ + ······_stdout·+=·chunk.toString('utf8')
+    103 103 │       })
+    104 104 │       child.stderr.on('data', (chunk) => {
+  
+
+tests/unit/model-panel.test.ts:360:29 lint/correctness/noUnusedFunctionParameters  FIXABLE  ━━━━━━━━━━
+
+  ! This parameter g is unused.
+  
+    358 │     for (let i = 0; i < 4; i++) panel.handleKey(key('right'))
+    359 │     const values = colors(JSON.stringify(panel.render(100)))
+  > 360 │     expect(values.some(([r, g, b]) => r >= 54 && b >= 157)).toBe(true)
+        │                             ^
+    361 │     panel.handleKey(key('escape'))
+    362 │   })
+  
+  i Unused parameters might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: If this is intentional, prepend g with an underscore.
+  
+    358 358 │       for (let i = 0; i < 4; i++) panel.handleKey(key('right'))
+    359 359 │       const values = colors(JSON.stringify(panel.render(100)))
+    360     │ - ····expect(values.some(([r,·g,·b])·=>·r·>=·54·&&·b·>=·157)).toBe(true)
+        360 │ + ····expect(values.some(([r,·_g,·b])·=>·r·>=·54·&&·b·>=·157)).toBe(true)
+    361 361 │       panel.handleKey(key('escape'))
+    362 362 │     })
+  
+
+tests/unit/model-panel.test.ts:372:29 lint/correctness/noUnusedFunctionParameters  FIXABLE  ━━━━━━━━━━
+
+  ! This parameter g is unused.
+  
+    370 │     const values = colors(JSON.stringify(panel.render(100)))
+    371 │     expect(values.some(([r, g, b]) => r === 93 && g === 127 && b === 173)).toBe(true)
+  > 372 │     expect(values.some(([r, g, b]) => r > 130 && b > 200)).toBe(false)
+        │                             ^
+    373 │     panel.handleKey(key('escape'))
+    374 │   })
+  
+  i Unused parameters might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: If this is intentional, prepend g with an underscore.
+  
+    370 370 │       const values = colors(JSON.stringify(panel.render(100)))
+    371 371 │       expect(values.some(([r, g, b]) => r === 93 && g === 127 && b === 173)).toBe(true)
+    372     │ - ····expect(values.some(([r,·g,·b])·=>·r·>·130·&&·b·>·200)).toBe(false)
+        372 │ + ····expect(values.some(([r,·_g,·b])·=>·r·>·130·&&·b·>·200)).toBe(false)
+    373 373 │       panel.handleKey(key('escape'))
+    374 374 │     })
+  
+
+Checked 113 files in 43ms. No fixes applied.
+Found 5 warnings.
+
+> dsh-tui-nano@0.2.0 build
+> tsc -p tsconfig.json
+

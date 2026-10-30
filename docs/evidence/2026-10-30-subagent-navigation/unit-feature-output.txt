@@ -1,0 +1,60 @@
+
+> dsh-tui-nano@0.2.0 test
+> vitest run && vitest run --config tests/feature/vitest.config.ts
+
+
+ RUN  v3.2.7 <repo>
+
+ ✓ tests/unit/decisions.test.ts (7 tests) 30ms
+ ✓ tests/unit/renderer.test.ts (12 tests) 31ms
+ ✓ tests/unit/input-frame.test.ts (11 tests) 80ms
+ ✓ tests/unit/sv-app.test.ts (4 tests) 85ms
+ ✓ tests/unit/notice-wiring.test.ts (3 tests) 87ms
+ ✓ tests/unit/sv-navigation.test.ts (17 tests) 132ms
+ ✓ tests/unit/model-panel.test.ts (26 tests) 137ms
+ ✓ tests/unit/scroll-clamp.test.ts (3 tests) 140ms
+ ✓ tests/unit/markdown-table.test.ts (30 tests) 43ms
+ ✓ tests/unit/fixes.test.ts (14 tests) 42ms
+ ✓ tests/unit/transcript.test.ts (10 tests) 29ms
+ ✓ tests/unit/boot.test.ts (9 tests) 26ms
+ ✓ tests/unit/d01.test.ts (9 tests) 4ms
+ ✓ tests/unit/sv-render.test.ts (10 tests) 38ms
+ ✓ tests/unit/sv-result.test.ts (2 tests) 5ms
+ ✓ tests/unit/conversation-delivery.test.ts (11 tests) 21ms
+ ✓ tests/unit/text.test.ts (11 tests) 6ms
+ ✓ tests/unit/seams.test.ts (3 tests) 11ms
+ ✓ tests/unit/input.test.ts (10 tests) 3ms
+ ✓ tests/unit/spans-caret.test.ts (3 tests) 17ms
+ ✓ tests/unit/sv-dock.test.ts (15 tests) 42ms
+ ✓ tests/unit/completions-edit.test.ts (1 test) 2ms
+ ✓ tests/unit/notice.test.ts (4 tests) 4ms
+ ✓ tests/unit/sv-detail.test.ts (8 tests) 3ms
+ ✓ tests/unit/sv-list.test.ts (8 tests) 4ms
+ ✓ tests/unit/sv-view.test.ts (11 tests) 3ms
+ ✓ tests/unit/features-input-active.test.ts (1 test) 1ms
+ ✓ tests/unit/perf.test.ts (4 tests) 1076ms
+   ✓ transcript performance > scrolls a 1000-line transcript within p95 33ms  362ms
+   ✓ transcript performance > keeps per-frame memory growth independent of transcript length  560ms
+
+ Test Files  28 passed (28)
+      Tests  257 passed (257)
+   Start at  21:52:13
+   Duration  1.48s (transform 677ms, setup 0ms, collect 3.40s, tests 2.10s, environment 3ms, prepare 1.39s)
+
+
+ RUN  v3.2.7 <repo>
+
+ ✓ tests/feature/bash-mode.test.ts (3 tests) 2ms
+ ✓ tests/feature/handoff.test.ts (2 tests) 12ms
+ ✓ tests/feature/monitor.test.ts (4 tests) 3ms
+ ✓ tests/feature/info-panel.test.ts (3 tests) 3ms
+ ✓ tests/feature/jobs.test.ts (2 tests) 2ms
+ ✓ tests/feature/subagents.test.ts (3 tests) 1ms
+ ✓ tests/feature/attachments.test.ts (6 tests) 58ms
+ ✓ tests/feature/cross-root.test.ts (2 tests) 3ms
+
+ Test Files  8 passed (8)
+      Tests  25 passed (25)
+   Start at  21:52:15
+   Duration  299ms (transform 276ms, setup 0ms, collect 541ms, tests 84ms, environment 1ms, prepare 336ms)
+
