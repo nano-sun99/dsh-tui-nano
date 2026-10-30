@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ModelPanel } from '../../src/controls/model-panel.ts'
+import { saveDefaultSelection } from '../../src/conversation/controller.ts'
 import type { Key } from '../../src/input/parser.ts'
 import { box, Renderer, text } from '../../src/render/renderer.ts'
 import { darkTheme } from '../../src/theme/theme.ts'
@@ -168,6 +169,41 @@ afterEach(() => {
   delete process.env.NANO_REDUCED_MOTION
   vi.clearAllTimers()
   vi.useRealTimers()
+})
+
+describe('saveDefaultSelection', () => {
+  it('writes the official default and resolves without error', async () => {
+    const saved: any[] = []
+    const ctx = {
+      get: (key: string) =>
+        key === 'agentDefaultModel'
+          ? {
+              saveSelection: async (next: any) => {
+                saved.push(next)
+              },
+            }
+          : undefined,
+    }
+    expect(await saveDefaultSelection(ctx, { provider: 'p', model: 'm' })).toBeUndefined()
+    expect(saved).toEqual([{ provider: 'p', model: 'm' }])
+  })
+
+  it('returns the write error instead of throwing', async () => {
+    const ctx = {
+      get: () => ({
+        saveSelection: async () => {
+          throw new Error('disk full')
+        },
+      }),
+    }
+    expect(await saveDefaultSelection(ctx, { provider: 'p', model: 'm' })).toBe('disk full')
+  })
+
+  it('no default-model service is a no-op', async () => {
+    expect(
+      await saveDefaultSelection({ get: () => undefined }, { provider: 'p', model: 'm' }),
+    ).toBeUndefined()
+  })
 })
 
 describe('/model panel', () => {
@@ -394,6 +430,73 @@ describe('/model panel', () => {
     expect(panel.open).toBe(true)
     expect(JSON.stringify(panel.render(100))).toContain('模型切换失败')
     panel.handleKey(key('escape'))
+  })
+
+  it('档位元数据加载失败时显示原因且不抛未处理 rejection', async () => {
+    const panel = await openConversation({
+      modelSelection: { provider: 'p', model: 'm1' },
+      listModels: async () => [{ id: 'm1', name: 'M1' }],
+      resolveModelMeta: async () => {
+        throw new Error('meta boom')
+      },
+    })
+    expect(JSON.stringify(panel.render(100))).toContain('meta boom')
+    panel.handleKey(key('escape'))
+  })
+
+  it('默认写入失败仍保留会话内切换，并给出警告', async () => {
+    const notices: string[] = []
+    const panel = new ModelPanel({
+      conversation: {
+        modelSelection: { provider: 'p', model: 'm1' },
+        listModels: async () => [{ id: 'm1', name: 'M1' }],
+        resolveModelMeta: async () => ({ efforts: [{ id: 'low', name: 'Low' }] }),
+        selectModel: async (provider: string, model: string) => ({
+          provider,
+          model,
+          efforts: ['low'],
+          saveError: 'disk full',
+        }),
+      } as never,
+      onChange: () => {},
+      setNotice: (text) => {
+        if (text) notices.push(text)
+      },
+    })
+    await panel.openPanel()
+    panel.handleKey(key('enter'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(notices.at(-1)).toContain('默认未写入')
+  })
+
+  it('提交在飞时 Esc 取消，成功回执不再覆盖', async () => {
+    const notices: string[] = []
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const panel = new ModelPanel({
+      conversation: {
+        modelSelection: { provider: 'p', model: 'm1' },
+        listModels: async () => [{ id: 'm1', name: 'M1' }],
+        resolveModelMeta: async () => ({ efforts: [{ id: 'low', name: 'Low' }] }),
+        selectModel: async (provider: string, model: string) => {
+          await gate
+          return { provider, model, efforts: ['low'] }
+        },
+      } as never,
+      onChange: () => {},
+      setNotice: (text) => {
+        if (text) notices.push(text)
+      },
+    })
+    await panel.openPanel()
+    panel.handleKey(key('enter'))
+    panel.handleKey(key('escape'))
+    release?.()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(notices.some((notice) => notice.includes('已选择'))).toBe(false)
+    expect(notices.at(-1)).toContain('已取消')
   })
 
   it('换模型保留档位：同 id 优先', async () => {

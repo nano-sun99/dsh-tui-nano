@@ -38,6 +38,31 @@ function assertContent(display: string, content: readonly any[]): void {
   if (display === '' && !hasAttachment(content)) throw new Error('nano: 空输入')
 }
 
+export interface ModelSelection {
+  readonly provider: string
+  readonly model: string
+  readonly reasoningEffort?: string
+}
+
+/**
+ * 写官方默认模型；返回错误字符串而不是抛出：
+ * 会话内切换仍应生效，profile 写失败只影响重启后的记忆。
+ * 官方在无 entry / 无 configEditor 时会静默 return，这里无法区分。
+ */
+export async function saveDefaultSelection(
+  ctx: any,
+  next: ModelSelection,
+): Promise<string | undefined> {
+  const defaultModel = ctx.get('agentDefaultModel')
+  if (typeof defaultModel?.saveSelection !== 'function') return undefined
+  try {
+    await defaultModel.saveSelection(next)
+    return undefined
+  } catch (error) {
+    return String((error as Error)?.message ?? error)
+  }
+}
+
 export class ConversationController {
   readonly model = new TranscriptModel()
   private readonly options: ConversationOptions
@@ -450,13 +475,20 @@ export class ConversationController {
     provider: string,
     model: string,
     effort?: string,
-  ): Promise<{ provider: string; model: string; reasoningEffort?: string; efforts: string[] }> {
+  ): Promise<{
+    provider: string
+    model: string
+    reasoningEffort?: string
+    efforts: string[]
+    saveError?: string
+  }> {
     const llm = this.options.ctx.get('llm')
     if (!llm?.resolveModelInfo) throw new Error('模型服务不可用')
     const catalog = await this.listModels(provider)
     const ids = catalog
       .map((entry: any) => String(entry?.id ?? entry?.model ?? entry?.name ?? ''))
       .filter(Boolean)
+    const catalogValidated = ids.length > 0 && ids.includes(model)
     if (ids.length > 0 && !ids.includes(model)) {
       throw new Error(`模型不在目录：${provider}/${model}；可选：${ids.join(' / ')}`)
     }
@@ -469,14 +501,13 @@ export class ConversationController {
     }
     const next = { provider, model, ...(effort ? { reasoningEffort: effort } : {}) }
     if (!this.selectionRef) throw new Error('会话尚未启动')
-    // 同时写回官方默认模型：否则新窗口/重启只读到 profile 里的旧默认。
-    const defaultModel = this.options.ctx.get('agentDefaultModel')
-    if (typeof defaultModel?.saveSelection === 'function') {
-      await defaultModel.saveSelection(next)
-    }
+    // 会话内选择先生效；profile 写失败只影响重启后的记忆，不回滚本次切换。
     this.selectionRef.current = next
     this.selection = next
-    return { ...next, efforts }
+    const saveError = catalogValidated
+      ? await saveDefaultSelection(this.options.ctx, next)
+      : '模型目录不可用，默认未写入'
+    return { ...next, efforts, ...(saveError ? { saveError } : {}) }
   }
 }
 
