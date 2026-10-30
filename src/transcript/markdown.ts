@@ -15,8 +15,9 @@ import 'prismjs/components/prism-rust.js'
 import 'prismjs/components/prism-yaml.js'
 import 'prismjs/components/prism-markdown.js'
 import 'prismjs/components/prism-diff.js'
-import { EDGE, NESTED } from '../theme/spacing.ts'
-import { type Row, type Span, textSpan, wrapSpans } from './spans.ts'
+import { displayWidth, graphemes, graphemeWidth, isWideBreakable } from '../render/text.ts'
+import { EDGE, GapRole, INDENT, INLINE, NESTED } from '../theme/spacing.ts'
+import { type Row, rowText, type Span, textSpan, wrapSpans } from './spans.ts'
 
 export interface MarkdownOptions {
   readonly indent?: number
@@ -94,14 +95,8 @@ function renderBlocks(tokens: Token[], width: number): Row[] {
         rows.push({ spans: [textSpan('─'.repeat(Math.max(1, width)), 'faint')] })
         break
       case 'table': {
-        const table = token as Tokens.Table
-        const header = table.header.map((cell) => cell.text).join(' │ ')
-        rows.push(...wrapSpans([textSpan(header, 'accent', { bold: true })], width))
-        for (const row of table.rows) {
-          rows.push(
-            ...wrapSpans([textSpan(row.map((cell) => cell.text).join(' │ '), 'normal')], width),
-          )
-        }
+        const gap = () => Array.from({ length: GapRole.Block }, blank)
+        rows.push(...gap(), ...renderTable(token as Tokens.Table, width), ...gap())
         break
       }
       case 'html': {
@@ -119,9 +114,209 @@ function renderBlocks(tokens: Token[], width: number): Row[] {
   return rows
 }
 
+const MIN_TABLE_COLUMN = 3
+const MAX_TABLE_CELL_LINES = 3
+
+function renderTable(table: Tokens.Table, width: number): Row[] {
+  const cells = [table.header, ...table.rows].map((row, index) =>
+    row.map((cell) => tableCellSpans(cell, index === 0)),
+  )
+  const columnCount = table.header.length
+  const available = width - (columnCount - 1) * (INLINE * 2 + 1)
+  if (available < MIN_TABLE_COLUMN * columnCount) return renderVerticalTable(cells, width)
+
+  const minimum = table.header.map((_, i) =>
+    Math.max(
+      MIN_TABLE_COLUMN,
+      ...cells.map((row) => longestTableFragment(rowText({ spans: row[i] ?? [] }))),
+    ),
+  )
+  const ideal = table.header.map((_, i) =>
+    Math.max(
+      MIN_TABLE_COLUMN,
+      ...cells.map((row) => displayWidth(rowText({ spans: row[i] ?? [] }))),
+    ),
+  )
+  const widths = tableColumnWidths(minimum, ideal, available)
+  const wrapped = cells.map((row) => row.map((spans, i) => wrapTableSpans(spans, widths[i]!)))
+  if (wrapped.some((row) => row.some((cell) => cell.length > MAX_TABLE_CELL_LINES))) {
+    return renderVerticalTable(cells, width)
+  }
+
+  const rows: Row[] = []
+  wrapped.forEach((row, index) => {
+    const height = Math.max(...row.map((cell) => cell.length))
+    for (let line = 0; line < height; line++) {
+      const spans: Span[] = []
+      row.forEach((cell, i) => {
+        if (i > 0) spans.push(textSpan(`${' '.repeat(INLINE)}│${' '.repeat(INLINE)}`, 'faint'))
+        const top = Math.floor((height - cell.length) / 2)
+        const content = cell[line - top]?.spans ?? []
+        spans.push(...alignTableCell(content, widths[i]!, table.align[i] ?? null))
+      })
+      rows.push({ spans: trimTableEnd(spans) })
+    }
+    if (index === 0) {
+      const rule = widths
+        .map((size, i) =>
+          '─'.repeat(size + (i > 0 ? INLINE : 0) + (i < columnCount - 1 ? INLINE : 0)),
+        )
+        .join('┼')
+      rows.push({ spans: [textSpan(rule, 'faint')] })
+    }
+  })
+  return rows
+}
+
+function tableCellSpans(cell: Tokens.TableCell, header: boolean): Span[] {
+  const defaults: { bold?: boolean; tone?: Span['tone'] } = header
+    ? { bold: true, tone: 'accent' }
+    : {}
+  // Inline lexing normally excludes blocks; do not recurse if one is supplied.
+  const blockTypes = new Set([
+    'code',
+    'list',
+    'table',
+    'blockquote',
+    'heading',
+    'paragraph',
+    'hr',
+    'space',
+  ])
+  if (cell.tokens.some((token) => blockTypes.has(token.type))) {
+    return [textSpan(cell.text, defaults.tone ?? 'normal', defaults)]
+  }
+  return inlineSpans(cell.tokens, defaults, true)
+}
+
+function longestTableFragment(text: string): number {
+  let longest = 0
+  let word = 0
+  for (const g of graphemes(text)) {
+    if (/\s/u.test(g) || isWideBreakable(g)) {
+      longest = Math.max(longest, word, isWideBreakable(g) ? graphemeWidth(g) : 0)
+      word = 0
+    } else {
+      word += graphemeWidth(g)
+    }
+  }
+  return Math.max(longest, word)
+}
+
+/** Rewrap an overwide carried fragment without changing the shared wrapper. */
+function wrapTableSpans(spans: readonly Span[], width: number): Row[] {
+  return wrapSpans(spans, width).flatMap((row) =>
+    displayWidth(rowText(row)) > width ? wrapSpans(row.spans, width) : [row],
+  )
+}
+
+function tableColumnWidths(minimum: number[], ideal: number[], available: number): number[] {
+  if (ideal.reduce((sum, size) => sum + size, 0) <= available) return ideal
+  const totalMinimum = minimum.reduce((sum, size) => sum + size, 0)
+  if (totalMinimum <= available) {
+    const extra = distributeTableWidth(
+      ideal.map((size, i) => size - minimum[i]!),
+      available - totalMinimum,
+      0,
+    )
+    return minimum.map((size, i) => size + extra[i]!)
+  }
+  return distributeTableWidth(minimum, available, MIN_TABLE_COLUMN)
+}
+
+/** Proportional allocation with fixed lower bounds, then integer remainder. */
+function distributeTableWidth(weights: number[], budget: number, floor: number): number[] {
+  const sizes = weights.map(() => floor)
+  let pending = weights.map((_, i) => i)
+  while (pending.length > 0) {
+    const total = pending.reduce((sum, i) => sum + weights[i]!, 0)
+    const clamped = pending.filter((i) => budget * weights[i]! < floor * total)
+    if (clamped.length > 0) {
+      budget -= clamped.length * floor
+      pending = pending.filter((i) => !clamped.includes(i))
+      continue
+    }
+    for (const i of pending)
+      sizes[i] = total === 0 ? floor : Math.floor((budget * weights[i]!) / total)
+    let remainder = budget - pending.reduce((sum, i) => sum + sizes[i]!, 0)
+    for (const i of pending.toSorted((a, b) => weights[b]! - weights[a]!)) {
+      if (remainder-- <= 0) break
+      sizes[i]!++
+    }
+    break
+  }
+  return sizes
+}
+
+function alignTableCell(
+  spans: readonly Span[],
+  width: number,
+  align: Tokens.Table['align'][number],
+): Span[] {
+  const padding = width - displayWidth(rowText({ spans }))
+  const left = align === 'right' ? padding : align === 'center' ? Math.floor(padding / 2) : 0
+  return [
+    textSpan(' '.repeat(Math.max(0, left))),
+    ...spans,
+    textSpan(' '.repeat(Math.max(0, padding - left))),
+  ]
+}
+
+/** Trim only the assembled row end, never the padding before a separator. */
+function trimTableEnd(spans: Span[]): Span[] {
+  while (spans.length > 0) {
+    const last = spans[spans.length - 1]!
+    const text = last.text.replace(/ +$/u, '')
+    if (text !== '') {
+      spans[spans.length - 1] = { ...last, text }
+      break
+    }
+    spans.pop()
+  }
+  return spans
+}
+
+function renderVerticalTable(cells: Span[][][], width: number): Row[] {
+  const [header = [], ...records] = cells
+  const rows: Row[] = []
+  const indent = Math.min(INDENT, Math.max(0, width - 1))
+  const visibleRecords = records.length > 0 ? records : [header.map(() => [])]
+  visibleRecords.forEach((record, index) => {
+    if (index > 0) rows.push({ spans: [textSpan('─'.repeat(width), 'faint')] })
+    record.forEach((value, i) => {
+      const field = [
+        textSpan(rowText({ spans: header[i] ?? [] }), 'faint'),
+        textSpan(' '.repeat(INLINE * 2)),
+        ...value,
+      ]
+      const first = wrapTableSpans(field, width)[0]!
+      rows.push(first)
+      // The first line owns the full width; only its unconsumed suffix needs
+      // continuation indentation. Slice original spans to retain inline styles.
+      const source = rowText({ spans: field })
+      let consumed = rowText(first).length
+      while (source[consumed] === ' ') consumed++
+      if (source[consumed] === '\n') consumed++
+      const rest: Span[] = []
+      for (const span of field) {
+        const text = span.text.slice(consumed)
+        consumed = Math.max(0, consumed - span.text.length)
+        if (text !== '') rest.push({ ...span, text })
+      }
+      if (rest.length > 0) {
+        rows.push(
+          ...wrapTableSpans(rest, Math.max(1, width - indent)).map((row) => ({ ...row, indent })),
+        )
+      }
+    })
+  })
+  return rows
+}
+
 function inlineSpans(
   tokens: Token[],
   defaults: { bold?: boolean; italic?: boolean; tone?: Span['tone'] } = {},
+  tableMode = false,
 ): Span[] {
   const spans: Span[] = []
   for (const token of tokens) {
@@ -130,7 +325,7 @@ function inlineSpans(
       case 'escape': {
         const textToken = token as Tokens.Text
         if (textToken.tokens && textToken.tokens.length > 0) {
-          spans.push(...inlineSpans(textToken.tokens, defaults))
+          spans.push(...inlineSpans(textToken.tokens, defaults, tableMode))
         } else {
           spans.push(
             textSpan(textToken.text, defaults.tone ?? 'normal', {
@@ -143,24 +338,26 @@ function inlineSpans(
       }
       case 'strong': {
         const strong = token as Tokens.Strong
-        spans.push(...inlineSpans(strong.tokens, { ...defaults, bold: true }))
+        spans.push(...inlineSpans(strong.tokens, { ...defaults, bold: true }, tableMode))
         break
       }
       case 'em': {
         const em = token as Tokens.Em
-        spans.push(...inlineSpans(em.tokens, { ...defaults, italic: true }))
+        spans.push(...inlineSpans(em.tokens, { ...defaults, italic: true }, tableMode))
         break
       }
       case 'codespan': {
         const code = token as Tokens.Codespan
-        spans.push(textSpan(` ${code.text} `, 'code', { bold: defaults.bold }))
+        spans.push(
+          textSpan(tableMode ? code.text : ` ${code.text} `, 'code', { bold: defaults.bold }),
+        )
         break
       }
       case 'link': {
         const link = token as Tokens.Link
         const label =
           link.tokens.length > 0
-            ? inlineSpans(link.tokens, defaults)
+            ? inlineSpans(link.tokens, defaults, tableMode)
             : [textSpan(link.text, defaults.tone ?? 'normal')]
         spans.push(...label.map((span) => ({ ...span, underline: true })))
         if (link.href && link.href !== link.text) {
@@ -173,7 +370,12 @@ function inlineSpans(
         break
       case 'del': {
         const del = token as Tokens.Del
-        spans.push(...inlineSpans(del.tokens, defaults).map((span) => ({ ...span, strike: true })))
+        spans.push(
+          ...inlineSpans(del.tokens, defaults, tableMode).map((span) => ({
+            ...span,
+            strike: true,
+          })),
+        )
         break
       }
       case 'html': {
