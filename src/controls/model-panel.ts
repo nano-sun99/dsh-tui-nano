@@ -26,6 +26,7 @@ interface Entry {
   levels: Effort[]
   defaultEffort?: string
   loaded: boolean
+  loading?: Promise<void>
   error?: string
 }
 
@@ -88,6 +89,10 @@ export class ModelPanel {
   private timer: NodeJS.Timeout | undefined
   private error: string | undefined
   private catalogError: string | undefined
+  /** 换模型时暂存的原档位；等新模型档位加载后按 id / 同序号恢复。 */
+  private restoreEffort: { index: number; id?: string } | undefined
+  /** 提交序号：Esc / 重新打开会让在飞的提交回执失效。 */
+  private submitToken = 0
 
   constructor(options: ModelPanelOptions) {
     this.options = options
@@ -132,7 +137,9 @@ export class ModelPanel {
       entries.findIndex((entry) => entry.id === current.model),
     )
     this.effortIndex = 0
+    this.restoreEffort = undefined
     this.error = undefined
+    this.submitToken += 1
     this.visible = true
     this.phaseStart = Date.now()
     this.options.setNotice(undefined)
@@ -173,15 +180,51 @@ export class ModelPanel {
     return conversation.resolveModelMeta(this.provider, model)
   }
 
-  private async loadFocus(): Promise<void> {
+  private loadFocus(): Promise<void> {
     const entry = this.focus
-    if (!entry || entry.loaded) return
-    entry.loaded = true
-    const meta = await this.readMeta(entry.id)
-    entry.levels = meta.efforts
-    if (meta.defaultEffort) entry.defaultEffort = meta.defaultEffort
-    if (meta.error) entry.error = meta.error
-    this.options.onChange()
+    if (!entry) return Promise.resolve()
+    if (entry.loading) return entry.loading
+    if (entry.loaded) return Promise.resolve()
+    entry.loading = (async () => {
+      try {
+        const meta = await this.readMeta(entry.id)
+        entry.levels = meta.efforts
+        if (meta.defaultEffort) entry.defaultEffort = meta.defaultEffort
+        if (meta.error) entry.error = meta.error
+        entry.loaded = meta.error === undefined
+      } catch (error) {
+        entry.error = String((error as Error)?.message ?? error)
+        entry.loaded = false
+      } finally {
+        entry.loading = undefined
+        this.options.onChange()
+      }
+    })()
+    return entry.loading
+  }
+
+  /** 换模型后恢复原档位：同 id 优先；缺失时保留相同序号并夹到新档位数。 */
+  private applyRestoreEffort(): void {
+    const restore = this.restoreEffort
+    if (!restore) return
+    this.restoreEffort = undefined
+    if (restore.index === 0) {
+      this.effortIndex = 0
+      return
+    }
+    const levels = this.levels
+    if (levels.length === 0) {
+      this.effortIndex = 0
+      return
+    }
+    if (restore.id) {
+      const byId = levels.findIndex((level) => level.id === restore.id)
+      if (byId >= 0) {
+        this.effortIndex = byId + 1
+        return
+      }
+    }
+    this.effortIndex = Math.min(restore.index, levels.length)
   }
 
   private get reducedMotion(): boolean {
@@ -216,6 +259,7 @@ export class ModelPanel {
   }
 
   private close(): void {
+    this.submitToken += 1
     this.visible = false
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
@@ -241,11 +285,16 @@ export class ModelPanel {
       const delta = key.name === 'up' ? -1 : 1
       const next = Math.max(0, Math.min(this.entries.length - 1, this.modelIndex + delta))
       if (next !== this.modelIndex) {
+        if (!this.restoreEffort) {
+          const id = this.effortIndex > 0 ? this.levels[this.effortIndex - 1]?.id : undefined
+          this.restoreEffort = { index: this.effortIndex, ...(id ? { id } : {}) }
+        }
         this.modelIndex = next
-        this.effortIndex = 0
         this.error = undefined
         this.phaseStart = Date.now()
         void this.loadFocus().then(() => {
+          if (this.modelIndex !== next) return
+          this.applyRestoreEffort()
           this.ensureTick()
           this.options.onChange()
         })
@@ -257,6 +306,7 @@ export class ModelPanel {
       if (count > 1) {
         const delta = key.name === 'left' ? -1 : 1
         this.effortIndex = (this.effortIndex + delta + count) % count
+        this.restoreEffort = undefined
         this.error = undefined
         this.phaseStart = Date.now()
         this.ensureTick()
@@ -277,18 +327,25 @@ export class ModelPanel {
   private async apply(): Promise<void> {
     const entry = this.focus
     if (!entry) return
+    const token = ++this.submitToken
     if (this.catalogError) {
       this.error = `目录读取失败：${this.catalogError}`
       this.options.onChange()
       return
     }
+    await this.loadFocus()
+    if (token !== this.submitToken || !this.visible || this.focus !== entry) return
+    this.applyRestoreEffort()
     const effort = this.effortIndex > 0 ? this.levels[this.effortIndex - 1]?.id : undefined
+    const effortName = effort ? (this.levels[this.effortIndex - 1]?.name ?? effort) : '默认'
     try {
       const next = await this.options.conversation.selectModel(this.provider, entry.id, effort)
-      const effortName = effort ? (this.levels[this.effortIndex - 1]?.name ?? effort) : '默认'
-      this.options.setNotice(`已选择 ${next.model} · ${effortName}。`)
+      if (token !== this.submitToken) return
+      const warning = next.saveError ? ` 默认未写入（重启后不保留）：${next.saveError}` : ''
+      this.options.setNotice(`已选择 ${next.model} · ${effortName}。${warning}`)
       this.close()
     } catch (error) {
+      if (token !== this.submitToken) return
       this.error = `模型切换失败：${String((error as Error)?.message ?? error)}`
       this.options.setNotice(this.error)
       this.options.onChange()
@@ -493,9 +550,11 @@ export class ModelPanel {
     })
     lines.push(createElement(Text, {}, BLANK_LINE))
     if (this.levels.length === 0) {
-      const text = this.focus?.error
-        ? `强度：—（${this.focus.error}）`
-        : '强度：该模型未声明（不可调）'
+      const text = this.focus?.loading
+        ? '强度：加载中…'
+        : this.focus?.error
+          ? `强度：—（${this.focus.error}）`
+          : '强度：该模型未声明（不可调）'
       lines.push(
         createElement(
           Box,

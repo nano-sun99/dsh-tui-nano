@@ -355,9 +355,10 @@ export class Features implements FeatureHost {
         target.slice(slash + 1),
         effort,
       )
+      const warning = next.saveError ? `；默认未写入：${next.saveError}` : ''
       model.appendNotice(
-        `模型已切换：${next.provider}/${next.model}${next.reasoningEffort ? ` · 强度 ${next.reasoningEffort}` : ''}（下一次请求生效）`,
-        'info',
+        `模型已切换：${next.provider}/${next.model}${next.reasoningEffort ? ` · 强度 ${next.reasoningEffort}` : ''}（下一次请求生效）${warning}`,
+        next.saveError ? 'warning' : 'info',
       )
     } catch (error) {
       model.appendNotice(`模型切换失败：${String((error as Error)?.message ?? error)}`, 'danger')
