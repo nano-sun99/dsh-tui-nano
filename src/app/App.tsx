@@ -182,6 +182,16 @@ function inputLineCount(snapshot: AppSnapshot, width: number): number {
   return Math.min(4, Math.max(1, rows.length))
 }
 
+/** 正文区可见高度；滚动上限与渲染共用这一份算法，别各算各的。 */
+export function transcriptBodyHeight(snapshot: AppSnapshot): number {
+  const inputHeight = inputLineCount(snapshot, snapshot.width) + 2
+  const completionRows = snapshot.completionRows ?? 0
+  const modelRows = snapshot.modelPanelRows ?? 0
+  const headerHeight = 3
+  const bottomRows = modelRows > 0 ? modelRows : inputHeight + 1
+  return Math.max(1, snapshot.height - bottomRows - completionRows - headerHeight)
+}
+
 /** 输入块上/下边框：左侧按上下文占比着色，右侧为普通边框色。 */
 function ContextRule(props: { theme: Theme; width: number; ratio?: number }) {
   const bar = Math.max(1, props.width - EDGE * 2)
@@ -419,12 +429,8 @@ export function App(props: { snapshot: AppSnapshot }) {
   const width = snapshot.width
   const height = snapshot.height
   // 跟 Claude Code 的输入区高度：上方一行留白 + 输入行 + 一条下边框。
-  const inputHeight = inputLineCount(snapshot, width) + 2
-  const completionRows = snapshot.completionRows ?? 0
+  const bodyHeight = transcriptBodyHeight(snapshot)
   const modelRows = snapshot.modelPanelRows ?? 0
-  const headerHeight = 3
-  const bottomRows = modelRows > 0 ? modelRows : inputHeight + 1
-  const bodyHeight = Math.max(1, height - bottomRows - completionRows - headerHeight)
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Box height={1} />

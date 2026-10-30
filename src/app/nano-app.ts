@@ -21,7 +21,7 @@ import { formatShutdownReport, Lifecycle } from '../runtime/lifecycle.ts'
 import type { Terminal } from '../runtime/terminal.ts'
 import { EDGE } from '../theme/spacing.ts'
 import { activeTheme } from '../theme/theme.ts'
-import { App, type AppSnapshot } from './App.tsx'
+import { App, type AppSnapshot, transcriptBodyHeight } from './App.tsx'
 import { InputModel } from './input-model.ts'
 
 export interface NanoAppOptions {
@@ -107,6 +107,7 @@ export class NanoApp {
   private readonly lifecycle = new Lifecycle()
   private readonly expanded = new Set<string>()
   private scrollOffset = 0
+  private maxScroll = 0
   private stickBottom = true
   private selectionStart: { row: number; col: number } | undefined
   private selectionActive = false
@@ -495,9 +496,10 @@ export class NanoApp {
     this.scheduleRender()
   }
 
+  /** 顶、底都要夹住：越过顶部多滚的量看不见，却会吃掉之后的向下滚动。 */
   private scrollBy(lines: number): void {
     this.stickBottom = false
-    this.scrollOffset = Math.max(0, this.scrollOffset + lines)
+    this.scrollOffset = Math.max(0, Math.min(this.maxScroll, this.scrollOffset + lines))
     if (this.scrollOffset === 0) this.stickBottom = true
   }
 
@@ -525,7 +527,7 @@ export class NanoApp {
     }
     this.lastTotalLines = total
     const contextRatio = occupancyRatio(this.options.core.ctx, this.options.conversation.agent)
-    return {
+    const snapshot: AppSnapshot = {
       transcript: this.options.conversation.model,
       decisions: this.decisions,
       text: this.input.text,
@@ -557,6 +559,15 @@ export class NanoApp {
         : {}),
       userName: '你',
     }
+    // 内容变少、窗口变高都会让旧的偏移越过顶部；在出口统一夹住。
+    this.maxScroll = Math.max(0, total - transcriptBodyHeight(snapshot))
+    if (this.scrollOffset > this.maxScroll) {
+      this.scrollOffset = this.maxScroll
+      if (this.scrollOffset === 0) this.stickBottom = true
+    }
+    return this.scrollOffset === snapshot.scrollOffset && this.stickBottom === snapshot.stickBottom
+      ? snapshot
+      : { ...snapshot, scrollOffset: this.scrollOffset, stickBottom: this.stickBottom }
   }
 
   private scheduleRender(): void {
