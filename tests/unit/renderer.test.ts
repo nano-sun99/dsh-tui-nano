@@ -136,3 +136,42 @@ describe('escape injection', () => {
     renderer.unmount()
   })
 })
+
+const ESC = String.fromCharCode(27)
+const CUP_END = new RegExp(`${ESC}\\[\\d+;\\d+H$`)
+
+describe('hardware cursor parking', () => {
+  it('parks the hidden cursor on a cursor-marked box', () => {
+    const { renderer, output } = createRenderer(10, 3)
+    renderer.mount(
+      box({ flexDirection: 'row' }, text('abc'), box({ cursor: true, width: 0, height: 1 })),
+    )
+    renderer.flushFrame()
+    expect(output().endsWith('\x1b[1;4H')).toBe(true)
+    expect(output()).not.toContain('\x1b[?25h')
+    renderer.unmount()
+  })
+
+  it('does not re-park an unchanged frame with no writes', () => {
+    const { renderer, chunks } = createRenderer(10, 3)
+    const tree = box(
+      { flexDirection: 'row' },
+      text('abc'),
+      box({ cursor: true, width: 0, height: 1 }),
+    )
+    renderer.mount(tree)
+    renderer.flushFrame()
+    const afterFirst = chunks.length
+    renderer.flushFrame()
+    expect(chunks.length).toBe(afterFirst)
+    renderer.unmount()
+  })
+
+  it('does not park when no box declares the cursor', () => {
+    const { renderer, output } = createRenderer(10, 3)
+    renderer.mount(box({ flexDirection: 'row' }, text('abc')))
+    renderer.flushFrame()
+    expect(CUP_END.test(output())).toBe(false)
+    renderer.unmount()
+  })
+})

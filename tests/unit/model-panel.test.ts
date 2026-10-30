@@ -554,3 +554,40 @@ describe('/model panel', () => {
     expect(notices.at(-1)).toContain('已取消')
   })
 })
+
+describe('notice tone', () => {
+  it('reports a missing model as danger', async () => {
+    const tones: Array<string | undefined> = []
+    const panel = new ModelPanel({
+      conversation: { modelSelection: null } as never,
+      onChange: () => {},
+      setNotice: (_text, tone) => {
+        tones.push(tone)
+      },
+    })
+    await panel.openPanel()
+    expect(tones.at(-1)).toBe('danger')
+  })
+
+  it('reports a failed switch as danger', async () => {
+    const tones: Array<string | undefined> = []
+    const panel = new ModelPanel({
+      conversation: {
+        modelSelection: { provider: 'p', model: 'm1' },
+        listModels: async () => [{ id: 'm1', name: 'M1' }],
+        resolveModelMeta: async () => ({ efforts: [] }),
+        selectModel: async () => {
+          throw new Error('boom')
+        },
+      } as never,
+      onChange: () => {},
+      setNotice: (_text, tone) => {
+        tones.push(tone)
+      },
+    })
+    await panel.openPanel()
+    panel.handleKey(key('enter'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(tones.at(-1)).toBe('danger')
+  })
+})

@@ -109,7 +109,7 @@ export class Features implements FeatureHost {
             if (session && title) title.rename(session, renameTo)
           } catch (error) {
             // 改名失败不杀启动：草稿已在输入框，报原因即可。
-            context.setNotice(`改名失败：${String((error as Error)?.message ?? error)}`)
+            context.setNotice(`改名失败：${String((error as Error)?.message ?? error)}`, 'danger')
           }
         }
       }
@@ -148,13 +148,14 @@ export class Features implements FeatureHost {
       input: context.input,
       getAgent: () => context.conversation.agent,
       onChange: () => context.requestRender(),
+      onEdit: () => context.setNotice(undefined),
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
     })
     this.completions.install()
     this.modelPanel = new ModelPanel({
       conversation: context.conversation,
       onChange: () => context.requestRender(),
-      setNotice: (text) => context.setNotice(text),
+      setNotice: (text, tone) => context.setNotice(text, tone),
       repaint: () => context.renderer.invalidate(),
     })
 
@@ -222,6 +223,14 @@ export class Features implements FeatureHost {
     this.disposeKeys.push(...FEATURE_KEYBINDINGS.map((binding) => registerKeybinding(binding)))
   }
 
+  /** S01 用来判断输入框是否仍接收按键；面板/终端接管时不停靠 caret。 */
+  inputActive(): boolean {
+    if (this.modelPanel?.open) return false
+    if (this.terminal?.focused === true) return false
+    if (this.info?.visible || this.sessions?.visible || this.jobs?.visible) return false
+    return true
+  }
+
   handleKey(key: Key): boolean {
     // 面板打开时先独占按键：否则 Ctrl+T/J/L/I 会在它上面再叠开别的面板。
     if (this.modelPanel?.open && this.modelPanel.handleKey(key)) return true
@@ -256,7 +265,7 @@ export class Features implements FeatureHost {
       const text = this.context?.input.text ?? ''
       // 所有 S02 提交路径共用 S01 的 32 KiB 上限（含附件引用文本）。
       if (Buffer.byteLength(text, 'utf8') > INPUT_BYTE_LIMIT) {
-        this.context?.setNotice('超过 32 KiB 上限，未发送（草稿保留）')
+        this.context?.setNotice('超过 32 KiB 上限，未发送（草稿保留）', 'danger')
         return true
       }
       if (text.trimStart().startsWith('/')) {
@@ -468,7 +477,7 @@ export class Features implements FeatureHost {
       context.setNotice(deliveryNotice(result.delivery))
     } catch (error) {
       const message = String((error as Error)?.message ?? error)
-      context.setNotice(`附件提交失败：${message}（草稿已保留）`)
+      context.setNotice(`附件提交失败：${message}（草稿已保留）`, 'danger')
     }
   }
 

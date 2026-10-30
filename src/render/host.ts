@@ -57,6 +57,8 @@ export interface BoxProps {
   readonly backgroundColor?: Rgb
   /** Erase the node's rectangle to the terminal default before painting children. */
   readonly clear?: boolean
+  /** Zero-width marker: park the hidden hardware cursor on this box's cell. */
+  readonly cursor?: boolean
   readonly display?: 'flex' | 'none'
   readonly children?: unknown
 }

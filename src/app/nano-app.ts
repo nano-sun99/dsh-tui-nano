@@ -26,6 +26,7 @@ import type { Terminal } from '../runtime/terminal.ts'
 import { activeTheme } from '../theme/theme.ts'
 import { App, type AppSnapshot, transcriptBodyHeight } from './App.tsx'
 import { InputModel } from './input-model.ts'
+import { NoticeState, type NoticeTone } from './notice.ts'
 
 export interface NanoAppOptions {
   readonly core: CoreBoot
@@ -75,7 +76,7 @@ export interface FeatureContext {
   /** 请求重画一帧（S02 自己的状态变化时调用）。 */
   requestRender(): void
   /** 写一行提示到状态栏；传 undefined 清掉。 */
-  setNotice(text: string | undefined): void
+  setNotice(text: string | undefined, tone?: NoticeTone): void
   /** 受控重启：冻结输入 → 写 handoff → 既有关停 → 以新根重新拉起。 */
   requestRestart(request: RestartRequest): void
 }
@@ -93,6 +94,8 @@ export interface FeatureHost {
   dispose?(): void | Promise<void>
   handleKey?(key: Key): boolean
   dispatchAction?(action: string): boolean
+  /** 输入框是否接收按键；false 时不停靠硬件光标（面板/终端接管）。 */
+  inputActive?(): boolean
   body?(): ReactNode
   /** 补全弹层：正文与状态行之间，独立占行。 */
   completionBody?(): ReactNode
@@ -116,7 +119,7 @@ export class NanoApp {
   private selectionActive = false
   private pendingPressId: string | undefined
   private lastTotalLines: number | undefined
-  private notice: string | undefined
+  private readonly notices = new NoticeState(() => this.scheduleRender())
   private renderScheduled = false
   private stopping = false
   private shutdownStartedAt = 0
@@ -159,9 +162,8 @@ export class NanoApp {
       dataRoot: this.options.dataRoot,
       cwd: this.options.cwd,
       requestRender: () => this.scheduleRender(),
-      setNotice: (text) => {
-        this.notice = text
-        this.scheduleRender()
+      setNotice: (text, tone) => {
+        this.notices.set(text, tone)
       },
       requestRestart: (request) => this.requestRestart(request),
     })
@@ -223,8 +225,10 @@ export class NanoApp {
       switch (event.type) {
         case 'paste':
           if (this.decisions.hasDecision) {
+            if (this.decisionCustomMode()) this.clearNoticeOnEdit()
             this.decisions.typeCustom(event.text)
           } else {
+            this.clearNoticeOnEdit()
             this.input.insert(event.text)
           }
           break
@@ -266,7 +270,7 @@ export class NanoApp {
         const text = this.input.text
         if (text.trim() !== '') {
           if (Buffer.byteLength(text, 'utf8') > INPUT_BYTE_LIMIT) {
-            this.notice = '超过 32 KiB 上限，未发送（草稿保留）'
+            this.notices.set('超过 32 KiB 上限，未发送（草稿保留）', 'danger')
             return
           }
           try {
@@ -274,39 +278,41 @@ export class NanoApp {
             this.input.take()
             this.stickBottom = true
             this.scrollOffset = 0
-            this.notice = deliveryNotice(result.delivery)
+            this.notices.set(deliveryNotice(result.delivery))
           } catch (error) {
-            this.notice = `发送失败：${message(error)}`
+            this.notices.set(`发送失败：${message(error)}`, 'danger')
           }
         }
         return
       }
       case 'input.newline':
+        this.clearNoticeOnEdit()
         this.input.insert('\n')
         return
       case 'conversation.cancel':
         this.options.conversation.stop()
-        this.notice = '已停止当前回合（队列保留）'
+        this.notices.set('已停止当前回合（队列保留）')
         return
       case 'conversation.steer': {
         const text = this.input.text
         if (Buffer.byteLength(text, 'utf8') > INPUT_BYTE_LIMIT) {
-          this.notice = '超过 32 KiB 上限，未发送（草稿保留）'
+          this.notices.set('超过 32 KiB 上限，未发送（草稿保留）', 'danger')
           return
         }
         if (text.trim() !== '') {
           this.options.conversation.steer(text)
           this.input.take()
-          this.notice = STEER_NOTICE
+          this.notices.set(STEER_NOTICE)
         }
         return
       }
       case 'conversation.clear':
         this.options.conversation.clear()
-        this.notice = '已停止并清空队列'
+        this.notices.set('已停止并清空队列')
         return
       case 'app.exit':
         if (key.ctrl && key.text === 'c' && this.input.text !== '') {
+          this.clearNoticeOnEdit()
           this.input.clear()
           return
         }
@@ -314,15 +320,19 @@ export class NanoApp {
         void this.shutdown('user exit')
         return
       case 'input.backspace':
+        this.clearNoticeOnEdit()
         this.input.backspace()
         return
       case 'input.delete':
+        this.clearNoticeOnEdit()
         this.input.deleteForward()
         return
       case 'input.deleteWord':
+        this.clearNoticeOnEdit()
         this.input.deleteWord()
         return
       case 'input.clear':
+        this.clearNoticeOnEdit()
         this.input.clear()
         return
       case 'cursor.left':
@@ -344,6 +354,7 @@ export class NanoApp {
         this.input.end()
         return
       case 'history.prev':
+        this.clearNoticeOnEdit()
         if (!this.input.isHistoryBrowsing) {
           this.input.setHistory(
             this.options.history.entries(HISTORY_LIMIT).map((entry) => entry.display),
@@ -352,6 +363,7 @@ export class NanoApp {
         this.input.previousHistory()
         return
       case 'history.next':
+        this.clearNoticeOnEdit()
         this.input.nextHistory()
         return
       case 'transcript.scrollUp':
@@ -375,14 +387,30 @@ export class NanoApp {
       return
     }
     if (key.name === 'char' && key.text && !key.ctrl && !key.alt && !key.meta) {
+      this.clearNoticeOnEdit()
       this.input.insert(key.text)
       return
     }
     if (key.alt && key.name === 'char' && key.text) {
+      this.clearNoticeOnEdit()
       this.input.insert(key.text)
       return
     }
     this.noteUnknownInput(key)
+  }
+
+  /** 当前决策卡的自定义输入是否真的在接收文本。 */
+  private decisionCustomMode(): boolean {
+    const prompt = this.decisions.prompt
+    if (prompt?.kind !== 'question') return false
+    const question = prompt.questions[prompt.current]
+    const draft = question ? prompt.drafts.get(question.id) : undefined
+    return draft?.customMode === true
+  }
+
+  /** 任何文本编辑都清掉临时提示（spec §3.3.3）。 */
+  private clearNoticeOnEdit(): void {
+    if (this.notices.current !== undefined) this.notices.set(undefined)
   }
 
   private handleDecisionKey(key: Key): void {
@@ -407,8 +435,11 @@ export class NanoApp {
     if (draft?.customMode) {
       if (key.name === 'escape') this.decisions.toggleCustom()
       else if (key.name === 'enter') this.decisions.advanceQuestion()
-      else if (key.name === 'backspace') this.decisions.backspaceCustom()
-      else if (key.name === 'char' && key.text && !key.ctrl && !key.alt) {
+      else if (key.name === 'backspace') {
+        this.clearNoticeOnEdit()
+        this.decisions.backspaceCustom()
+      } else if (key.name === 'char' && key.text && !key.ctrl && !key.alt) {
+        this.clearNoticeOnEdit()
         this.decisions.typeCustom(key.text)
       }
       return
@@ -546,7 +577,10 @@ export class NanoApp {
       expanded: this.expanded,
       scrollOffset: this.scrollOffset,
       stickBottom: this.stickBottom,
-      ...(this.notice ? { notice: this.notice } : {}),
+      ...(this.notices.current
+        ? { notice: { text: this.notices.current.text, tone: this.notices.current.tone } }
+        : {}),
+      caretActive: this.options.features?.inputActive?.() ?? true,
       ...(contextRatio !== undefined ? { contextRatio } : {}),
       ...(this.options.features?.body ? { featureBody: this.options.features.body() } : {}),
       ...(this.options.features?.completionBody
@@ -604,7 +638,10 @@ export class NanoApp {
         ...(request.payload ? { payload: request.payload } : {}),
       })
     } catch (error) {
-      this.notice = `切换失败（handoff 写入失败）：${String((error as Error)?.message ?? error)}`
+      this.notices.set(
+        `切换失败（handoff 写入失败）：${String((error as Error)?.message ?? error)}`,
+        'danger',
+      )
       this.options.writeDiagnostic(`nano: handoff 写入失败，取消重启`)
       this.scheduleRender()
       return
@@ -625,6 +662,7 @@ export class NanoApp {
     }
     this.stopping = true
     this.shutdownStartedAt = Date.now()
+    this.notices.dispose()
     this.options.writeDiagnostic(`nano: 开始关停（${reason}）`)
     const { core, conversation, claim, terminal } = this.options
     this.lifecycle.register('drain', 'features', async () => {

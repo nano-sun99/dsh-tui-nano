@@ -29,6 +29,8 @@ export interface Span {
   readonly underline?: boolean
   readonly strike?: boolean
   readonly reverse?: boolean
+  /** Marks the composer caret cell; never trimmed and never merged. */
+  readonly caret?: boolean
 }
 
 export interface Row {
@@ -96,7 +98,13 @@ export function wrapSpans(spans: readonly Span[], width: number): Row[] {
     }
     if (lineWidth + gw > maxWidth && line.length > 0) {
       if (item.g === ' ') {
+        // The caret is not a break opportunity that can be dropped: move it
+        // to the start of the next row so it stays visible at line end.
         emit()
+        if (item.span.caret === true) {
+          line.push(item)
+          lineWidth = gw
+        }
         continue
       }
       if (breakIndex > 0 && breakIndex < line.length) {
@@ -133,7 +141,8 @@ function toSpans(line: readonly StyledGrapheme[]): Span[] {
       last.italic === entry.span.italic &&
       last.underline === entry.span.underline &&
       last.strike === entry.span.strike &&
-      last.reverse === entry.span.reverse
+      last.reverse === entry.span.reverse &&
+      last.caret === entry.span.caret
     ) {
       spans[spans.length - 1] = { ...last, text: last.text + entry.g }
     } else {
@@ -145,6 +154,7 @@ function toSpans(line: readonly StyledGrapheme[]): Span[] {
         ...(entry.span.underline ? { underline: true } : {}),
         ...(entry.span.strike ? { strike: true } : {}),
         ...(entry.span.reverse ? { reverse: true } : {}),
+        ...(entry.span.caret ? { caret: true } : {}),
       })
     }
   }
@@ -155,7 +165,7 @@ function trimTrailing(line: readonly StyledGrapheme[]): StyledGrapheme[] {
   let end = line.length
   while (end > 0) {
     const item = line[end - 1] as StyledGrapheme
-    if (item.g === ' ' && item.span.tone !== 'diffDel') end--
+    if (item.g === ' ' && item.span.tone !== 'diffDel' && item.span.caret !== true) end--
     else break
   }
   return line.slice(0, end)

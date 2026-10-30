@@ -24,6 +24,8 @@ export interface CompletionsOptions {
   readonly input: InputModel
   readonly getAgent: () => any | undefined
   readonly onChange: () => void
+  /** Called after the completion actually edits the composer text. */
+  readonly onEdit?: () => void
   readonly writeDiagnostic: (line: string) => void
 }
 
@@ -297,6 +299,7 @@ export class Completions {
     }
     for (let index = 0; index < trigger.remove; index++) this.options.input.backspace()
     this.options.input.insert(inserted)
+    this.options.onEdit?.()
     this.options.onChange()
     this.sync()
   }
