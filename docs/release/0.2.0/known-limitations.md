@@ -28,5 +28,10 @@
 - **IME 组合态**：parser 按 UTF-8 / grapheme 处理，组合中的预编辑文本由终端负责；真实输入法组合未自动模拟。
 - **鼠标拖选与剪贴板**：选区提取、宽字符起点、OSC 52 / pbcopy 有单测；Ghostty 实际拖选手感未取证。
 - **主链路只对 mock 验证**：`tests/e2e/main-chain.test.mjs` 用本地 Anthropic Messages SSE mock 跑通对话/工具/差异/审批/完成，未连接真实模型服务。
-- **断网**：未模拟真实网络不可达；「官方调用失败」路径已有 e2e（无凭据时界面显示回合出错且不崩）。
-- **跨会话九面内容隔离**：session/storage 目录隔离、同根第二窗口拒绝、双 root 并发已有 e2e；transcript / 草稿 / 队列 / 附件 / 审批 / 问卷 / 终端七面已有真 PTY 内容隔离证据（`cross-surface.test.mjs`）；Monitor / 调度两面的内容隔离仍未逐面取证。
+- **断网**：已有 `127.0.0.1:9` 连接被拒的 PTY 用例；仓库没有 DNS 用例，不宣称验证过 DNS。真实物理断网按 2026-10-30 边界认可。
+- **压缩**：nano 不实现独立压缩界面，`/compact` 原样转发官方命令；压缩行为与证据由官方核心负责（按 2026-10-30 边界认可）。
+
+## 已覆盖（不属于「证据未覆盖」）
+
+- **跨会话九面内容隔离**：session/storage 目录隔离、同根第二窗口拒绝、双 root 并发已有 e2e；九面均有证据（`cross-surface.test.mjs` 8 项 + `schedule-surface.test.mjs` 1 项，调度按根 catalog、A/B 正控与门面投影）。
+- **功能面**：16 组中 2 组覆盖、13 组部分、1 组边界；逐项与剩余缺口见 `feature-matrix.md`，不把部分组当作全量已验证。

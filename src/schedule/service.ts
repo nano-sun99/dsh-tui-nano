@@ -50,14 +50,19 @@ export class ScheduleRuntime {
   /** 当前根的全部任务（活动 + 未活动），按官方顺序。 */
   async catalog(): Promise<ScheduleRow[]> {
     const rows = (await this.schedule.catalog()) as any[]
-    return rows.map((row) => ({
-      id: row.id,
-      kind: row.record?.kind ?? '',
-      title: row.record?.title ?? '',
-      prompt: row.record?.prompt ?? '',
-      scheduledAt: row.record?.scheduledAt ?? '',
-      state: row.status === 'active' ? 'active' : 'inactive',
-    }))
+    return rows.map((row) => {
+      // 官方 catalog 返回扁平记录；旧版本/包装层可能把正文放在 record 下。
+      // 只做展示投影，两种形状都兼容，避免标题被投影成空串。
+      const record = row.record ?? row
+      return {
+        id: row.id ?? record.id,
+        kind: record.kind ?? '',
+        title: record.title ?? '',
+        prompt: record.prompt ?? '',
+        scheduledAt: record.scheduledAt ?? '',
+        state: row.status === 'active' ? 'active' : 'inactive',
+      }
+    })
   }
 
   /** 关停：Cordis 的 provide 归还服务键；官方服务随根 dispose 卸载。 */

@@ -129,6 +129,24 @@ const handler = (req, res) => {
       }, 4000)
       return
     }
+    if (mode === 'monitor' && withTools) {
+      sse(res)
+      start(res, body.model)
+      if (collectToolResults(body.messages).length === 0) {
+        toolUse(res, 'toolu_monitor', 'bash', {
+          command: 'sleep 30',
+          description: 'MONITOR_MARKER job',
+          run_in_background: true,
+          sandbox_permissions: 'danger-full-access',
+          justification: '验证 Monitor 跨会话隔离',
+        })
+      } else {
+        text(res, 'MONITOR_STARTED')
+      }
+      send(res, 'message_stop', { type: 'message_stop' })
+      res.end()
+      return
+    }
     if (mode === 'question' && withTools) {
       sse(res)
       start(res, body.model)
