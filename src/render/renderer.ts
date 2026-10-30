@@ -170,6 +170,12 @@ export class Renderer {
     this.scheduleFrame()
   }
 
+  /** Force the next frame to repaint every cell (clears terminal-side stale content). */
+  invalidate(): void {
+    this.previous = undefined
+    this.scheduleFrame()
+  }
+
   /** Render pending React work and paint immediately (used by tests). */
   flushFrame(): void {
     if (this.reconciler.flushSyncWork) this.reconciler.flushSyncWork()

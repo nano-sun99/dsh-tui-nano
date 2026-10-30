@@ -154,6 +154,7 @@ export class Features implements FeatureHost {
       conversation: context.conversation,
       onChange: () => context.requestRender(),
       setNotice: (text) => context.setNotice(text),
+      repaint: () => context.renderer.invalidate(),
     })
 
     // 6) 任务面板：官方 jobs 只读。
