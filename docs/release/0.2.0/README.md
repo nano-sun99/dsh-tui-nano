@@ -13,7 +13,7 @@
 | `known-limitations.md` | 必须披露的限制与证据未覆盖项 |
 | `evidence/tests-unit-feature.txt` | `npm run build && npm test`（单元 101 + 功能 25） |
 | `evidence/ghostty/` | 真 Ghostty 截图（深/浅、60/100 列、CJK、diff、透明度）与 `summary.json` |
-| `evidence/e2e-release.txt` | 发布级 e2e 32 个用例（安装 16 + 视觉 3 + 能力 1 + 交互 5 + 输入 2 + 跨会话 2 + 主链路 2 + Monitor 1） |
+| `evidence/e2e-release.txt` | 发布级 e2e 39 个用例（安装 16 + 视觉 3 + 能力 1 + 交互 5 + 输入 2 + 跨会话 9 + 主链路 2 + Monitor 1） |
 
 ## 复核方式
 

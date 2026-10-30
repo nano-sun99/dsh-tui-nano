@@ -29,4 +29,4 @@
 - **鼠标拖选与剪贴板**：选区提取、宽字符起点、OSC 52 / pbcopy 有单测；Ghostty 实际拖选手感未取证。
 - **主链路只对 mock 验证**：`tests/e2e/main-chain.test.mjs` 用本地 Anthropic Messages SSE mock 跑通对话/工具/差异/审批/完成，未连接真实模型服务。
 - **断网**：未模拟真实网络不可达；「官方调用失败」路径已有 e2e（无凭据时界面显示回合出错且不崩）。
-- **跨会话九面内容隔离**：session/storage 目录隔离、同根第二窗口拒绝、双 root 并发已有 e2e；草稿 / 队列 / 附件 / 审批 / 问卷 / 终端 / Monitor / 调度八面的内容隔离仍未逐面取证。
+- **跨会话九面内容隔离**：session/storage 目录隔离、同根第二窗口拒绝、双 root 并发已有 e2e；transcript / 草稿 / 队列 / 附件 / 审批 / 问卷 / 终端七面已有真 PTY 内容隔离证据（`cross-surface.test.mjs`）；Monitor / 调度两面的内容隔离仍未逐面取证。
