@@ -124,12 +124,14 @@ function Transcript(props: { snapshot: AppSnapshot; bodyHeight: number; width: n
   )
 }
 
+export const RUNNING_HINT = 'Enter 插话 · Ctrl+C 停止'
+
 function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
   const { snapshot } = props
   const state = snapshot.status === 'running' ? '运行中' : '空闲'
   const hint =
     snapshot.status === 'running'
-      ? 'Enter 排队 · Ctrl+S 引导 · Ctrl+C 停止'
+      ? RUNNING_HINT
       : snapshot.text !== ''
         ? 'Enter 发送 · Shift+Enter 换行'
         : 'Enter 发送 · Ctrl+C 退出'
