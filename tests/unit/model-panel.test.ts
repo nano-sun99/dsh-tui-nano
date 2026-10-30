@@ -3,8 +3,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ModelPanel } from '../../src/controls/model-panel.ts'
 import type { Key } from '../../src/input/parser.ts'
-import { box, Renderer } from '../../src/render/renderer.ts'
+import { box, Renderer, text } from '../../src/render/renderer.ts'
 import { darkTheme } from '../../src/theme/theme.ts'
+import { Screen } from '../e2e/screen.mjs'
 
 function key(name: Key['name'], extra: Partial<Key> = {}): Key {
   return {
@@ -242,7 +243,7 @@ describe('/model panel', () => {
     expect(lines[header]?.startsWith('  模型')).toBe(true)
     expect(lines[header + 1]?.trim()).toBe('')
     expect(lines[header + 2]?.startsWith('    ▶ M1')).toBe(true)
-    expect(lines[header + 3]?.startsWith('       M2')).toBe(true)
+    expect(lines[header + 3]?.startsWith('      M2')).toBe(true)
     expect(lines[header + 4]?.trim()).toBe('')
     expect(lines[header + 5]?.startsWith('  ─')).toBe(true)
     expect(panel.rows()).toBe(9)
@@ -263,7 +264,55 @@ describe('/model panel', () => {
     renderer.flushFrame()
     const output = chunks.join('')
     expect(output).toContain('▶ ')
-    expect(output).toContain('   M2')
+    expect(output).toContain('  M2')
+    panel.handleKey(key('escape'))
+    renderer.unmount()
+  })
+
+  it('打开与关闭都请求强制重绘', async () => {
+    const repaint = vi.fn()
+    const conversation = fakeConversation()
+    const panel = new ModelPanel({
+      conversation: conversation as never,
+      onChange: () => {},
+      setNotice: () => {},
+      repaint,
+    })
+    await panel.openPanel()
+    expect(repaint).toHaveBeenCalledTimes(1)
+    panel.handleKey(key('escape'))
+    expect(repaint).toHaveBeenCalledTimes(2)
+  })
+
+  it('打开面板时强制全量重绘，清掉终端侧残字', async () => {
+    const chunks: string[] = []
+    const renderer = new Renderer({
+      write: (bytes) => chunks.push(bytes),
+      width: 100,
+      height: 30,
+      defaultFg: darkTheme.fg,
+    })
+    const screen = new Screen(100, 30)
+    renderer.mount(box({ width: 100, height: 30, flexDirection: 'column' }, text('')))
+    renderer.flushFrame()
+    for (const chunk of chunks) screen.feed(chunk)
+    chunks.length = 0
+    // 模拟终端里存在、但渲染器上一帧不知道的残字。
+    screen.feed('\u001b[4;31HTAILMARK')
+    expect(screen.lines()[3]).toContain('TAILMARK')
+
+    const conversation = fakeConversation()
+    const panel = new ModelPanel({
+      conversation: conversation as never,
+      onChange: () => {},
+      setNotice: () => {},
+      repaint: () => renderer.invalidate(),
+    })
+    await panel.openPanel()
+    renderer.update(box({ width: 100, height: 30, flexDirection: 'column' }, panel.render(100)))
+    renderer.flushFrame()
+    for (const chunk of chunks) screen.feed(chunk)
+    expect(screen.lines()[3]).not.toContain('TAILMARK')
     panel.handleKey(key('escape'))
     renderer.unmount()
   })

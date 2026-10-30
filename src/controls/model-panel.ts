@@ -2,7 +2,7 @@
  * `/model` 选择面板（2026-10-25 视觉规格 §3.3 + 2026-10-26 扫光补充规格）。
  *
  * - 顶部一条 accent 线，替换输入区；transcript 保持可见。
- * - 头部 `模型` + `当前：<模型> · <强度>`；模型列表只有名字，焦点 ▶ + accent/bold。
+ * - 头部 `模型` + `当前：<模型> · <强度>`；模型列表只有名字，焦点 ▸ + accent/bold。
  * - 强度条铺满内容宽度；默认不点亮；官方档位按顺序分档。
  * - 扫光绑定官方 `efforts[len-2]`（len>=3），1400ms 线性；Max 按 id 脉冲。
  * - `NANO_REDUCED_MOTION=1|true` 时静止。
@@ -33,6 +33,8 @@ export interface ModelPanelOptions {
   readonly conversation: ConversationController
   readonly onChange: () => void
   readonly setNotice: (text: string | undefined) => void
+  /** 强制下一帧全量重绘，清掉终端侧残留（面板是整块替换底部区域）。 */
+  readonly repaint?: () => void
 }
 
 const TICK_MS = 50
@@ -142,6 +144,7 @@ export class ModelPanel {
     }
     this.ensureTick()
     this.options.onChange()
+    this.options.repaint?.()
   }
 
   private get focus(): Entry | undefined {
@@ -217,6 +220,7 @@ export class ModelPanel {
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
     this.options.onChange()
+    this.options.repaint?.()
   }
 
   /** 释放 50ms 扫光计时器；面板销毁 / 进程退出时调用。 */
@@ -468,21 +472,21 @@ export class ModelPanel {
         createElement(
           Box,
           { flexDirection: 'row', paddingLeft: NESTED, paddingRight: EDGE, width },
-          // `▶` 在渲染器里按 2 格计宽；再留 1 格间隙，和设计稿的 1ch 指针 + 1ch gap 对齐。
-          // `wrap:false` 让间隙格也显式落一个空格，清掉上一帧可能留下的字符。
+          // `▶` 沿用设计稿字形；渲染层把它按 1 格计宽（见 render/text 的覆盖），
+          // 再加 1 格间隙，避免终端宽度表差异把整行推歪。
           createElement(
             Box,
-            { width: 3 },
+            { width: 2 },
             createElement(
               Text,
               { wrap: false, ...(selected ? { color: theme.accent, bold: true } : {}) },
-              selected ? '▶ ' : '   ',
+              selected ? '▶ ' : '  ',
             ),
           ),
           createElement(
             Text,
             { ...(selected ? { color: theme.accent, bold: true } : {}) },
-            truncate(entry.name, Math.max(8, barWidth - 5)),
+            truncate(entry.name, Math.max(8, barWidth - 4)),
           ),
         ),
       )
@@ -525,6 +529,8 @@ export class ModelPanel {
       )
       lines.push(this.labelRow(barWidth))
     }
-    return createElement(Box, { flexDirection: 'column', width }, ...lines)
+    // 面板整块先清成终端默认底色：模型行只画指针 + 名字，行尾格子若不先清，
+    // 会露出上一帧的 muted 残字（与指针间隙的 `l` 同类）。
+    return createElement(Box, { flexDirection: 'column', width, clear: true }, ...lines)
   }
 }

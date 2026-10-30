@@ -11,6 +11,13 @@ const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' })
 const widthCache = new Map<string, number>()
 
 /**
+ * `string-width` classifies the filled pointer U+25B6 as emoji-wide (2 cells),
+ * while terminals and the design treat it as a 1ch pointer. Keep the terminal
+ * grid aligned with the design instead of letting the row shift after it.
+ */
+const WIDTH_OVERRIDES: Readonly<Record<string, number>> = { '▶': 1 }
+
+/**
  * Split text into user-perceived characters (grapheme clusters). Emoji ZWJ
  * sequences and combining marks stay intact.
  */
@@ -22,6 +29,8 @@ export function graphemes(text: string): string[] {
 
 /** Display width (terminal cells) of one grapheme cluster. */
 export function graphemeWidth(grapheme: string): number {
+  const override = WIDTH_OVERRIDES[grapheme]
+  if (override !== undefined) return override
   const cached = widthCache.get(grapheme)
   if (cached !== undefined) return cached
   const width = stringWidth(grapheme)
