@@ -9,6 +9,8 @@
 
 > **主题条款已被取代（2026-10-22）**：`docs/specs/2026-10-22-nano-theme-transparency/README.md` 与 `docs/decisions/2026-10-22-independent-tui-theme.md` 按用户拍板把 `NANO_THEME` 扩展到全部自有界面，由 TUI 输出明确 RGB、普通背景保留终端默认背景。§3 中与新 spec §3 冲突的条款（主题归属、唯一色表、背景规则；含显式 RGB、ANSI 色名、默认前景与 REVERSED），以新 spec 为准；本文件其余条款继续有效。
 
+> **排队与 Enter 条款已被取代（2026-10-30）**：`#109` 起运行中 `Enter` 走 `steer`（插话，下一 step 或新回合生效），不再进入排队；v2 没有 QueueDock。§1 的「队列 dock」槽位、§2 的 `Tab` 队列焦点与 `Esc` 队列编辑不再适用；插话键以 §2 的 `Ctrl+S` 与 `src/input/keymap.ts` 为准。
+
 ## 1. 布局槽位
 
 主界面从上到下固定为以下行槽位；除 `Min(3)` 外，高度为 0 的槽位不占行。
@@ -50,9 +52,9 @@
 | 全局 | `PageUp` / `PageDown` | transcript 翻页 |
 | 全局 | `Ctrl+End` | transcript 回到底部 |
 | 全局 | `Tab` | 输入焦点 / 队列焦点切换 |
-| 输入 | `Enter` | 发送或排队（空内容拒绝并保留草稿） |
+| 输入 | `Enter` | 发送；运行中插话（下一 step 或新回合生效；空内容拒绝并保留草稿） |
 | 输入 | `Shift+Enter` / `Ctrl+J` | 换行 |
-| 输入 | `Alt+Enter` | 插话（steer） |
+| 输入 | `Ctrl+S` | 插话（steer，下一 step 或新回合生效） |
 | 输入 | `@` | 打开文件路径补全 |
 | 输入 | `Alt+A` | 附加本地图片/通用文件 |
 | 输入 | `Alt+←` / `Alt+→` | 调整附件顺序 |
