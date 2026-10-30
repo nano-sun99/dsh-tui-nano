@@ -19,7 +19,6 @@ import type { Renderer } from '../render/renderer.ts'
 import { writeHandoff } from '../runtime/handoff.ts'
 import { formatShutdownReport, Lifecycle } from '../runtime/lifecycle.ts'
 import type { Terminal } from '../runtime/terminal.ts'
-import { EDGE } from '../theme/spacing.ts'
 import { activeTheme } from '../theme/theme.ts'
 import { App, type AppSnapshot, transcriptBodyHeight } from './App.tsx'
 import { InputModel } from './input-model.ts'
@@ -518,7 +517,8 @@ export class NanoApp {
   private snapshot(): AppSnapshot {
     const width = this.options.terminal.width
     const lines = this.options.conversation.model.layout({
-      width: Math.max(1, width - EDGE * 2),
+      // 与 App.tsx 的 Transcript 同宽：折行宽度决定总行数，也决定滚动上限。
+      width: Math.max(1, width),
       expanded: this.expanded,
     })
     const total = lines.length
