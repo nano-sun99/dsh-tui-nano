@@ -84,6 +84,7 @@ function makeHarness() {
   return {
     app,
     renderer,
+    ctx,
     output: () => chunks.join(''),
     context: () => featureContext,
   }
@@ -112,6 +113,37 @@ describe('composer notice wiring', () => {
     harness.renderer.unmount()
   })
 
+  it('clears on decision-card paste only when custom input is active', async () => {
+    const harness = makeHarness()
+    harness.app.start().catch(() => {})
+    await tick()
+    const handler = harness.ctx.handlers.get('user-questions/request') as
+      | ((payload: unknown) => Promise<unknown>)
+      | undefined
+    const pending = handler?.({
+      questions: [{ id: 'q', question: '选吗', options: [{ label: 'A' }] }],
+    })
+    await tick()
+    const context = harness.context()
+
+    context?.setNotice('提示')
+    harness.app.handleInput([{ type: 'paste', text: 'y' }])
+    harness.app.render()
+    harness.renderer.flushFrame()
+    expect(harness.renderer.snapshotLines().join('\n')).toContain('提示')
+
+    harness.app.decisionsManager.toggleCustom()
+    harness.app.handleInput([{ type: 'paste', text: 'y' }])
+    harness.app.render()
+    harness.renderer.flushFrame()
+    expect(harness.renderer.snapshotLines().join('\n')).not.toContain('提示')
+
+    harness.app.decisionsManager.escape()
+    await pending
+    await new Promise((resolve) => setImmediate(resolve))
+    harness.renderer.unmount()
+  })
+
   it('repaints when an info notice expires', async () => {
     vi.useFakeTimers()
     const harness = makeHarness()
@@ -126,7 +158,8 @@ describe('composer notice wiring', () => {
     vi.advanceTimersByTime(8000)
     vi.runOnlyPendingTimers()
     expect(harness.renderer.snapshotLines().at(-1) ?? '').toContain('/tmp/project')
-    harness.renderer.unmount()
     vi.useRealTimers()
+    await new Promise((resolve) => setImmediate(resolve))
+    harness.renderer.unmount()
   })
 })

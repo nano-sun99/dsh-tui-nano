@@ -139,6 +139,41 @@ describe('input frame', () => {
     target.renderer.unmount()
   })
 
+  it('决策卡激活时不渲染 caret，解决后恢复', async () => {
+    const handlers = new Map<string, (payload: unknown) => Promise<unknown>>()
+    const decisions = new Decisions()
+    decisions.register({
+      on: (name: string, handler: (payload: unknown) => Promise<unknown>) =>
+        handlers.set(name, handler),
+    } as never)
+    const pending = handlers.get('approval/request')?.({ toolName: 'bash' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const target = rendererFor()
+    draw(target, snapshot('hi', 2, { decisions }))
+    expect(CUP_END.test(target.output())).toBe(false)
+
+    decisions.resolveApproval('allowed-once')
+    await pending
+    draw(target, snapshot('hi', 2, { decisions }))
+    expect(CUP_END.test(target.output())).toBe(true)
+    target.renderer.unmount()
+  })
+
+  it('danger notice uses the danger colour', () => {
+    const target = rendererFor()
+    const lines = draw(target, snapshot('', 0, { notice: { text: '发送失败', tone: 'danger' } }))
+    const row = lines.length - 1
+    const col = (lines[row] ?? '').indexOf('发送失败')
+    const screen = (
+      target.renderer as unknown as {
+        previous: { rows: Array<Array<{ style: { fg?: [number, number, number] } }>> }
+      }
+    ).previous
+    expect(screen.rows[row]?.[col]?.style.fg).toEqual(darkTheme.danger)
+    target.renderer.unmount()
+  })
+
   it('notice 不再出现在输入行', () => {
     const target = rendererFor()
     const lines = draw(

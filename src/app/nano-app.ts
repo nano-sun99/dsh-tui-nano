@@ -221,6 +221,7 @@ export class NanoApp {
       switch (event.type) {
         case 'paste':
           if (this.decisions.hasDecision) {
+            if (this.decisionCustomMode()) this.clearNoticeOnEdit()
             this.decisions.typeCustom(event.text)
           } else {
             this.clearNoticeOnEdit()
@@ -394,6 +395,15 @@ export class NanoApp {
     this.noteUnknownInput(key)
   }
 
+  /** 当前决策卡的自定义输入是否真的在接收文本。 */
+  private decisionCustomMode(): boolean {
+    const prompt = this.decisions.prompt
+    if (prompt?.kind !== 'question') return false
+    const question = prompt.questions[prompt.current]
+    const draft = question ? prompt.drafts.get(question.id) : undefined
+    return draft?.customMode === true
+  }
+
   /** 任何文本编辑都清掉临时提示（spec §3.3.3）。 */
   private clearNoticeOnEdit(): void {
     if (this.notices.current !== undefined) this.notices.set(undefined)
@@ -437,13 +447,9 @@ export class NanoApp {
     else if (key.name === 'tab') this.decisions.move(1)
     else if (key.name === 'char' && key.text === ' ') this.decisions.toggleOption()
     else if (key.name === 'char' && key.text === 'c' && !key.ctrl) this.decisions.toggleCustom()
-    else if (key.name === 'backspace') {
-      this.clearNoticeOnEdit()
-      this.decisions.backspaceCustom()
-    } else if (key.name === 'char' && key.text && !key.ctrl && !key.alt) {
-      this.clearNoticeOnEdit()
+    else if (key.name === 'backspace') this.decisions.backspaceCustom()
+    else if (key.name === 'char' && key.text && !key.ctrl && !key.alt)
       this.decisions.typeCustom(key.text)
-    }
   }
 
   private handleMouse(event: {
