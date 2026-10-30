@@ -68,6 +68,48 @@ describe('Markdown tables', () => {
     ])
   })
 
+  it('uses the full first-line width before reserving fallback continuation indentation', () => {
+    const rows = renderMarkdown('| A | B |\n| - | - |\n| **abcd** | x |', 8)
+    expect(rows.map(rowText)).toEqual(['A  abcd', 'B  x'])
+    expect(rows.every((row) => (row.indent ?? 0) === 0)).toBe(true)
+    expect(rows[0]!.spans).toContainEqual(expect.objectContaining({ text: 'abcd', bold: true }))
+  })
+
+  it('reflows only the remaining fallback text at the narrower continuation width', () => {
+    const rows = renderMarkdown('| A | B |\n| - | - |\n| **ab cd ef gh ij** | x |', 8)
+    expect(rows.map(rowText)).toEqual(['A  ab cd', 'ef gh', 'ij', 'B  x'])
+    expect(rows.map((row) => row.indent ?? 0)).toEqual([0, 2, 2, 0])
+    expect(rows.every((row) => displayWidth(rowText(row)) + (row.indent ?? 0) <= 8)).toBe(true)
+    expect(
+      rows
+        .flatMap((row) => row.spans)
+        .filter((span) => span.bold)
+        .map((span) => span.text)
+        .join(' '),
+    ).toBe('ab cd ef gh ij')
+  })
+
+  it.each([0, 1, 2])('keeps an overwide wrapped code fragment inside column %i', (column) => {
+    const values = ['x', 'x', 'x']
+    values[column] = '` ab中`'
+    const rows = renderMarkdown(`| A | B | C |\n| - | - | - |\n| ${values.join(' | ')} |`, 15)
+    expect(rows.filter((row) => rowText(row).includes('│')).map(separatorColumns)).toEqual([
+      [4, 10],
+      [4, 10],
+      [4, 10],
+      [4, 10],
+    ])
+    expect(rows.every((row) => displayWidth(rowText(row)) <= 15)).toBe(true)
+    expect(
+      rows
+        .slice(2)
+        .flatMap((row) => row.spans)
+        .filter((span) => span.tone === 'code')
+        .map((span) => span.text)
+        .join(''),
+    ).toBe('ab中')
+  })
+
   it('falls back when any cell needs four lines, but retains a three-line cell in the grid', () => {
     const table = (value: string) => `| A | B |\n| - | - |\n| ${value} | x |`
     expect(lines(table('abcdefghi'), 9)).toEqual([

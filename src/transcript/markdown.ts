@@ -138,7 +138,7 @@ function renderTable(table: Tokens.Table, width: number): Row[] {
     ),
   )
   const widths = tableColumnWidths(minimum, ideal, available)
-  const wrapped = cells.map((row) => row.map((spans, i) => wrapSpans(spans, widths[i]!)))
+  const wrapped = cells.map((row) => row.map((spans, i) => wrapTableSpans(spans, widths[i]!)))
   if (wrapped.some((row) => row.some((cell) => cell.length > MAX_TABLE_CELL_LINES))) {
     return renderVerticalTable(cells, width)
   }
@@ -201,6 +201,13 @@ function longestTableFragment(text: string): number {
     }
   }
   return Math.max(longest, word)
+}
+
+/** Rewrap an overwide carried fragment without changing the shared wrapper. */
+function wrapTableSpans(spans: readonly Span[], width: number): Row[] {
+  return wrapSpans(spans, width).flatMap((row) =>
+    displayWidth(rowText(row)) > width ? wrapSpans(row.spans, width) : [row],
+  )
 }
 
 function tableColumnWidths(minimum: number[], ideal: number[], available: number): number[] {
@@ -282,8 +289,25 @@ function renderVerticalTable(cells: Span[][][], width: number): Row[] {
         textSpan(' '.repeat(INLINE * 2)),
         ...value,
       ]
-      const wrapped = wrapSpans(field, Math.max(1, width - indent))
-      rows.push(...wrapped.map((row, line) => ({ ...row, indent: line === 0 ? 0 : indent })))
+      const first = wrapTableSpans(field, width)[0]!
+      rows.push(first)
+      // The first line owns the full width; only its unconsumed suffix needs
+      // continuation indentation. Slice original spans to retain inline styles.
+      const source = rowText({ spans: field })
+      let consumed = rowText(first).length
+      while (source[consumed] === ' ') consumed++
+      if (source[consumed] === '\n') consumed++
+      const rest: Span[] = []
+      for (const span of field) {
+        const text = span.text.slice(consumed)
+        consumed = Math.max(0, consumed - span.text.length)
+        if (text !== '') rest.push({ ...span, text })
+      }
+      if (rest.length > 0) {
+        rows.push(
+          ...wrapTableSpans(rest, Math.max(1, width - indent)).map((row) => ({ ...row, indent })),
+        )
+      }
     })
   })
   return rows
