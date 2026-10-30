@@ -97,6 +97,8 @@ def main() -> int:
                 os.write(master, text.encode("utf-8"))
             except OSError:
                 break
+        if step.get("until"):
+            drain(str(step["until"]), float(step.get("timeout", 10.0)))
     drain(None, 1.0)
 
     if args.split_out:

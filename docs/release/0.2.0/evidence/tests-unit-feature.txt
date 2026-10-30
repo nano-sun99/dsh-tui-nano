@@ -5,39 +5,38 @@
 
  RUN  v3.2.7 /Users/sunchongsheng/code/dsh-tui-nano/.claude/worktrees/issue-88
 
- ✓ tests/unit/text.test.ts (10 tests) 9ms
- ✓ tests/unit/decisions.test.ts (7 tests) 40ms
- ✓ tests/unit/boot.test.ts (9 tests) 30ms
- ✓ tests/unit/transcript.test.ts (10 tests) 60ms
- ✓ tests/unit/renderer.test.ts (9 tests) 87ms
- ✓ tests/unit/input-frame.test.ts (2 tests) 39ms
- ✓ tests/unit/model-panel.test.ts (14 tests) 182ms
  ✓ tests/unit/seams.test.ts (3 tests) 6ms
- ✓ tests/unit/d01.test.ts (9 tests) 13ms
- ✓ tests/unit/fixes.test.ts (14 tests) 45ms
- ✓ tests/unit/input.test.ts (10 tests) 8ms
- ✓ tests/unit/perf.test.ts (4 tests) 905ms
-   ✓ transcript performance > scrolls a 1000-line transcript within p95 33ms  481ms
+ ✓ tests/unit/decisions.test.ts (7 tests) 33ms
+ ✓ tests/unit/boot.test.ts (9 tests) 21ms
+ ✓ tests/unit/renderer.test.ts (9 tests) 18ms
+ ✓ tests/unit/transcript.test.ts (10 tests) 19ms
+ ✓ tests/unit/input-frame.test.ts (2 tests) 23ms
+ ✓ tests/unit/text.test.ts (11 tests) 4ms
+ ✓ tests/unit/input.test.ts (10 tests) 2ms
+ ✓ tests/unit/model-panel.test.ts (24 tests) 76ms
+ ✓ tests/unit/fixes.test.ts (14 tests) 20ms
+ ✓ tests/unit/d01.test.ts (9 tests) 4ms
+ ✓ tests/unit/perf.test.ts (4 tests) 439ms
 
  Test Files  12 passed (12)
-      Tests  101 passed (101)
-   Start at  19:59:29
-   Duration  1.39s (transform 592ms, setup 0ms, collect 2.10s, tests 1.42s, environment 2ms, prepare 1.02s)
+      Tests  112 passed (112)
+   Start at  12:18:28
+   Duration  736ms (transform 375ms, setup 0ms, collect 1.29s, tests 665ms, environment 1ms, prepare 450ms)
 
 
  RUN  v3.2.7 /Users/sunchongsheng/code/dsh-tui-nano/.claude/worktrees/issue-88
 
- ✓ tests/feature/bash-mode.test.ts (3 tests) 2ms
- ✓ tests/feature/handoff.test.ts (2 tests) 12ms
- ✓ tests/feature/info-panel.test.ts (3 tests) 2ms
- ✓ tests/feature/subagents.test.ts (3 tests) 2ms
- ✓ tests/feature/jobs.test.ts (2 tests) 4ms
- ✓ tests/feature/monitor.test.ts (4 tests) 4ms
- ✓ tests/feature/cross-root.test.ts (2 tests) 4ms
- ✓ tests/feature/attachments.test.ts (6 tests) 137ms
+ ✓ tests/feature/bash-mode.test.ts (3 tests) 1ms
+ ✓ tests/feature/handoff.test.ts (2 tests) 11ms
+ ✓ tests/feature/jobs.test.ts (2 tests) 1ms
+ ✓ tests/feature/info-panel.test.ts (3 tests) 1ms
+ ✓ tests/feature/subagents.test.ts (3 tests) 1ms
+ ✓ tests/feature/monitor.test.ts (4 tests) 3ms
+ ✓ tests/feature/attachments.test.ts (6 tests) 52ms
+ ✓ tests/feature/cross-root.test.ts (2 tests) 2ms
 
  Test Files  8 passed (8)
       Tests  25 passed (25)
-   Start at  19:59:30
-   Duration  376ms (transform 194ms, setup 0ms, collect 447ms, tests 166ms, environment 1ms, prepare 400ms)
+   Start at  12:18:29
+   Duration  278ms (transform 206ms, setup 0ms, collect 461ms, tests 72ms, environment 0ms, prepare 303ms)
 

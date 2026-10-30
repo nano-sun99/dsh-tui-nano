@@ -84,6 +84,19 @@ test('官方调用失败：界面显示回合出错且进程不崩', () => {
   assert.match(screen, /no API key for provider route/, '应带出官方 missing-credential 原文')
 })
 
+
+test('网络不可达：连接被拒时界面显示回合出错且进程不崩', () => {
+  const { code, screen } = runInteractive('hello-offline', {
+    sendWait: 30,
+    extraEnv: {
+      DEEPSEEK_API_KEY: 'sk-test-00000000000000000000000000000000',
+      DEEPSEEK_BASE_URL: 'http://127.0.0.1:9',
+    },
+  })
+  assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
+  assert.match(screen, /回合出错/, '应显示回合出错')
+  assert.match(screen, /ECONNREFUSED|fetch failed|transport failed|network/i, '应带出网络错误原文')
+})
 test('/model 打开模型选择面板（标题/列表/强度）', () => {
   const { code, screen } = runInteractive('/model', {
     sendWait: 4,

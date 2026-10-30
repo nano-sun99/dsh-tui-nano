@@ -2,7 +2,7 @@
 
 - 记录日期：2026-10-29
 - 包名 / 版本：`dsh-tui-nano` / `0.2.0`
-- 源码：分支 `issue-88`（PR #99）；构建基线 `eeec875`（2026-10-29 轻审修订）；归档基线 `f8a7971`
+- 源码：`main`（PR #99/#101/#102 合并后）；构建基线 `4d6dc1a`（2026-10-30 面板/记忆修订）；归档基线 `f8a7971`
 - 归档：tag `rust-final`（`f8a7971`）与分支 `archive/rust-v1`
 
 ## 产物
@@ -10,10 +10,10 @@
 | 项 | 值 |
 | --- | --- |
 | 文件 | `packaging/dist/dsh-tui-nano-0.2.0.tgz` |
-| 大小 | 173,992 字节（约 170 KiB） |
+| 大小 | 175,837 字节（约 172 KiB） |
 | 文件数 | 118 |
-| SHA-256 | `4e4ca5b6e64de65a95b9ef41559ebac92d23b0f8e86596987639c1650060b2f7` |
-| 期望 `dist.integrity` | `sha512-Xhqs/ukCLAtkRtfV//RTRkZzZ6ZIqZ5RrCltUv8evJaTy/FdMQ/ienLFk7sPen40FUbiq3BZw0fABfTv85yS9g==` |
+| SHA-256 | `4fe393a93e7d78f0b08e0cd13c448f788fbb0216e83bb53098406e475cf97323` |
+| 期望 `dist.integrity` | `sha512-sS2PkeKDzUhXEqYxWpV4rr8Piq2p79rSX8QLUSfKEkFOs2i6TgV5BaUmJ1Ag3TDGOH/4TNHw37dudLpZV7lJjg==` |
 
 期望 integrity 按 npm 的算法（tarball 的 SHA-512，base64）本地计算；只有发布到 registry 后才能用 `npm view dsh-tui-nano@0.2.0 dist.integrity` 核对。见 `release-conclusion.md` 的未验证项。
 
