@@ -41,7 +41,7 @@ Three principles: **reading first, little decoration, never invent facts**. Sess
 
 ## Features
 
-- **Conversation**: multi-line input, streaming output, queue / steer / stop, per-address drafts, session resume.
+- **Conversation**: multi-line input, streaming output, send / steer / stop, per-address drafts, session resume.
 - **Reading and decisions**: tool calls, file diffs, questions, approvals, plan cards; quiet by default, expandable on demand.
 - **Input enhancements**: `@file` references, image / generic file attachments, skill catalog, instruction sources.
 - **Workflow**: `!` shell commands, jobs panel, interactive terminal, Monitor output watching.

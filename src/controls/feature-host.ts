@@ -8,6 +8,7 @@
 import { createElement, type ReactNode } from 'react'
 import type { FeatureContext, FeatureHost } from '../app/nano-app.ts'
 import { assemblePrompt, findReferences } from '../attachments/prompt.ts'
+import { deliveryNotice } from '../conversation/controller.ts'
 import { registerKeybinding } from '../input/keymap.ts'
 import type { Key } from '../input/parser.ts'
 import { INPUT_BYTE_LIMIT } from '../input/segments.ts'
@@ -305,7 +306,8 @@ export class Features implements FeatureHost {
     if (!definition) {
       model.appendNotice(`未知命令 /${name}：按普通消息发送（未注入命令）`, 'warning')
       try {
-        context.conversation.submit(text)
+        const result = context.conversation.submit(text)
+        context.setNotice(deliveryNotice(result.delivery))
       } catch (error) {
         model.appendNotice(`发送失败：${String((error as Error)?.message ?? error)}`, 'danger')
       }
@@ -467,9 +469,12 @@ export class Features implements FeatureHost {
         text,
       })
       if (assembled.rejected.length > 0) throw new Error(assembled.rejected.join('；'))
-      context.conversation.submitContent({ content: assembled.content, displayText: text })
+      const result = context.conversation.submitContent({
+        content: assembled.content,
+        displayText: text,
+      })
       context.input.take()
-      context.setNotice(undefined)
+      context.setNotice(deliveryNotice(result.delivery))
     } catch (error) {
       const message = String((error as Error)?.message ?? error)
       context.setNotice(`附件提交失败：${message}（草稿已保留）`, 'danger')

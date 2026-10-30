@@ -9,7 +9,11 @@ import type { CoreBoot } from '../boot/assemble.ts'
 import type { OfficialModules } from '../boot/official.ts'
 import { type MountClaim, releaseMountClaim } from '../boot/root.ts'
 import { occupancyRatio } from '../controls/info-panel.ts'
-import type { ConversationController } from '../conversation/controller.ts'
+import {
+  type ConversationController,
+  deliveryNotice,
+  STEER_NOTICE,
+} from '../conversation/controller.ts'
 import { APPROVAL_OPTIONS, type ApprovalOutcome, DecisionManager } from '../decisions/manager.ts'
 import { HISTORY_LIMIT, type HistoryStore } from '../input/history.ts'
 import { resolveKey } from '../input/keymap.ts'
@@ -270,11 +274,11 @@ export class NanoApp {
             return
           }
           try {
-            this.options.conversation.submit(text)
+            const result = this.options.conversation.submit(text)
             this.input.take()
             this.stickBottom = true
             this.scrollOffset = 0
-            this.notices.set(undefined)
+            this.notices.set(deliveryNotice(result.delivery))
           } catch (error) {
             this.notices.set(`发送失败：${message(error)}`, 'danger')
           }
@@ -298,7 +302,7 @@ export class NanoApp {
         if (text.trim() !== '') {
           this.options.conversation.steer(text)
           this.input.take()
-          this.notices.set('已插入引导（下一 step 生效）')
+          this.notices.set(STEER_NOTICE)
         }
         return
       }
