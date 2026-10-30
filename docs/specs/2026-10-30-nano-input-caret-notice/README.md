@@ -7,7 +7,7 @@
 
 ## 1. 上游与适用关系
 
-- ADR 检索：2026-10-30 实际搜索 `docs/decisions/` 中 `输入 / 光标 / cursor / IME / 输入法 / notice / 提示 / 终端`，命中 3 份生效中记录：[input-history](../../decisions/2026-10-22-input-history.md)（草稿/光标只在受控切根时恢复）、[process-display](../../decisions/2026-10-28-nano-process-display.md)（提示的分组边界）、[independent-tui-theme](../../decisions/2026-10-22-independent-tui-theme.md)（终端颜色所有权）。三份均不涉及 IME 锚点、硬件光标停靠或 notice 生命周期，无冲突、无取代；本次新增 [ADR-20261030-input-caret-parking](../../decisions/2026-10-30-input-caret-parking.md) 与 [ADR-20261030-notice-lifecycle](../../decisions/2026-10-30-notice-lifecycle.md)。
+- ADR 检索：2026-10-30 实际搜索 `docs/decisions/` 中 `输入 / 光标 / cursor / IME / 输入法 / notice / 提示 / 终端`，命中 8 份记录：[input-history](../../decisions/2026-10-22-input-history.md)、[process-display](../../decisions/2026-10-28-nano-process-display.md)、[independent-tui-theme](../../decisions/2026-10-22-independent-tui-theme.md)、[nano-theme-scope](../../decisions/2026-10-22-nano-theme-scope.md)、[spacing-token-architecture](../../decisions/2026-10-26-spacing-token-architecture.md)、[implementation-language-typescript](../../decisions/2026-10-28-implementation-language-typescript.md)、[s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)、[single-process-fd-guard](../../decisions/2026-10-29-single-process-fd-guard.md)。直接相关的是 seams（输入框访问与接缝扩展）与 input-history（草稿/光标只在受控切根时恢复），均不冲突；其余只出现「终端 / 提示 / 输入」字样，与本决定无关。无取代；本次新增 [ADR-20261030-input-caret-parking](../../decisions/2026-10-30-input-caret-parking.md) 与 [ADR-20261030-notice-lifecycle](../../decisions/2026-10-30-notice-lifecycle.md)。
 - 行为参照：[nano-interaction §3.4.2](../../2026-10-24-nano-interaction/README.md) 只提供「notice 行不是草稿行、不参与点击定位」的分类依据，不规定显示位置；本规格把 notice 落到状态行，属于新的落点决定。该规格的文件与测试体例属于 Rust 实现，不直接映射到当前 TS 文件。
 - 不修改任何历史规格正文；本规格只约束当前 TS 实现的主输入框与主界面 notice。
 
@@ -56,8 +56,8 @@
 5. notice 不再进入输入区 span 流；输入区只含草稿、光标与占位符。
 6. 颜色：`info` 用 `theme.faint`，`danger` 用 `theme.danger`。
 7. 计时器在替换、清除、退出/销毁时清理，不残留。
-8. 语气由调用方显式传入，不允许按文案猜。以下路径必须传 `danger`：`src/controls/feature-host.ts:111`（改名失败）、`:258`（超过 32 KiB）、`:466`（附件提交失败）；`src/controls/model-panel.ts:350`（模型切换失败）；`src/app/nano-app.ts` 的发送失败、超限、受控切换写入失败。其余状态提示传 `info`。
-9. `FeatureContext.setNotice` 增加可选 `tone?: 'info' | 'danger'` 参数；按 [ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)「接缝只加可选参数」的约定，旧调用不传时按 `info`，S01 既有行为不变。
+8. 语气由调用方显式传入，不允许按文案猜。以下路径必须传 `danger`：`src/controls/feature-host.ts:111`（改名失败）、`:258`（超过 32 KiB）、`:466`（附件提交失败）；`src/controls/model-panel.ts:109`（打开失败：没有可用的模型）、`:350`（模型切换失败）；`src/app/nano-app.ts` 的发送失败、超限、受控切换写入失败。其余状态提示传 `info`。
+9. `FeatureContext.setNotice` 增加可选 `tone?: 'info' | 'danger'` 参数；`ModelPanelOptions.setNotice`（`src/controls/model-panel.ts:36`）与 `src/controls/feature-host.ts:156` 的转发必须同步透传。按 [ADR-20261029-s02-s01-seams](../../decisions/2026-10-29-s02-s01-seams.md)「接缝只加可选参数、可选钩子与新增方法」的约定：旧调用不传时按 `info`，调用方无需同步修改；`inputActive` 属新增可选方法，未提供时 `caretActive` 默认 true。本规格对主界面 notice 落点的调整属于 S01 自身 UI 变更，不在「不传 features 行为不变」的接缝承诺内。
 
 ## 4. 改动面与不做事项
 
@@ -65,8 +65,8 @@
 - `src/transcript/spans.ts`：`Span.caret` 的传递与合并规则；`trimTrailing` 保留 caret。
 - `src/render/host.ts` / `src/render/renderer.ts`：`BoxProps.cursor` 标记；帧内记录绝对 cell，帧末追加 CUP。
 - `src/app/nano-app.ts`：notice 变为带语气与过期时间的单槽状态；编辑即清；计时器生命周期；`FeatureContext.setNotice` 增加可选 `tone`；`FeatureHost` 增加可选 `inputActive?: () => boolean`，并写入 `AppSnapshot.caretActive`；自身错误路径按 `danger` 传递。
-- `src/controls/feature-host.ts`：实现 `inputActive()`（模型面板/终端聚焦/信息/会话/任务面板）；`setNotice` 的 3 处错误调用传 `danger`。
-- `src/controls/model-panel.ts`：错误提示（打开失败、切换失败）按 `danger` 传入。
+- `src/controls/feature-host.ts`：实现 `inputActive()`（模型面板/终端聚焦/信息/会话/任务面板）；`setNotice` 的 3 处错误调用传 `danger`；`:156` 转发透传 tone。
+- `src/controls/model-panel.ts`：`setNotice` 签名增加可选 `tone`；打开失败（`:109`）与切换失败（`:350`）按 `danger` 传入。
 - 测试：更新 `tests/unit/input-frame.test.ts` 的高度/边框假设与 `tests/unit/model-panel.test.ts` 的 notices 断言；新增 caret 停靠、视口窗口、notice 生命周期（TTL / 编辑清除 / 语气）的单元测试。
 - 不做：会话改名输入、决策卡自定义输入、终端面板、剪贴板/选区、鼠标点击定位、IME preedit 绘制、notice 队列与优先级、ADR 制度改造。
 - 若最小实现无法满足本规格，先报告实际缺口，不自行扩大协议或新增机制。
@@ -75,10 +75,10 @@
 
 - [ ] 输入 `hello` 后反色 caret 停在末尾可见；左右移动时 caret 格跟随。
 - [ ] 渲染输出在帧末出现 CUP，坐标等于 caret 格；运行期不出现 `?25h`（退出恢复除外）。
-- [ ] 终端面板聚焦、信息/会话/任务面板可见时不渲染 caret、帧末无停靠 CUP；关闭面板后恢复；补全弹层与子代理 dock 不影响停靠。
+- [ ] 终端面板聚焦、信息/会话/任务面板可见、模型面板打开、决策卡激活时不渲染 caret、帧末无停靠 CUP；关闭后恢复；补全弹层与子代理 dock 不影响停靠。
 - [ ] 8 行草稿只显示 4 行，caret 行始终在窗口内；上下移动光标时窗口跟随滚动。
 - [ ] 切换模型/档位：提示出现在状态行左侧、cwd 让位；8 秒后 cwd 恢复；期间输入任意字符立即消失。
-- [ ] 错误类提示（改名失败、超过 32 KiB、附件提交失败、发送失败、模型切换失败）按 `danger` 显示，超过 8 秒仍存在，文本编辑后消失；信息类提示 8 秒自动消失。
+- [ ] 错误类提示（改名失败、超过 32 KiB、附件提交失败、发送失败、模型打开失败、模型切换失败、受控切换写入失败）按 `danger` 显示，超过 8 秒仍存在，文本编辑后消失；信息类提示 8 秒自动消失。
 - [ ] notice 不再出现在输入框行文本中。
 - [ ] 既有测试与新增测试通过；`npm run typecheck`、`npm run lint`、`npm run build` 通过。
 
@@ -111,7 +111,7 @@
 | 1 | 中 | ADR 适用范围写「所有可编辑文本输入」，超出 spec 覆盖的主输入框 | ADR 收窄为「主输入框；其他输入面沿用需另立 spec/ADR」 |
 | 2 | 中 | notice 语气映射漏 feature-host 的 3 处错误与 nano-app 错误源；接缝签名变更未交代 | §3.3 增第 8/9 条点名全部 danger 路径与接缝可选参数；§4 补 feature-host 与 nano-app |
 | 3 | 中 | 「面板占用」缺可落地状态源；dock 与终端面板无法区分 | §3.1 定义 `AppSnapshot.caretActive` ← `FeatureHost.inputActive()`；§4/§7 补实现落点 |
-| 4 | 中 | ADR 检索记录写「未命中」，实际命中 3 份不相关现行 ADR | §1 改为逐份列出并说明不相关，结论仍无冲突 |
+| 4 | 中 | ADR 检索记录写「未命中」，实际命中多份现行 ADR | §1 改为逐份列出；复核后又补齐为 8 份，见下一张表 |
 | 5 | 低 | CC 参考行号与「零高度」描述不精确 | §2.2 与 ADR 改为 `notifications.tsx:34`；补 `height=1 + overflow:hidden` 与绝对定位说明 |
 | 6 | 低 | 测试改动面误称 input-frame 有 notice 断言 | §4 改为 input-frame 高度/边框假设 + model-panel notices 断言 + 新增测试 |
 | 7 | 低 | 4 行上限的 file:line 指错 | §2.1 改为 `App.tsx:182,245,255` |
@@ -119,3 +119,12 @@
 | 9 | 低 | ADR「每一帧」与 spec「可省略」字面冲突 | 统一为「有写入或目标格变化时停靠；无写入且格未变可省略」 |
 | 10 | 低 | 机制清单 M3 未覆盖 notice 落点 | §6 M3 补状态行落点、右侧让位与截断 |
 | 11 | 低 | 上游引用把鼠标节的 notice 条款当作显示位置依据 | §1 改为只取「notice 行不是草稿行」的分类依据，落点为本规格新增 |
+
+2026-10-30 方案期轻审复核（同一审核 agent）：发现 4 项（高 0 / 中 2 / 低 2）；用户选择「改」。发现原文见 PR #104 评论。
+
+| # | 严重度 | 发现 | 处置 |
+|---|---|---|---|
+| 1 | 中 | ADR 检索仍写「命中 3 份」，漏 seams / fd-guard / 实现语言 / 间距等命中 | §1 补齐 8 份命中清单；剔除 `root-resume` 的误匹配（`time` 里的 `ime`） |
+| 2 | 中 | model-panel 的 tone 经 feature-host:156 转发会丢失；model-panel:109 打开失败未列为 danger | §3.3.8/9、§4、§5 补齐转发透传与打开失败路径 |
+| 3 | 低 | seams 引文不全，「S01 既有行为不变」与 notice 落点变更矛盾 | §3.3.9 改为只承诺「旧调用无需同步修改」+「inputActive 可选」，并注明落点调整不属于接缝承诺 |
+| 4 | 低 | §5 验收漏模型面板/决策卡的 caret 场景与两类 danger | §5 两条验收补齐 |
