@@ -19,8 +19,20 @@ export interface ConversationOptions {
 
 export interface SubmitResult {
   readonly requestId: string
-  readonly queued: boolean
+  /** 运行中投到下一 step，空闲投到下一回合（spec 2026-10-30）。 */
+  readonly delivery: 'steer' | 'followup'
 }
+
+/** 运行中提交后的统一 notice；空闲不提示。 */
+export const STEER_NOTICE = '已插入（下一 step 或新回合生效）'
+
+export function deliveryNotice(delivery: SubmitResult['delivery']): string | undefined {
+  return delivery === 'steer' ? STEER_NOTICE : undefined
+}
+
+/** 根 agent 的委派纪律；与官方 tool:jobs 的措辞先例一致。 */
+const DELEGATION_GUIDANCE =
+  "Delegated subagents run in the background. The runtime notifies you when one finishes; do not sleep, poll `list_agents`, or read a subagent's output file to check its progress. If you have no useful work left while they run, end your turn — the user can keep talking to you, and the completion notice will wake you in a later turn."
 
 /** 有序提交内容（spec §1 第 5 条接缝）：官方 content 段 + 阅读面显示文字。 */
 export interface PromptContent {
@@ -113,6 +125,13 @@ export class ConversationController {
     }
     const setup = (agentCtx: any) => {
       official.agent.installModelSelection(agentCtx, this.selectionRef)
+      const disposeSection = agentCtx.systemPrompt.section({
+        name: 'nano:delegation-responsiveness',
+        order: 10150,
+        interpolate: false,
+        text: DELEGATION_GUIDANCE,
+      })
+      if (typeof disposeSection === 'function') this.disposers.push(disposeSection)
     }
     // A persisted log makes `create` fail by design, so resume first and fall
     // back to create only when persistence reports NotFound.
@@ -314,7 +333,7 @@ export class ConversationController {
     }
   }
 
-  /** Submit a prompt. While running, the official followup queues the next turn. */
+  /** Submit a prompt. Running steers the current turn; idle starts a new turn. */
   submit(text: string): SubmitResult {
     const trimmed = text.trim()
     return this.submitContent({
@@ -325,30 +344,31 @@ export class ConversationController {
 
   /**
    * Submit an ordered content list (text + image + file reference). The text
-   * path above is this method with a single text part, so echo, history and
-   * queue behaviour stay identical.
+   * path above is this method with a single text part. A running turn receives
+   * the message at its next step (steer); an idle agent starts a new turn
+   * (followup), so echo, history and attachment admission stay identical.
    */
   submitContent(prompt: PromptContent): SubmitResult {
     if (this.disposed) throw new Error('nano: 对话已关闭')
     const display = prompt.displayText.trim()
     assertContent(display, prompt.content)
     const requestId = randomUUID()
-    const queued = this.statusValue === 'running'
+    const delivery = this.statusValue === 'running' ? 'steer' : 'followup'
     this.model.appendUser(display, requestId)
     if (display !== '') this.options.history.record(display)
+    const message = this.options.official.llm.createUserMessage({
+      content: prompt.content,
+      source: { kind: 'user' },
+    })
     try {
-      this.agent.followup(
-        this.options.official.llm.createUserMessage({
-          content: prompt.content,
-          source: { kind: 'user' },
-        }),
-      )
+      if (delivery === 'steer') this.agent.steer(message)
+      else this.agent.followup(message)
     } catch (error) {
       this.model.markUnconfirmed(requestId)
       this.model.appendNotice(`提交失败：${message(error)}`, 'danger')
       throw error
     }
-    return { requestId, queued }
+    return { requestId, delivery }
   }
 
   /** Steering goes to the nearest step boundary; an idle agent starts a turn. */
