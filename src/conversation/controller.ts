@@ -356,13 +356,13 @@ export class ConversationController {
     const delivery = this.statusValue === 'running' ? 'steer' : 'followup'
     this.model.appendUser(display, requestId)
     if (display !== '') this.options.history.record(display)
-    const message = this.options.official.llm.createUserMessage({
-      content: prompt.content,
-      source: { kind: 'user' },
-    })
     try {
-      if (delivery === 'steer') this.agent.steer(message)
-      else this.agent.followup(message)
+      const userMessage = this.options.official.llm.createUserMessage({
+        content: prompt.content,
+        source: { kind: 'user' },
+      })
+      if (delivery === 'steer') this.agent.steer(userMessage)
+      else this.agent.followup(userMessage)
     } catch (error) {
       this.model.markUnconfirmed(requestId)
       this.model.appendNotice(`提交失败：${message(error)}`, 'danger')

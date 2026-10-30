@@ -4,11 +4,19 @@
  * 这里用最小 fake 启动 ConversationController：resume 报 NotFound，create 调 setup
  * 并返回一个可记录 followup/steer 的 agent。状态通过官方 `agent/status` 事件翻转。
  */
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { RUNNING_HINT } from '../../src/app/App.tsx'
+import { assemblePrompt } from '../../src/attachments/prompt.ts'
 import { ConversationController, deliveryNotice } from '../../src/conversation/controller.ts'
 
 const ROOT = 'root-1'
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+)
 
 function makeHarness(status: 'idle' | 'running' = 'idle') {
   const handlers = new Map<string, (payload: any) => void>()
@@ -53,7 +61,7 @@ function makeHarness(status: 'idle' | 'running' = 'idle') {
   const official = {
     session: { SessionId: vi.fn((id: string) => id) },
     agent: { installModelSelection: () => () => {} },
-    llm: { createUserMessage: (message: any) => message },
+    llm: { createUserMessage: vi.fn((message: any) => message) },
   }
   const history = { record: vi.fn(), entries: () => [] }
   const controller = new ConversationController({
@@ -63,7 +71,7 @@ function makeHarness(status: 'idle' | 'running' = 'idle') {
     cwd: '/tmp',
     history: history as any,
   })
-  return { controller, agent, sections, handlers, history }
+  return { controller, agent, sections, handlers, history, official }
 }
 
 function setStatus(harness: ReturnType<typeof makeHarness>, status: 'idle' | 'running') {
@@ -110,6 +118,73 @@ describe('ConversationController delivery', () => {
     expect(harness.controller.model.all.filter((entry) => entry.kind === 'user')).toHaveLength(1)
   })
 
+  it('运行中连续两次提交都走 steer，顺序保留', async () => {
+    const harness = makeHarness('idle')
+    await harness.controller.start()
+    setStatus(harness, 'running')
+
+    harness.controller.submit('one')
+    harness.controller.submit('two')
+
+    expect(harness.agent.steer).toHaveBeenCalledTimes(2)
+    expect(harness.agent.steer.mock.calls.map((call) => call[0].content[0].text)).toEqual([
+      'one',
+      'two',
+    ])
+  })
+
+  it('附件经 assemblePrompt 后仍以 steer 投递', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nano-delivery-att-'))
+    const file = join(dir, 'shot.png')
+    writeFileSync(file, PNG)
+    const attachmentCtx = {
+      get: (name: string) =>
+        name === 'attachments' ? { admitPromptContent: async (parts: any[]) => parts } : undefined,
+    }
+    const assembled = await assemblePrompt({ ctx: attachmentCtx, cwd: dir, text: `see @${file}` })
+    const harness = makeHarness('running')
+    await harness.controller.start()
+
+    const result = harness.controller.submitContent(assembled)
+
+    expect(result.delivery).toBe('steer')
+    const sent = harness.agent.steer.mock.calls[0]?.[0]
+    expect(sent.content).toContainEqual(
+      expect.objectContaining({ type: 'image', mediaType: 'image/png' }),
+    )
+  })
+
+  it('通用文件一次性回执经 assemblePrompt 后也以 steer 投递', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nano-delivery-file-'))
+    const file = join(dir, 'notes.md')
+    writeFileSync(file, '# hi')
+    const attachmentCtx = {
+      get: (name: string) =>
+        name === 'attachments'
+          ? {
+              saveFileStream: async ({ data, name: fileName }: any) => {
+                let bytes = 0
+                for await (const chunk of data) bytes += chunk.byteLength
+                return { attachmentId: 'file-1', name: fileName, bytes }
+              },
+              admitPromptContent: async (parts: any[]) => parts,
+            }
+          : undefined,
+    }
+    const assembled = await assemblePrompt({ ctx: attachmentCtx, cwd: dir, text: `read @${file}` })
+    const harness = makeHarness('running')
+    await harness.controller.start()
+
+    const result = harness.controller.submitContent(assembled)
+
+    expect(result.delivery).toBe('steer')
+    const sent = harness.agent.steer.mock.calls[0]?.[0]
+    expect(sent.content).toContainEqual({
+      type: 'file',
+      attachment: { attachmentId: 'file-1', name: 'notes.md', bytes: 4 },
+    })
+  })
+
   it('三条提交路径共用同一 notice：运行中插话、空闲清空', () => {
     expect(deliveryNotice('steer')).toBe('已插入（下一 step 或新回合生效）')
     expect(deliveryNotice('followup')).toBeUndefined()
@@ -117,6 +192,34 @@ describe('ConversationController delivery', () => {
 
   it('运行中状态行提示插话', () => {
     expect(RUNNING_HINT).toBe('Enter 插话 · Ctrl+C 停止')
+  })
+
+  it('投递失败时透传原错误并写 danger notice', async () => {
+    const harness = makeHarness('idle')
+    await harness.controller.start()
+    harness.agent.followup.mockImplementation(() => {
+      throw new Error('boom')
+    })
+
+    expect(() => harness.controller.submit('hello')).toThrow('boom')
+
+    const notice = harness.controller.model.all.filter((entry) => entry.kind === 'notice').at(-1)
+    expect(notice).toMatchObject({ tone: 'danger' })
+    expect(notice?.kind === 'notice' ? notice.text : '').toContain('提交失败：boom')
+  })
+
+  it('组装 user message 失败时也写 danger notice', async () => {
+    const harness = makeHarness('idle')
+    await harness.controller.start()
+    harness.official.llm.createUserMessage.mockImplementation(() => {
+      throw new Error('bad content')
+    })
+
+    expect(() => harness.controller.submit('hello')).toThrow('bad content')
+
+    const notice = harness.controller.model.all.filter((entry) => entry.kind === 'notice').at(-1)
+    expect(notice).toMatchObject({ tone: 'danger' })
+    expect(notice?.kind === 'notice' ? notice.text : '').toContain('提交失败：bad content')
   })
 
   it('在根 agent 作用域注册委派纪律段', async () => {
