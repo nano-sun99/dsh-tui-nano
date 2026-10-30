@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NanoApp } from '../../src/app/nano-app.ts'
 import { ConversationController } from '../../src/conversation/controller.ts'
 import { Renderer } from '../../src/render/renderer.ts'
@@ -10,6 +10,28 @@ class FakeContext {
     this.handlers.set(name, handler)
   }
 }
+
+let addedListeners: Array<{ event: string | symbol; handler: (...args: never[]) => void }> = []
+let onSpy: ReturnType<typeof vi.spyOn> | undefined
+
+beforeEach(() => {
+  addedListeners = []
+  const originalOn = process.on.bind(process)
+  onSpy = vi.spyOn(process, 'on').mockImplementation(((
+    event: string | symbol,
+    handler: (...args: never[]) => void,
+  ) => {
+    addedListeners.push({ event, handler })
+    return originalOn(event as never, handler as never)
+  }) as never)
+})
+
+afterEach(() => {
+  for (const { event, handler } of addedListeners) process.off(event as never, handler as never)
+  addedListeners = []
+  onSpy?.mockRestore()
+  onSpy = undefined
+})
 
 function tick() {
   return new Promise((resolve) => setTimeout(resolve, 0))
@@ -88,5 +110,23 @@ describe('composer notice wiring', () => {
     expect(status).toContain('/tmp/project')
     await new Promise((resolve) => setImmediate(resolve))
     harness.renderer.unmount()
+  })
+
+  it('repaints when an info notice expires', async () => {
+    vi.useFakeTimers()
+    const harness = makeHarness()
+    harness.app.start().catch(() => {})
+    await Promise.resolve()
+    await Promise.resolve()
+
+    harness.context()?.setNotice('临时的提示')
+    vi.runOnlyPendingTimers()
+    expect(harness.renderer.snapshotLines().at(-1) ?? '').toContain('临时的提示')
+
+    vi.advanceTimersByTime(8000)
+    vi.runOnlyPendingTimers()
+    expect(harness.renderer.snapshotLines().at(-1) ?? '').toContain('/tmp/project')
+    harness.renderer.unmount()
+    vi.useRealTimers()
   })
 })

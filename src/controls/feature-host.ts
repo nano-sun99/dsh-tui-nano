@@ -147,6 +147,7 @@ export class Features implements FeatureHost {
       input: context.input,
       getAgent: () => context.conversation.agent,
       onChange: () => context.requestRender(),
+      onEdit: () => context.setNotice(undefined),
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
     })
     this.completions.install()

@@ -94,6 +94,7 @@ export class Renderer {
   hitRegions: HitRegion[] = []
   selection: SelectionRange | undefined
   private cursorCell: { row: number; col: number } | undefined
+  private lastCursorCell: { row: number; col: number } | undefined
 
   constructor(options: RendererOptions) {
     this.width = Math.max(1, options.width)
@@ -231,7 +232,14 @@ export class Renderer {
     if (cell) {
       const row = Math.min(Math.max(0, Math.floor(cell.row)), this.height - 1)
       const col = Math.min(Math.max(0, Math.floor(cell.col)), this.width - 1)
-      this.write(`\x1b[${row + 1};${col + 1}H`)
+      const parked = this.lastCursorCell
+      if (bytes !== '' || parked?.row !== row || parked?.col !== col) {
+        this.write(`\x1b[${row + 1};${col + 1}H`)
+      }
+      this.lastCursorCell = { row, col }
+    } else if (bytes !== '') {
+      // Writes without a marker move the physical cursor; force a re-park next time.
+      this.lastCursorCell = undefined
     }
   }
 

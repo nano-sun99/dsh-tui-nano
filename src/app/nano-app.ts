@@ -421,8 +421,11 @@ export class NanoApp {
     if (draft?.customMode) {
       if (key.name === 'escape') this.decisions.toggleCustom()
       else if (key.name === 'enter') this.decisions.advanceQuestion()
-      else if (key.name === 'backspace') this.decisions.backspaceCustom()
-      else if (key.name === 'char' && key.text && !key.ctrl && !key.alt) {
+      else if (key.name === 'backspace') {
+        this.clearNoticeOnEdit()
+        this.decisions.backspaceCustom()
+      } else if (key.name === 'char' && key.text && !key.ctrl && !key.alt) {
+        this.clearNoticeOnEdit()
         this.decisions.typeCustom(key.text)
       }
       return
@@ -434,9 +437,13 @@ export class NanoApp {
     else if (key.name === 'tab') this.decisions.move(1)
     else if (key.name === 'char' && key.text === ' ') this.decisions.toggleOption()
     else if (key.name === 'char' && key.text === 'c' && !key.ctrl) this.decisions.toggleCustom()
-    else if (key.name === 'backspace') this.decisions.backspaceCustom()
-    else if (key.name === 'char' && key.text && !key.ctrl && !key.alt)
+    else if (key.name === 'backspace') {
+      this.clearNoticeOnEdit()
+      this.decisions.backspaceCustom()
+    } else if (key.name === 'char' && key.text && !key.ctrl && !key.alt) {
+      this.clearNoticeOnEdit()
       this.decisions.typeCustom(key.text)
+    }
   }
 
   private handleMouse(event: {

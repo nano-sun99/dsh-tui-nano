@@ -98,7 +98,13 @@ export function wrapSpans(spans: readonly Span[], width: number): Row[] {
     }
     if (lineWidth + gw > maxWidth && line.length > 0) {
       if (item.g === ' ') {
+        // The caret is not a break opportunity that can be dropped: move it
+        // to the start of the next row so it stays visible at line end.
         emit()
+        if (item.span.caret === true) {
+          line.push(item)
+          lineWidth = gw
+        }
         continue
       }
       if (breakIndex > 0 && breakIndex < line.length) {

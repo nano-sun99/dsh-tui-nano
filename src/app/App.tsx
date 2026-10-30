@@ -174,9 +174,11 @@ function inputInnerWidth(width: number): number {
 }
 
 /** 输入区内容（提示符右侧）；InputLine 与高度计算共用。 */
-function buildInputSpans(snapshot: AppSnapshot): Span[] {
+function buildInputSpans(
+  snapshot: AppSnapshot,
+  withCaret = snapshot.caretActive !== false,
+): Span[] {
   const disabled = snapshot.decisions.hasDecision
-  const showCaret = snapshot.caretActive !== false
   const chars = graphemes(snapshot.text)
   const before = chars.slice(0, snapshot.cursor).join('')
   const after = chars.slice(snapshot.cursor).join('')
@@ -184,11 +186,11 @@ function buildInputSpans(snapshot: AppSnapshot): Span[] {
   if (disabled) {
     spans.push({ text: '等待你处理上面的确认…', tone: 'faint' })
   } else if (snapshot.text === '') {
-    if (showCaret) spans.push({ text: ' ', tone: 'normal', reverse: true, caret: true })
+    if (withCaret) spans.push({ text: ' ', tone: 'normal', reverse: true, caret: true })
     spans.push({ text: ' 输入消息…', tone: 'faint' })
   } else {
     spans.push({ text: before, tone: 'normal' })
-    if (showCaret) spans.push({ text: ' ', tone: 'normal', reverse: true, caret: true })
+    if (withCaret) spans.push({ text: ' ', tone: 'normal', reverse: true, caret: true })
     spans.push({ text: after, tone: 'normal' })
   }
   return spans
@@ -199,10 +201,12 @@ function inputWindow(
   snapshot: AppSnapshot,
   width: number,
 ): { rows: Row[]; start: number; visible: number } {
-  const rows = wrapSpans(buildInputSpans(snapshot), inputInnerWidth(width))
+  const innerWidth = inputInnerWidth(width)
+  const measured = wrapSpans(buildInputSpans(snapshot, true), innerWidth)
+  const rows = wrapSpans(buildInputSpans(snapshot), innerWidth)
   const visible = Math.min(4, Math.max(1, rows.length))
-  const caretRow = rows.findIndex((row) => row.spans.some((span) => span.caret === true))
-  const anchor = caretRow >= 0 ? caretRow : rows.length - 1
+  const caretRow = measured.findIndex((row) => row.spans.some((span) => span.caret === true))
+  const anchor = caretRow >= 0 ? Math.min(caretRow, rows.length - 1) : Math.max(0, rows.length - 1)
   const start =
     rows.length <= visible
       ? 0

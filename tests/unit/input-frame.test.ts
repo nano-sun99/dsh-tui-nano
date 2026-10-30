@@ -85,6 +85,16 @@ describe('input frame', () => {
     target.renderer.unmount()
   })
 
+  it('满行时光标换到下一行并继续停靠', () => {
+    const target = rendererFor()
+    const text = 'a'.repeat(74)
+    const lines = draw(target, snapshot(text))
+    const row = lines.findIndex((line) => line.includes('a'.repeat(74)))
+    expect(row).toBeGreaterThan(0)
+    expect(target.output().endsWith(`\x1b[${row + 2};4H`)).toBe(true)
+    target.renderer.unmount()
+  })
+
   it('caretActive=false 时不停靠', () => {
     const target = rendererFor()
     draw(target, snapshot('hello', 5, { caretActive: false }))
@@ -102,6 +112,15 @@ describe('input frame', () => {
     const atStart = draw(target, snapshot(text, 0))
     expect(atStart.join('\n')).toContain('l0')
     expect(atStart.join('\n')).not.toContain('l9')
+    target.renderer.unmount()
+  })
+
+  it('caretActive=false 时窗口仍按光标位置取', () => {
+    const target = rendererFor()
+    const text = Array.from({ length: 8 }, (_, index) => `l${index}`).join('\n')
+    const lines = draw(target, snapshot(text, 0, { caretActive: false }))
+    expect(lines.join('\n')).toContain('l0')
+    expect(lines.join('\n')).not.toContain('l7')
     target.renderer.unmount()
   })
 

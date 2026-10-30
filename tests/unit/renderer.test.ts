@@ -152,6 +152,21 @@ describe('hardware cursor parking', () => {
     renderer.unmount()
   })
 
+  it('does not re-park an unchanged frame with no writes', () => {
+    const { renderer, chunks } = createRenderer(10, 3)
+    const tree = box(
+      { flexDirection: 'row' },
+      text('abc'),
+      box({ cursor: true, width: 0, height: 1 }),
+    )
+    renderer.mount(tree)
+    renderer.flushFrame()
+    const afterFirst = chunks.length
+    renderer.flushFrame()
+    expect(chunks.length).toBe(afterFirst)
+    renderer.unmount()
+  })
+
   it('does not park when no box declares the cursor', () => {
     const { renderer, output } = createRenderer(10, 3)
     renderer.mount(box({ flexDirection: 'row' }, text('abc')))
