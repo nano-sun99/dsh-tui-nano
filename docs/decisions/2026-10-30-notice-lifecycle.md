@@ -18,7 +18,7 @@
 
 ## 依据
 
-- Claude Code：模型切换提示 `Set model to X` 走 `addNotification(..., priority: 'immediate')`；默认超时 8000ms；显示在 footer、单行截断（本机解包源码 `src/utils/handlePromptSubmit.ts:272-287`、`src/context/notifications.tsx:39`、`src/components/PromptInput/PromptInputFooter.tsx:145`）。
+- Claude Code：模型切换提示 `Set model to X` 走 `addNotification(..., priority: 'immediate')`（`src/utils/handlePromptSubmit.ts:272-287`）；默认超时 8000ms（`src/context/notifications.tsx:34`）；非全屏显示在 footer（`src/components/PromptInput/PromptInputFooter.tsx:145`）；全屏用绝对定位、`height=1` + `overflow:hidden` 做单行截断（`src/components/PromptInput/PromptInput.tsx:2293`，注释 2277-2285）。
 - 用户反馈：切换档位后的提示一直贴在输入行，被当成占位符。
 
 ## 否决了什么
