@@ -396,6 +396,35 @@ describe('/model panel', () => {
     panel.handleKey(key('escape'))
   })
 
+  it('换模型保留档位：同 id 优先', async () => {
+    const panel = await openMany(4)
+    panel.handleKey(key('right'))
+    panel.handleKey(key('right'))
+    panel.handleKey(key('right')) // High
+    expect(spans(panel.render(100)).find((span) => span.text.startsWith('当前：'))?.text).toContain(
+      'M0 · High',
+    )
+    panel.handleKey(key('down')) // M1, 同样有 High
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(spans(panel.render(100)).find((span) => span.text.startsWith('当前：'))?.text).toContain(
+      'M1 · High',
+    )
+    panel.handleKey(key('escape'))
+  })
+
+  it('换模型保留档位：新模型没有同 id 时按同序号夹取', async () => {
+    const { panel } = await open()
+    panel.handleKey(key('right'))
+    panel.handleKey(key('right'))
+    panel.handleKey(key('right')) // High
+    panel.handleKey(key('down')) // M2 只有 Low
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(spans(panel.render(100)).find((span) => span.text.startsWith('当前：'))?.text).toContain(
+      'M2 · Low',
+    )
+    panel.handleKey(key('escape'))
+  })
+
   it('重开面板保留已显式选择的强度', async () => {
     const { panel, conversation } = await open([], 'M1', 'max')
     const summary = spans(panel.render(100)).find((span) => span.text.startsWith('当前：'))

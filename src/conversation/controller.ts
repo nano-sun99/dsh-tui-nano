@@ -469,6 +469,11 @@ export class ConversationController {
     }
     const next = { provider, model, ...(effort ? { reasoningEffort: effort } : {}) }
     if (!this.selectionRef) throw new Error('会话尚未启动')
+    // 同时写回官方默认模型：否则新窗口/重启只读到 profile 里的旧默认。
+    const defaultModel = this.options.ctx.get('agentDefaultModel')
+    if (typeof defaultModel?.saveSelection === 'function') {
+      await defaultModel.saveSelection(next)
+    }
     this.selectionRef.current = next
     this.selection = next
     return { ...next, efforts }

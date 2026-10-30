@@ -26,6 +26,7 @@ interface Entry {
   levels: Effort[]
   defaultEffort?: string
   loaded: boolean
+  loading?: Promise<void>
   error?: string
 }
 
@@ -88,6 +89,8 @@ export class ModelPanel {
   private timer: NodeJS.Timeout | undefined
   private error: string | undefined
   private catalogError: string | undefined
+  /** 换模型时暂存的原档位；等新模型档位加载后按 id / 同序号恢复。 */
+  private restoreEffort: { index: number; id?: string } | undefined
 
   constructor(options: ModelPanelOptions) {
     this.options = options
@@ -132,6 +135,7 @@ export class ModelPanel {
       entries.findIndex((entry) => entry.id === current.model),
     )
     this.effortIndex = 0
+    this.restoreEffort = undefined
     this.error = undefined
     this.visible = true
     this.phaseStart = Date.now()
@@ -173,15 +177,46 @@ export class ModelPanel {
     return conversation.resolveModelMeta(this.provider, model)
   }
 
-  private async loadFocus(): Promise<void> {
+  private loadFocus(): Promise<void> {
     const entry = this.focus
-    if (!entry || entry.loaded) return
+    if (!entry) return Promise.resolve()
+    if (entry.loading) return entry.loading
+    if (entry.loaded) return Promise.resolve()
     entry.loaded = true
-    const meta = await this.readMeta(entry.id)
-    entry.levels = meta.efforts
-    if (meta.defaultEffort) entry.defaultEffort = meta.defaultEffort
-    if (meta.error) entry.error = meta.error
-    this.options.onChange()
+    entry.loading = (async () => {
+      const meta = await this.readMeta(entry.id)
+      entry.levels = meta.efforts
+      if (meta.defaultEffort) entry.defaultEffort = meta.defaultEffort
+      if (meta.error) entry.error = meta.error
+      this.options.onChange()
+    })().finally(() => {
+      entry.loading = undefined
+    })
+    return entry.loading
+  }
+
+  /** 换模型后恢复原档位：同 id 优先；缺失时保留相同序号并夹到新档位数。 */
+  private applyRestoreEffort(): void {
+    const restore = this.restoreEffort
+    if (!restore) return
+    this.restoreEffort = undefined
+    if (restore.index === 0) {
+      this.effortIndex = 0
+      return
+    }
+    const levels = this.levels
+    if (levels.length === 0) {
+      this.effortIndex = 0
+      return
+    }
+    if (restore.id) {
+      const byId = levels.findIndex((level) => level.id === restore.id)
+      if (byId >= 0) {
+        this.effortIndex = byId + 1
+        return
+      }
+    }
+    this.effortIndex = Math.min(restore.index, levels.length)
   }
 
   private get reducedMotion(): boolean {
@@ -241,11 +276,16 @@ export class ModelPanel {
       const delta = key.name === 'up' ? -1 : 1
       const next = Math.max(0, Math.min(this.entries.length - 1, this.modelIndex + delta))
       if (next !== this.modelIndex) {
+        if (!this.restoreEffort) {
+          const id = this.effortIndex > 0 ? this.levels[this.effortIndex - 1]?.id : undefined
+          this.restoreEffort = { index: this.effortIndex, ...(id ? { id } : {}) }
+        }
         this.modelIndex = next
-        this.effortIndex = 0
         this.error = undefined
         this.phaseStart = Date.now()
         void this.loadFocus().then(() => {
+          if (this.modelIndex !== next) return
+          this.applyRestoreEffort()
           this.ensureTick()
           this.options.onChange()
         })
@@ -257,6 +297,7 @@ export class ModelPanel {
       if (count > 1) {
         const delta = key.name === 'left' ? -1 : 1
         this.effortIndex = (this.effortIndex + delta + count) % count
+        this.restoreEffort = undefined
         this.error = undefined
         this.phaseStart = Date.now()
         this.ensureTick()
@@ -282,6 +323,9 @@ export class ModelPanel {
       this.options.onChange()
       return
     }
+    await this.loadFocus()
+    if (this.focus !== entry) return
+    this.applyRestoreEffort()
     const effort = this.effortIndex > 0 ? this.levels[this.effortIndex - 1]?.id : undefined
     try {
       const next = await this.options.conversation.selectModel(this.provider, entry.id, effort)
