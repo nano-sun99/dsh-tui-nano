@@ -40,6 +40,14 @@ export interface AppSnapshot {
   readonly contextRatio?: number
   /** 接线接缝（S02 spec §1）：S02 的正文区内容；没有 features 时为空。 */
   readonly featureBody?: ReactNode
+  /** S02 详情 / 全部列表占满正文区，主对话 transcript 让位。 */
+  readonly featureFullBody?: boolean
+  /** 详情输入框占位（设计稿：给 <名字> 发送消息…）。 */
+  readonly inputPlaceholder?: string
+  /** 输入框可见但禁用（列表打开 / parent 不可用）。 */
+  readonly inputDisabled?: boolean
+  /** 一次性 / 未知模式只读详情：不画输入框。 */
+  readonly inputHidden?: boolean
   /** 补全弹层（正文与状态行之间）。 */
   readonly completionBody?: ReactNode
   readonly completionRows?: number
@@ -117,22 +125,47 @@ function RowView(props: { row: Row; theme: Theme; width: number }) {
   )
 }
 
-function Transcript(props: { snapshot: AppSnapshot; bodyHeight: number; width: number }) {
-  const { snapshot } = props
+export interface TranscriptViewProps {
+  readonly model: TranscriptModel
+  readonly expanded: ReadonlySet<string>
+  readonly width: number
+  readonly height: number
+  readonly scrollOffset: number
+  readonly stickBottom: boolean
+  readonly theme: Theme
+}
+
+/** 主对话与子代理详情共用的正文渲染器（spec §4.3：不复制渲染逻辑）。 */
+export function TranscriptView(props: TranscriptViewProps): ReactNode {
   const innerWidth = Math.max(1, props.width)
-  const lines = snapshot.transcript.layout({ width: innerWidth, expanded: snapshot.expanded })
+  const lines = props.model.layout({ width: innerWidth, expanded: props.expanded })
   const total = lines.length
-  const height = Math.max(1, props.bodyHeight)
-  const start = snapshot.stickBottom
+  const height = Math.max(1, props.height)
+  const start = props.stickBottom
     ? Math.max(0, total - height)
-    : Math.max(0, Math.min(total - height, total - height - snapshot.scrollOffset))
+    : Math.max(0, Math.min(total - height, total - height - props.scrollOffset))
   const visible = lines.slice(start, start + height)
   return (
     <Box flexDirection="column" flexGrow={1} overflow="hidden" width={innerWidth}>
       {visible.map((line) => (
-        <RowView key={line.key} row={line.row} theme={snapshot.theme} width={innerWidth} />
+        <RowView key={line.key} row={line.row} theme={props.theme} width={innerWidth} />
       ))}
     </Box>
+  )
+}
+
+function Transcript(props: { snapshot: AppSnapshot; bodyHeight: number; width: number }) {
+  const { snapshot } = props
+  return (
+    <TranscriptView
+      model={snapshot.transcript}
+      expanded={snapshot.expanded}
+      width={props.width}
+      height={props.bodyHeight}
+      scrollOffset={snapshot.scrollOffset}
+      stickBottom={snapshot.stickBottom}
+      theme={snapshot.theme}
+    />
   )
 }
 
@@ -180,16 +213,21 @@ function buildInputSpans(
   snapshot: AppSnapshot,
   withCaret = snapshot.caretActive !== false,
 ): Span[] {
-  const disabled = snapshot.decisions.hasDecision
+  const disabled = snapshot.decisions.hasDecision || snapshot.inputDisabled === true
+  const placeholder = ` ${snapshot.inputPlaceholder ?? '输入消息…'}`.trimEnd()
   const chars = graphemes(snapshot.text)
   const before = chars.slice(0, snapshot.cursor).join('')
   const after = chars.slice(snapshot.cursor).join('')
   const spans: Span[] = []
   if (disabled) {
-    spans.push({ text: '等待你处理上面的确认…', tone: 'faint' })
+    spans.push({
+      text:
+        snapshot.inputDisabled === true ? placeholder || ' 输入不可用' : '等待你处理上面的确认…',
+      tone: 'faint',
+    })
   } else if (snapshot.text === '') {
     if (withCaret) spans.push({ text: ' ', tone: 'normal', reverse: true, caret: true })
-    spans.push({ text: ' 输入消息…', tone: 'faint' })
+    spans.push({ text: placeholder, tone: 'faint' })
   } else {
     spans.push({ text: before, tone: 'normal' })
     if (withCaret) spans.push({ text: ' ', tone: 'normal', reverse: true, caret: true })
@@ -217,6 +255,7 @@ function inputWindow(
 }
 
 function inputLineCount(snapshot: AppSnapshot, width: number): number {
+  if (snapshot.inputHidden === true) return 0
   return inputWindow(snapshot, width).visible
 }
 
@@ -226,7 +265,7 @@ export function transcriptBodyHeight(snapshot: AppSnapshot): number {
   const completionRows = snapshot.completionRows ?? 0
   const modelRows = snapshot.modelPanelRows ?? 0
   const headerHeight = 3
-  const bottomRows = modelRows > 0 ? modelRows : inputHeight + 1
+  const bottomRows = modelRows > 0 ? modelRows : snapshot.inputHidden === true ? 1 : inputHeight + 1
   return Math.max(1, snapshot.height - bottomRows - completionRows - headerHeight)
 }
 
@@ -474,15 +513,21 @@ export function App(props: { snapshot: AppSnapshot }) {
       <Header snapshot={snapshot} width={width} />
       <Box height={1} />
       <Box flexDirection="column" flexGrow={0} height={bodyHeight} width={width}>
-        <Transcript snapshot={snapshot} bodyHeight={bodyHeight} width={width} />
-        {snapshot.featureBody}
+        {snapshot.featureFullBody === true ? (
+          snapshot.featureBody
+        ) : (
+          <>
+            <Transcript snapshot={snapshot} bodyHeight={bodyHeight} width={width} />
+            {snapshot.featureBody}
+          </>
+        )}
       </Box>
       {snapshot.completionBody}
       {modelRows > 0 ? (
         snapshot.modelPanelBody
       ) : (
         <>
-          <InputLine snapshot={snapshot} width={width} />
+          {snapshot.inputHidden === true ? null : <InputLine snapshot={snapshot} width={width} />}
           <StatusLine snapshot={snapshot} width={width} />
         </>
       )}

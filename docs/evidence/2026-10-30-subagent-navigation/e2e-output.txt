@@ -1,0 +1,13 @@
+
+✔ 真实 PTY：subagent 工具启动子代理后 dock 入列并显示状态 (3739.244541ms)
+✔ 真实 PTY：Alt+L 打开全部子代理列表并显示计数 (9289.092291ms)
+✔ 真实 PTY：从 dock 进入详情，顶部标识与输入占位按设计稿 (1466.276792ms)
+✔ 真实 PTY：终态 30 秒后 dock 行消失，父对话回执仍在 (34444.342375ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 48977.149459

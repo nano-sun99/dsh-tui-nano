@@ -28,6 +28,8 @@ KEY_BYTES = {
     "enter": b"\r",
     "esc": b"\x1b",
     "tab": b"\t",
+    "alt+l": b"\x1bl",
+    "alt+k": b"\x1bk",
 }
 
 CURSOR_POS = re.compile(rb"\x1b\[(\d+);(\d+)H")

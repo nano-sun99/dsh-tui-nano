@@ -9,6 +9,7 @@ import { createElement, type ReactNode } from 'react'
 import type { FeatureContext, FeatureHost } from '../app/nano-app.ts'
 import { assemblePrompt, findReferences } from '../attachments/prompt.ts'
 import { deliveryNotice } from '../conversation/controller.ts'
+import { DraftStore } from '../input/drafts.ts'
 import { registerKeybinding } from '../input/keymap.ts'
 import type { Key } from '../input/parser.ts'
 import { INPUT_BYTE_LIMIT } from '../input/segments.ts'
@@ -22,6 +23,7 @@ import { ScheduleStorage } from '../schedule/storage.ts'
 import { SessionsPanel } from '../sessions/list.ts'
 import { SessionControllerAdapter } from '../sessions/session-controller-adapter.ts'
 import { SubagentDock } from '../subagents/dock.ts'
+import { SubagentNavigation } from '../subagents/view.ts'
 import { TerminalPane } from '../terminal/pane.ts'
 import { parseBashInput, renderBashInjection, runBash } from './bash-mode.ts'
 import { Completions } from './completions.ts'
@@ -62,6 +64,8 @@ export class Features implements FeatureHost {
   private monitor: Monitor | undefined
   private sessions: SessionsPanel | undefined
   private dock: SubagentDock | undefined
+  private navigation: SubagentNavigation | undefined
+  private readonly drafts = new DraftStore()
   private info: InfoPanel | undefined
   /** 首次人工命令的权限提示：`!` 与 `!!` 各提示一次（S08 §2.2）。 */
   private bangHintShown = { inject: false, noInject: false }
@@ -174,6 +178,19 @@ export class Features implements FeatureHost {
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
     })
     this.dock.start()
+    this.navigation = new SubagentNavigation({
+      ctx,
+      rootId: context.rootId,
+      input: context.input,
+      history: context.history,
+      drafts: this.drafts,
+      dock: this.dock,
+      expanded: context.expanded,
+      bodyHeight: () => context.bodyHeight(),
+      onChange: () => context.requestRender(),
+      setNotice: (text, tone) => context.setNotice(text, tone),
+      writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
+    })
     this.info = new InfoPanel({
       ctx,
       getAgent: () => context.conversation.agent,
@@ -226,9 +243,15 @@ export class Features implements FeatureHost {
   /** S01 用来判断输入框是否仍接收按键；面板/终端接管时不停靠 caret。 */
   inputActive(): boolean {
     if (this.modelPanel?.open) return false
+    if (this.navigation !== undefined && !this.navigation.inputActive) return false
     if (this.terminal?.focused === true) return false
     if (this.info?.visible || this.sessions?.visible || this.jobs?.visible) return false
     return true
+  }
+
+  /** 只读详情 / 列表打开时，输入内容不可改（paste 与换行都不得写入）。 */
+  inputEditable(): boolean {
+    return this.navigation?.inputEditable ?? true
   }
 
   handleKey(key: Key): boolean {
@@ -237,6 +260,8 @@ export class Features implements FeatureHost {
     // 开关必须交回 keymap：否则面板聚焦时会把 Ctrl+T 当成终端输入吃掉。
     if (isTerminalToggle(key) || isJobsToggle(key) || isSessionsToggle(key) || isInfoToggle(key))
       return false
+    // 三层导航先于补全 / 输入：列表与详情会接管 Enter、方向键与 Esc。
+    if (this.navigation?.handleKey(key) === true) return true
     // 命令补全里按 Enter 直接运行（Claude Code 的手感）；技能/文件只插入。
     if (
       key.name === 'enter' &&
@@ -345,7 +370,7 @@ export class Features implements FeatureHost {
     if (!context) return
     const model = context.conversation.model
     const conversation = context.conversation
-    const current = conversation.modelSelection
+    const _current = conversation.modelSelection
     if (args === '') {
       this.completions?.dismiss()
       await this.modelPanel?.openPanel()
@@ -481,6 +506,30 @@ export class Features implements FeatureHost {
     }
   }
 
+  handlePress(id: string): boolean {
+    return this.navigation?.handlePress(id) ?? false
+  }
+
+  handleWheel(delta: number): boolean {
+    return this.navigation?.handleWheel(delta) ?? false
+  }
+
+  replacesTranscript(): boolean {
+    return this.navigation?.replacesTranscript ?? false
+  }
+
+  inputPlaceholder(): string | undefined {
+    return this.navigation?.inputPlaceholder()
+  }
+
+  inputDisabled(): boolean {
+    return this.navigation?.inputDisabled ?? false
+  }
+
+  inputHidden(): boolean {
+    return this.navigation?.inputHidden ?? false
+  }
+
   dispatchAction(action: string): boolean {
     if (action === INFO_TOGGLE_ACTION) {
       this.info?.toggle()
@@ -514,7 +563,7 @@ export class Features implements FeatureHost {
     const jobs = this.jobs?.visible
       ? this.jobs.render(width, this.innerHeight(), this.monitor?.watching)
       : null
-    const dock = this.dock?.visible && !this.modelPanel?.open ? this.dock.render(width) : null
+    const dock = this.navigation?.body(width) ?? null
     const stack = [pane, info, sessions, jobs, dock].filter(Boolean)
     if (stack.length === 0) return null
     if (stack.length === 1) return stack[0]
@@ -554,6 +603,8 @@ export class Features implements FeatureHost {
     this.completions?.dispose()
     this.completions = undefined
     this.info = undefined
+    this.navigation?.dispose()
+    this.navigation = undefined
     this.dock?.stop()
     this.dock = undefined
     this.sessions = undefined
