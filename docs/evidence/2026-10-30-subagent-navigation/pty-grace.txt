@@ -15,7 +15,7 @@
                                                                                                     
   父任务完成：子任务已分派。                                                                        
                                                                                                     
-  Background subagent 156f3607-ec3b-4375-88a2-eeab4a13def2 finished and will do no further work     
+  Background subagent f759680f-7b4b-4a7a-8060-ddc1ade63efc finished and will do no further work     
   unless you send it more.                                                                          
                                                                                                     
   父任务完成：子任务已分派。                                                                        
@@ -25,6 +25,6 @@
                                                                                                     
                                                                                                     
   ────────────────────────────────────────────────────────────────────────────────────────────────  
-  ›   输入消息…                                                                                     
+  ›  输入消息…                                                                                      
   ────────────────────────────────────────────────────────────────────────────────────────────────  
   …/worktrees/issue-119                                                   Enter 发送 · Ctrl+C 退出  

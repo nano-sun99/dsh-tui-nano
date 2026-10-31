@@ -158,6 +158,7 @@ export class SubagentNavigation {
   private listError: string | undefined
   private readonly readable = new Map<string, boolean>()
   private childState: ChildState | undefined
+  private mainBeforeChild: MainView | undefined
   private generation = 0
   private width = 80
   private readonly scrollMemory = new Map<string, { offset: number; stickBottom: boolean }>()
@@ -214,6 +215,11 @@ export class SubagentNavigation {
 
   get inputActive(): boolean {
     return !this.inputHidden && !this.inputDisabled
+  }
+
+  /** 给 S01 输入层用：只读详情 / 列表打开时，paste 与换行也不得改写输入。 */
+  get inputEditable(): boolean {
+    return this.inputActive
   }
 
   inputPlaceholder(): string | undefined {
@@ -318,6 +324,7 @@ export class SubagentNavigation {
         if (this.viewState.listScrollTop > max) {
           this.viewState = { ...this.viewState, listScrollTop: max }
         }
+        this.ensureListVisible()
       }
       this.options.onChange()
     }
@@ -331,7 +338,7 @@ export class SubagentNavigation {
   private async probeOneShots(): Promise<void> {
     const targets = this.listEntries.filter(
       (entry) =>
-        entry.kind === 'child' && entry.mode === 'one-shot' && !this.readable.has(entry.id),
+        entry.kind === 'child' && entry.mode === 'one-shot' && this.readable.get(entry.id) !== true,
     )
     await Promise.all(targets.map((entry) => this.probeOneShot(entry.id)))
   }
@@ -358,7 +365,16 @@ export class SubagentNavigation {
       else this.openList()
       return true
     }
-    const main = this.viewState
+    let main = this.viewState
+    if (main.dockFocusId !== undefined) {
+      const ids = this.options.dock.entryIds()
+      // 输入框非空时 dock 不抢焦点；行已出列时焦点也必须清掉。
+      if (this.options.input.text !== '' || !ids.includes(main.dockFocusId)) {
+        this.viewState = { ...main, dockFocusId: undefined }
+        this.options.onChange()
+        main = this.viewState
+      }
+    }
     if (main.dockFocusId !== undefined) {
       const ids = this.options.dock.entryIds()
       if (key.name === 'up' || key.name === 'down') {
@@ -404,6 +420,11 @@ export class SubagentNavigation {
     if (focusId === undefined) return
     if (focusId === 'overflow') {
       this.openList()
+      return
+    }
+    if (!this.options.dock.entryIds().includes(focusId)) {
+      this.viewState = { ...this.viewState, dockFocusId: undefined }
+      this.options.onChange()
       return
     }
     this.enter(focusId, 'dock')
@@ -479,12 +500,25 @@ export class SubagentNavigation {
       this.scrollChild(key.name === 'pageup' ? this.halfPage() : -this.halfPage())
       return true
     }
-    if (key.name === 'home') {
-      this.scrollChild(this.maxChildScroll())
+    // 详情里只读时 Home/End 滚正文；输入可用时让给 S01 的光标行首/行尾。
+    // Ctrl+End 与 Shift+↑/↓ 是全局 transcript 滚动，不能漏给主对话。
+    if (!this.inputActive && (key.name === 'home' || key.name === 'end')) {
+      this.scrollChild(key.name === 'home' ? this.maxChildScroll() : -Number.MAX_SAFE_INTEGER)
       return true
     }
-    if (key.name === 'end') {
+    if (key.name === 'end' && key.ctrl) {
       this.scrollChild(-Number.MAX_SAFE_INTEGER)
+      return true
+    }
+    if ((key.name === 'up' || key.name === 'down') && key.shift) {
+      this.scrollChild(key.name === 'up' ? 1 : -1)
+      return true
+    }
+    if (this.inputActive && (key.name === 'up' || key.name === 'down')) {
+      // 子地址历史已由 syncChildHistory 装好；不能落回 S01 的主会话历史。
+      if (key.name === 'up') this.options.input.previousHistory()
+      else this.options.input.nextHistory()
+      this.options.onChange()
       return true
     }
     if (this.inputDisabled || this.inputHidden) {
@@ -555,7 +589,8 @@ export class SubagentNavigation {
       return true
     }
     // 一次性会话先验历史可读性；读不到就不进入，保持不可导航只读行。
-    if (mode === 'one-shot' && !this.readable.has(id)) {
+    // 只有成功才缓存 true：一次瞬时失败不能把整场会话锁死为不可读。
+    if (mode === 'one-shot' && this.readable.get(id) !== true) {
       void this.probeOneShot(id).then((readable) => {
         if (readable) this.enterNow(id, origin, mode)
         else {
@@ -572,13 +607,19 @@ export class SubagentNavigation {
   private async resolveAndEnter(id: string, origin: ChildOrigin): Promise<void> {
     await this.refreshList()
     if (this.viewState.mode !== 'main') return
+    // 结果卡文本解析出的 id 必须真的在当前列表里，避免打开不存在的详情。
+    if (this.listEntry(id) === undefined) {
+      this.options.setNotice?.('该子代理不在当前列表中，无法进入', 'danger')
+      this.options.onChange()
+      return
+    }
     const mode = this.modeFor(id)
     if (!modeAllowsDetail(mode)) {
       this.options.setNotice?.('外部子代理不可进入', 'danger')
       return
     }
     if (mode === 'one-shot') {
-      const readable = this.readable.get(id) ?? (await this.probeOneShot(id))
+      const readable = this.readable.get(id) === true ? true : await this.probeOneShot(id)
       if (!readable) {
         this.options.setNotice?.('该一次性子代理历史不可读，无法进入', 'danger')
         this.options.onChange()
@@ -592,6 +633,7 @@ export class SubagentNavigation {
     if (this.viewState.mode !== 'main') return
     this.saveInput({ root: this.options.rootId })
     const main = this.viewState
+    this.mainBeforeChild = main
     this.viewState = enterChild(main, id, origin)
     this.restoreInput({ root: this.options.rootId, subagent: id }, mode === 'continuable')
     this.openChild(id, mode)
@@ -606,11 +648,6 @@ export class SubagentNavigation {
       this.saveInput({ root: this.options.rootId, subagent: view.id })
     }
     const left = leaveChild(view)
-    const restored =
-      left.returnTo.origin === 'dock' && this.options.dock.entryIds().includes(left.returnTo.id)
-        ? { ...left.view, dockFocusId: left.returnTo.id }
-        : left.view
-    this.viewState = restored
     this.closeChild()
     this.restoreInput({ root: this.options.rootId }, true)
     if (this.options.history !== undefined) {
@@ -618,7 +655,27 @@ export class SubagentNavigation {
         this.options.history.entries(HISTORY_LIMIT).map((entry) => entry.display),
       )
     }
-    if (left.view.listOpen) void this.refreshList()
+    // 回到进入前的同一主视图：列表来源保留滚动位置并把焦点行拉回视口；
+    // 结果卡来源回到原滚动位置（主对话滚动由 S01 保留）。
+    const base = this.mainBeforeChild ?? left.view
+    let restored: MainView = { ...base }
+    if (left.returnTo.origin === 'list') {
+      restored = { ...restored, listOpen: true, listFocusId: left.returnTo.id }
+    } else if (left.returnTo.origin === 'dock') {
+      const focusable =
+        this.options.input.text === '' && this.options.dock.entryIds().includes(left.returnTo.id)
+      restored = { ...restored, dockFocusId: focusable ? left.returnTo.id : undefined }
+    } else {
+      restored = { ...restored, dockFocusId: undefined }
+    }
+    this.mainBeforeChild = undefined
+    this.viewState = restored
+    if (restored.listOpen) {
+      void this.refreshList().then(() => {
+        this.ensureListVisible()
+        this.options.onChange()
+      })
+    }
     this.options.onChange()
   }
 
@@ -888,15 +945,32 @@ export class SubagentNavigation {
         '读取中…',
       )
     } else {
-      content = createElement(TranscriptView, {
+      const reason =
+        child.mode === 'unknown'
+          ? createElement(
+              Text,
+              { color: [...theme.muted] as [number, number, number], wrap: false },
+              '未知模式：暂不支持发送，仅只读显示',
+            )
+          : undefined
+      const transcript = createElement(TranscriptView, {
         model: child.model,
         expanded: this.options.expanded,
         width,
-        height: Math.max(1, height - 1),
+        height: Math.max(1, height - (reason === undefined ? 1 : 2)),
         scrollOffset: child.stickBottom ? 0 : child.scrollOffset,
         stickBottom: child.stickBottom,
         theme,
       })
+      content =
+        reason === undefined
+          ? transcript
+          : createElement(
+              Box,
+              { flexDirection: 'column', width, height: Math.max(1, height - 1) },
+              reason,
+              transcript,
+            )
     }
     return createElement(Box, { flexDirection: 'column', width, height }, header, content)
   }
@@ -925,7 +999,9 @@ export class SubagentNavigation {
   }
 
   private childViewHeight(): number {
-    return Math.max(1, this.options.bodyHeight() - 1)
+    // unknown mode 在正文上方多一行原因；滚动上限必须按同一高度算。
+    const reasonRows = this.childState?.mode === 'unknown' ? 1 : 0
+    return Math.max(1, this.options.bodyHeight() - 1 - reasonRows)
   }
 
   private maxChildScroll(): number {

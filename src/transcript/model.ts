@@ -44,6 +44,18 @@ function activationTarget(meta: unknown): string | undefined {
   return value.subagentId === '' ? undefined : `subagent:result:${value.subagentId}`
 }
 
+/**
+ * 官方 `subagent` 工具只声明 `output.render`，没有 `presentationMeta`，
+ * 所以正式会话里 `resultMeta` 永远缺失。结构化输出的可见回执是稳定的
+ * `started subagent <id>`；在 meta 缺席时用它把结果卡接上详情。
+ */
+function activationFromResult(name: string, resultText: string | undefined): string | undefined {
+  if (name !== 'subagent' || resultText === undefined) return undefined
+  const match = /^\s*started subagent (\S+)\s*$/m.exec(resultText)
+  const id = match?.[1]
+  return id === undefined || id === '' ? undefined : `subagent:result:${id}`
+}
+
 export interface ToolEntry {
   readonly kind: 'tool'
   readonly id: string
@@ -399,7 +411,10 @@ export class TranscriptModel {
       kind: groupKind,
       gapBefore: 'Block',
       rows: cached,
-      pressId: activationTarget(entry.resultMeta) ?? id,
+      pressId:
+        activationTarget(entry.resultMeta) ??
+        activationFromResult(entry.name, entry.resultText) ??
+        id,
     }
   }
 

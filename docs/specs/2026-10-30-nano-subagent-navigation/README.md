@@ -2,13 +2,13 @@
 
 - 组标识：`2026-10-30-nano-subagent-navigation`
 - 角色：单份 spec，总纲与执行规格合一
-- 状态：方案中（轻审修订后，待合并）
+- 状态：已合并（PR #118）；实施 PR #120 重审修订中
 - 结构：不拆——1 份 spec + 1 张执行 issue
-- 机制范围：**4 个新增机制**——① 视图状态机（含 dock / 结果卡 / 列表三种来源），② 每地址界面状态，③ dock 展示窗口（入列 / 出列 / 不复活），④ 全部子代理列表
+- 机制范围：**7 个新增机制**——① 视图状态机（含 dock / 结果卡 / 列表三种来源），② 每地址界面状态，③ dock 展示窗口（入列 / 出列 / 不复活），④ 全部子代理列表，⑤ 一次性可读性探测，⑥ 按地址输入历史，⑦ activation 回执文本识别
 - 上游：设计稿 [`preview/README.md` §子代理交互](../../design/2026-10-17-dsh-tui-ux-research/preview/README.md)、`2026-10-20-nano-v1` S12、[ADR-20261022-subagent-dock-lifecycle](../../decisions/2026-10-22-subagent-dock-lifecycle.md)、[ADR-20261022-input-history](../../decisions/2026-10-22-input-history.md)（子代理草稿只存内存、按地址投影）
 - 替代关系：本 spec 补齐 v1 S12 在 TypeScript 重写中未接上的导航与列表部分；dock 生命周期沿用 ADR 的 30 秒，设计稿样稿的 1.5 秒不再适用
 - ADR：**不新增**。30 秒自动清理完全沿用 ADR-20261022-subagent-dock-lifecycle：所有官方 `subagent/end`（含未知终态）都保留 30 秒；`x` 只提前移除**终态行**，不改自动规则
-- 下游：spec 合并后开执行 issue；[#106](https://github.com/nano-sun99/dsh-tui-nano/issues/106) 与本单无关
+- 下游：实施 issue [#119](https://github.com/nano-sun99/dsh-tui-nano/issues/119)；[#106](https://github.com/nano-sun99/dsh-tui-nano/issues/106) 与本单无关
 - 合入前提：本 spec 合并后开执行 issue；实施需单测 / feature 测试全绿，并按 §7 留证据
 
 ## 1. 目标
@@ -19,7 +19,7 @@
 2. **消失可证**：dock 只显示「最近活跃」的窗口，终态 30 秒后移除且不复活；历史记录留在父对话回执与全部列表里。
 3. **每地址独立**：草稿、光标、滚动位置按子代理分别保存，退出再进原样恢复。
 
-不承诺：一次性（one-shot）子代理能在详情里回放正文——没有 live session 时是否可读官方历史投影，实施前先验。**验得通**就进只读详情；**验不通**就退成「不可导航的只读行」，把验证结论写进证据目录。A10 按这个条件验收，不把「一定能导航」当承诺。
+不承诺：一次性（one-shot）子代理能在详情里回放正文——没有 live session 时是否可读官方历史投影，实施前先验。**验得通**就进只读详情；**验不通**就退成「不可导航的只读行」，把验证结论写进证据目录。A10 按这个条件验收，不把「一定能导航」当承诺。当前部署的 provider 集未产出 one-shot / external 记录；本次用官方类型与夹具验证降级分支，真实 provider 验证列入证据目录的已知限制。
 
 ## 2. 当前事实与根因
 
@@ -27,9 +27,9 @@
 
 | 事实 | 证据 |
 |---|---|
-| 持久目录是 append-only 账本，只记「创建过谁」，不记「谁还在跑」 | `dsh-subagent/lib/types/catalog.js:62`（`subagentCatalogEntries` 遍历全部 `subagent/catalog` 事件、无删除分支）；`projection-types.d.ts` 的 `SubagentCatalogEntry` 只有 `id` / `createdAt` / `mode` / `label`。运行态只在控制面 `SubagentCatalogRow.activity`（`control-types.d.ts:20-27`）与生命周期事件里 |
+| 持久目录是 append-only 账本，只记「创建过谁」，不记「谁还在跑」 | `dsh-subagent/lib/types/catalog.js:62`（`subagentCatalogEntries` 遍历全部 `subagent/catalog` 事件、无删除分支）；`projection-types.d.ts` 的 `SubagentCatalogEntry` 只有 `id` / `createdAt` / `mode` / `label`。运行态来源有三处：活对象 `agents.get(id).status`、控制面 `SubagentCatalogRow.activity`（`control-types.d.ts:20-27`，只用于列表诊断）与生命周期事件 |
 | 终态判不出来：`endStatus` 读 `status / result.status / cause`，官方 `subagent/end` 只带 `stopReason` | `src/subagents/dock.ts:68`；官方 emit `dsh-subagent/lib/index.js:200-205`（`{...identity, stopReason, lastAssistantMessage}`）；`types.d.ts:101` 的 `SubagentRunEndInfo.stopReason`。缺失字段 → `endStatus` 恒返回 `idle` |
-| 所以 dock 当前的实际症状是「永久未运行」，不是「30 秒后复活」 | `dock.ts:151` 读 `listChildren`；`:164` 无 live agent 判 `idle`；`:166` 只在一次 refresh 里把 running→done，下一轮 `previous.status` 已是 done，又回 `idle`。冷启动把历史全画成「未运行」，行永远进不了终态 |
+| 所以 dock 当前的实际症状是「永久未运行」，不是「30 秒后复活」 | `dock.ts:151` 读 `listChildren`；`:164` 无 live agent 判 `idle`；`:166` 收到 end 时 `endStatus(info)` 只认 `stopReason`，rc.2 的 end 已带该字段，实际路径是 running→未运行；若漏收 end，才会出现 running→done→下一轮 `previous.status` 已是 done 又回 `idle`。冷启动把历史全画成「未运行」，行永远进不了终态 |
 | 一旦修好终态映射，「30 秒清理自我复活」立刻暴露 | `dock.ts:172` `finishedAt: previous?.finishedAt ?? now`：行被 `pruneRows`（`:91`）删掉后，下一轮 refresh 从目录/活对象重建，`previous` 为 undefined → 计时重置 → 再等 30 秒，无限循环。已用同逻辑 node 复刻：假设终态在 t=31s 删除，t=32s 重建且 `finishedAt=32000` |
 | 没有上限、没有导航 | `dock.ts:187` 逐行渲染，无 4 行上限、无溢出、无指针、无 press；`renderAllTitle()`（`:203`）无调用方；全仓无子代理详情页 |
 | 历史记录已有落点 | 父对话收到官方 settlement notice（`dsh-subagent/lib/types/continuation-messages.d.ts:26-34`，`SubagentSettledMessageSource`，`form:'notice'`），`src/conversation/controller.ts:253-258` 对任意 notice 都渲染；dock 消失不等于记录丢失 |
@@ -54,7 +54,7 @@
 ### 3.2 本次不做
 
 - 不做整回合后台化（#106），不改官方 subagent 服务、不改 `steer` / `followup` 语义。
-- 不改主对话 transcript 的渲染规则（预算、分组、卡片样式）；只在 `resultMeta` 的 activation 结果上加导航入口。
+- 不改主对话 transcript 的渲染规则（预算、分组、卡片样式）；只在 activation 结果上加导航入口。官方 subagent 工具不产出 `resultMeta`，实现从稳定回执文本 `started subagent <id>` 识别。
 - 不做鼠标悬停、拖选跨视图、不做 dock 用时 / token 计数（ADR 已否决）。
 - 不接管输入框可打印字符。新增键位只有：dock 的 `↑` / `↓` / `Enter` / `→` / `Space` / `x`（`x` 仅 dock 聚焦且仅终态行），以及 Alt+L（全部列表）与 Alt+K（停止本轮，沿用 S12 键位）。
 - 不改 `src/transcript` 的渲染预算与过程分组。
@@ -76,7 +76,7 @@
 ### 4.2 进入与返回
 
 - 进入：点击行，或聚焦后 `Enter` / `→` / `Space`；`external` 行不响应。
-- 结果卡进入：工具结果的 `resultMeta` 为 `{ kind: 'activation', subagentId }` 时，该卡点击/`Enter` 进入对应本地子代理详情（不再切换展开）；其余工具卡维持「点击展开」。
+- 结果卡进入：工具结果带 activation 标识时（`resultMeta` 或官方稳定回执 `started subagent <id>`），该卡点击进入对应本地子代理详情（不再切换展开）；其余工具卡维持「点击展开」。主对话暂无卡片键盘焦点，`Enter` 进卡片不在本次范围（§3.2 不新增键位）。
 - 进入后：dock 与主对话隐藏，顶部一行 `子代理 · 名字 · 状态词`（左侧一个可点击的 `‹ 返回`）。
 - 返回：`Esc` 在输入框、正文、工具详情、发送按钮上都直接退出；**例外**：IME 组合态与问卷/审批焦点优先按 S03 的规则处理，不强行退出。空输入时 `←` 等价；顶部返回按钮等价。
 - 返回落点按来源：从 dock 进 → 回该行；从结果卡进 → 回该结果卡；从列表进 → 回列表该行（再 `Esc` 才关列表）。
@@ -131,7 +131,7 @@ type ViewState =
   | { mode: 'child'; id: string; origin: 'dock' | 'result' | 'list' }
 
 type Address = 'root' | string                 // 子代理 id
-type Draft = { text: string; cursor: number; scrollAnchor: number }  // 复用 DraftStore
+type Draft = { text: string; cursor: number; scrollAnchor: number }  // 复用 DraftStore；scrollAnchor 仍为 0
 
 type DockEntry = {
   id: string
@@ -146,7 +146,8 @@ type DockWindowState = { dismissed: Set<string> }
 ```
 
 - 视图状态、每地址草稿、dock 窗口三者都是纯数据；渲染只读状态，导航由纯函数改状态（可单测）。
-- 草稿**复用** `src/input/drafts.ts` 的 `DraftStore`（`DraftAddress.subagent` 已支持子地址，`tests/unit/d01.test.ts` 已覆盖），不新建第二份存储。
+- 草稿**复用** `src/input/drafts.ts` 的 `DraftStore`（`DraftAddress.subagent` 已支持子地址，`tests/unit/d01.test.ts` 已覆盖），不新建第二份存储；它保存文本与光标。
+- 子代理正文滚动位置另存 `scrollMemory`（按 id 隔离，进程内存）；`DraftStore.scrollAnchor` 保持 0，不把输入框滚动与正文滚动混用。
 - `DockEntry.terminalAt` 只在第一次进入终态时写入，refresh 不得覆盖；同一 id 再次 `subagent/start` 时清零。这是修 I2/I3 的关键。
 - `dockFocusId` 放在 `ViewState`，不塞进 `DockEntry`；`DockWindowState.dismissed` 与渲染行分开。
 
@@ -161,11 +162,12 @@ type DockWindowState = { dismissed: Set<string> }
 | `src/app/App.tsx` | 按 `ViewState` 切换主对话 / 详情 / 列表 |
 | `src/app/nano-app.ts` | 按键优先级、press 分发、`x` 与 Alt+L / Alt+K 路由 |
 | `src/controls/feature-host.ts` | 组装三块，接 `requestRender` |
-| `src/transcript/model.ts` | activation 结果卡识别 `resultMeta` 并暴露子代理导航目标；press 映射 |
-| `src/input/drafts.ts` | 复用现有按地址 `DraftStore`；字段不足才扩展，不新建存储 |
-| `tests/unit/` | 窗口生命周期、状态映射、导航纯函数、dismissed 边界 |
-| `tests/feature/` | 进入 / 返回 / 草稿隔离 / 列表 |
-| `docs/evidence/2026-10-30-subagent-navigation/` | 测试输出 + PTY 截图 + 冷启动 / 30 秒消失录屏 + one-shot 可读性验证结论 |
+| `src/transcript/model.ts` | activation 结果卡识别 `resultMeta` 或官方回执文本并暴露子代理导航目标；press 映射 |
+| `src/input/drafts.ts` | 复用现有按地址 `DraftStore`；本次未改文件 |
+| `tests/unit/` | 窗口生命周期、状态映射、导航纯函数、dismissed 边界、详情 / 列表 / 结果卡 / 输入门控 |
+| `tests/feature/` | 既有子代理 `pruneRows` 夹具；进入 / 返回 / 草稿隔离由 `tests/unit/` 覆盖 |
+| `tests/e2e/` | 真 PTY 启动与子代理 dock 场景（`mock-model.mjs` / `pty-start.py` / `subagent-dock.test.mjs`） |
+| `docs/evidence/2026-10-30-subagent-navigation/` | 测试输出 + PTY 文本捕获（dock / list / detail / 30 秒消失）；无冷启动捕获、无录屏；one-shot / external 真实 provider 验证列为已知限制 |
 
 ## 7. 验收
 
@@ -188,14 +190,19 @@ type DockWindowState = { dismissed: Set<string> }
 - `DOCK_GRACE_MS = 30_000`（沿用 ADR，不采用设计稿的 1.5 秒）。
 - dock 上限 4 行、溢出 1 行（设计稿值）。
 - `dismissed` 在会话内按 id 保存，规模与目录同阶，不设 64 截断；同一 id `subagent/start` 清除 `dismissed` 与 `terminalAt`。
+- `subagent/start` 后目录可能晚一拍：先建占位行，保留最多 `PROVISIONAL_MS = 10_000`；目录列出后以 `listChildren(rootId)` 的直接子代理为准，外部与后代行不会常驻。
 - 状态灯字形沿用现状：`●` / `✓` / `■` / `✕` / `○`；颜色与闪烁按 S13 design-contract：running 亮/暗 0.8s 闪烁、completed 绿、aborted/refusal/max-tokens 黄、error 红、unknown/inactive muted；reduced-motion 开启时闪烁静止（检测方式由 design-contract 定义）。
 - 顶部标识格式：`子代理 · <名字> · <状态词>`。
 - 列表标题 `N` 只数本地直接子代理，不含 external 与已出列；行数可大于 N（递归后代）。
-- 详情正文数据源优先 `agents.get(childId).session`；拿不到时走官方历史投影；仍拿不到则显示诊断。
+- 详情正文数据源优先 `agents.get(childId).session`；拿不到时走官方历史投影；仍拿不到则显示诊断。子代理正文滚动位置按 id 存 `scrollMemory`，不写 `DraftStore.scrollAnchor`。
 - 键盘优先级：列表 / 详情 > 全局 > 输入框；`Esc` 永远只退一层；IME 组合态与问卷/审批焦点优先按 S03。
 - 键位：dock 聚焦 `↑` / `↓`（草稿为空时），`Enter` / `→` / `Space` 进入，`x` 仅对终态行；`Alt+L` 打开全部列表；详情内 `Alt+K` 停止本轮，`Alt+Enter` 插话；空输入 `←` / 顶部按钮返回。
 - `x` 只对 dock 聚焦行生效，不对列表批量停止，也不在详情输入框里拦截字符。
-- 结果卡识别：`resultMeta.kind === 'activation'` 且带 `subagentId`；只对本地子代理生效，external 不导航。
+- 结果卡识别：优先 `resultMeta.kind === 'activation'` 且带 `subagentId`；官方工具不产出该字段时，按工具名 `subagent` + 稳定回执文本 `started subagent <id>` 识别；只对本地子代理生效，external 不导航。主视图里导航被拒时（external）回落到该工具卡自己的展开；子详情内的 activation 卡在 maxDepth>1 时仍不展开（当前默认配置不可达）。
+- 只读输入门控：`inputEditable` 为 false 时，paste、Shift+Enter / Ctrl+Enter / Alt+Enter 换行、可打印字符都不得改写输入；覆盖只读 composer、一次性 / unknown 详情与列表打开态。
+- 详情输入可用时 `↑` / `↓` 翻该子地址历史；`Home` / `End` 归输入框行首 / 行尾。只读或输入隐藏时 `Home` / `End` 滚正文。`Ctrl+End` 与 `Shift+↑` / `↓` 是全局 transcript 滚动键，详情里改为滚子正文，不漏给主对话。
+- 列表返回保留进入前的 `listScrollTop`，并把焦点行拉回视口；结果卡返回保留主对话滚动位置。
+- 一次性可读性探测只在成功时缓存；瞬时失败下轮刷新会重试，不把该子代理整场锁成不可读。
 - 列表数据源 `subagents.listDescendants(rootId)`：读取中显示「读取中…」，失败显示诊断行；diagnostic 行不可进入。
 - parent live 判定：exact parent 的 `agents.get(rootId)` 存在；child live 判定 `agents.get(childId)` 存在。
 - 子代理发送：`Enter` → `delivery: 'queue'`；`Alt+Enter` → `delivery: 'steer'`；发送失败保留草稿。
@@ -212,6 +219,9 @@ type DockWindowState = { dismissed: Set<string> }
 | 每地址界面状态 | 草稿、光标、滚动按子代理隔离 | 切换子代理串内容，返回后主对话草稿被覆盖 |
 | dock 展示窗口 | 把持久账本变成「最近活跃」的有限窗口 | 只能把历史全画出来、永远停在「未运行」，终态映射修好后又会复活 |
 | 全部子代理列表 | 消失后的回看入口与计数 | 子代理一消失就再也找不到，只能翻父对话回执 |
+| 一次性可读性探测 | 进入详情前确认官方历史投影可读，决定「只读详情」还是「不可导航只读行」 | 不可读的一次性会话也会进详情，正文空白且无法返回有效信息 |
+| 按地址输入历史 | 详情输入框只翻该子代理的用户消息，不串主会话历史 | 在子代理里按 ↑ 会把主会话历史发给子代理 |
+| activation 回执文本识别 | 官方工具不产出 `resultMeta` 时仍能识别结果卡并进入详情 | 结果卡入口在真实会话里不可达，只能展开工具卡 |
 
 ## 10. 审核修订记录
 
@@ -237,3 +247,39 @@ type DockWindowState = { dismissed: Set<string> }
 | 16 | 事实澄清 | settlement notice 被误称「续聊消息」 | 已修：§2/§4.5/A12 统一改称 settlement notice |
 | 17 | 事实澄清 | Claude Code 引用不在本仓，无法核对 | 已修：§2 标为外部背景，不作为实施依据 |
 | 18 | 建议 | §6 缺 `transcript/model.ts`、`drafts.ts`；A5/A8/A10/A11 依赖未定义语义 | 已修：§6 补齐；A5/A8/A10/A11 与正文同步 |
+
+2026-10-31 重审（用户点「重审」；2 个只读 agent：规格符合性 + 对抗找 bug）。原始结论见 [PR #120 评论](https://github.com/nano-sun99/dsh-tui-nano/pull/120#issuecomment-6539631906)。
+
+| # | 严重度 | 发现 | 处置 |
+|---|---|---|---|
+| R1 | 阻断 | 官方 `subagent` 工具不产出 `resultMeta`，结果卡入口真实不可达；且主对话无卡片键盘焦点 | 已修：按工具名 + 稳定回执 `started subagent <id>` 识别；§4.2 改为点击进入并说明 `Enter` 不在本次范围 |
+| R2 | 阻断 | 同一 id 续聊再次 `subagent/start` 不清已有行 `terminalAt`，运行中行会被 30 秒规则出列并 `dismissed` | 已修：start 同时清行内 `terminalAt` 与 `status`；补「行仍存在时再次 start」用例 |
+| R3 | 建议 | external / 后代 start 会进 dock | 已修：start 过滤 `local === false`；占位行最多保留 10 秒，目录列出后以 `listChildren(rootId)` 的直接子代理为准；补 external / 后代用例 |
+| R4 | 建议 | 详情里 `↑` 落到主会话历史，会把主历史发给子代理 | 已修：输入可用时 `↑` / `↓` 只翻子地址历史；补真实按键路径用例 |
+| R5 | 建议 | 从列表进入详情再返回，列表滚回顶部、焦点行在视口外 | 已修：保存进入前主视图，返回恢复 `listScrollTop` 并 `ensureListVisible`；补 30 行列表用例 |
+| R6 | 建议 | 不可读一次性行第二次 `Enter` 反而进入详情 | 已修：只有成功才缓存 `true`，失败仍拦截并允许重试；补二次 Enter 用例 |
+| R7 | 建议 | 主草稿非空时返回，`x` 被 dock 吃掉并误删终态行 | 已修：主草稿非空时不恢复 dock 焦点，`x` 落回输入框；补用例 |
+| R8 | 建议 | dock 行出列后 `dockFocusId` 残留，`Enter` 打开已消失详情 | 已修：焦点候选校验 + `activateDockFocus` 兜底；补用例 |
+| R9 | 建议 | diagnostic 行只写「诊断」，不显示 `corrupt` / `unsupported` / `unavailable` | 已修：渲染 `诊断 · <reason>`；更新断言 |
+| R10 | 建议 | unknown mode 详情只读但不显示原因 | 已修：详情顶部渲染原因行；补渲染断言 |
+| R11 | 建议 | 一次性可读性一次探测失败后整场会话锁死 | 已修：失败不缓存为终态，下轮刷新重试；补瞬时失败用例 |
+| R12 | 建议 | 只读 composer / 列表打开时 paste 与 Shift+Enter 仍能改写输入 | 已修：新增 `inputEditable` 门控，paste / 换行 / 可打印字符都不写入；补 NanoApp 用例 |
+| R13 | 建议 | 详情内 Home/End 被正文滚动占用，覆盖输入框行首/行尾 | 已修：输入可用时交给 S01；只读时才滚正文 |
+| R14 | 建议 | dock 溢出行可聚焦但无焦点标识 | 已修：溢出行渲染 `›` 与焦点背景；补渲染用例 |
+| R15 | 事实澄清 | §2 运行态来源漏写活对象；running→done→idle 描述不准确 | 已修：§2 两行改写 |
+| R16 | 事实澄清 | §9 机制清单缺一次性可读性探测、按地址历史、回执文本识别 | 已修：机制清单补 3 行，头部改为 7 个新增机制 |
+| R17 | 事实澄清 | `DraftStore.scrollAnchor` 未被使用，正文滚动另存 | 已修：§5 / §8 写明文本光标用 `DraftStore`、正文滚动用 `scrollMemory` |
+| R18 | 事实澄清 | IME 组合态无应用内实现或真实验证 | 已记录：证据目录已知限制；实现依赖终端吞键 |
+| R19 | 事实澄清 | A10 一次性可读性未在真实 provider 下先验 | 已记录：§1 与证据目录写明默认 provider 集未产出 one-shot / external，真实 provider 验证为已知限制 |
+| R20 | 事实澄清 | I1「首次观察到 running」被实现成「活对象存在」 | 已修：只在 `deriveStatus(live) === 'running'` 时建行；补 idle live 用例 |
+| R21 | 事实澄清 | 证据映射有 4 处与测试实际不符；§6 范围外变更未列 | 已修：证据 README 与 §6 按实际测试 / 文件更新 |
+| R22 | 事实澄清 | 主输入占位符多一个前导空格 | 已修：`App.tsx` 默认占位改为 `输入消息…` |
+
+2026-10-31 修订后轻审（用户点「轻审」；1 个只读 agent：对抗找 bug + 范围外对账）。原始结论见 [PR #120 评论](https://github.com/nano-sun99/dsh-tui-nano/pull/120#issuecomment-6541629526)。
+
+| # | 严重度 | 发现 | 处置 |
+|---|---|---|---|
+| R23 | 建议 | 可编辑详情里 `Ctrl+End` 漏给主对话，返回后主对话停在底部 | 已修：详情消费 `Ctrl+End` 与 `Shift+↑` / `↓` 滚子正文；补用例 |
+| R24 | 建议 | unknown 详情多一行原因，滚动上限少算 1 行，正文第一行到不了 | 已修：`childViewHeight()` 扣掉原因行；补 Home 到第一行用例 |
+| R25 | 建议 | 新 NanoApp 用例在挂起渲染未完成时卸载，触发被吞掉的 Yoga 越界 | 已修：用例在 unmount 前 `settle()`；错误行消失 |
+| R26 | 事实澄清 | external activation 卡导航失败后既不导航也不展开 | 已修主视图：导航被拒时回落到该工具卡的展开；子详情内同类卡（maxDepth>1）仍不展开，已记为已知限制；补 App 用例 |

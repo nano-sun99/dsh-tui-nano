@@ -111,6 +111,8 @@ export interface FeatureHost {
   inputHidden?(): boolean
   /** 输入框是否接收按键；false 时不停靠硬件光标（面板/终端接管）。 */
   inputActive?(): boolean
+  /** 输入内容是否可改；只读详情 / 列表打开时为 false，paste 与换行也不得写入。 */
+  inputEditable?(): boolean
   body?(): ReactNode
   /** 补全弹层：正文与状态行之间，独立占行。 */
   completionBody?(): ReactNode
@@ -246,7 +248,7 @@ export class NanoApp {
           if (this.decisions.hasDecision) {
             if (this.decisionCustomMode()) this.clearNoticeOnEdit()
             this.decisions.typeCustom(event.text)
-          } else {
+          } else if (this.options.features?.inputEditable?.() !== false) {
             this.clearNoticeOnEdit()
             this.input.insert(event.text)
           }
@@ -305,6 +307,7 @@ export class NanoApp {
         return
       }
       case 'input.newline':
+        if (this.options.features?.inputEditable?.() === false) return
         this.clearNoticeOnEdit()
         this.input.insert('\n')
         return
@@ -405,12 +408,24 @@ export class NanoApp {
       this.options.renderer.selection = undefined
       return
     }
-    if (key.name === 'char' && key.text && !key.ctrl && !key.alt && !key.meta) {
+    if (
+      key.name === 'char' &&
+      key.text &&
+      !key.ctrl &&
+      !key.alt &&
+      !key.meta &&
+      this.options.features?.inputEditable?.() !== false
+    ) {
       this.clearNoticeOnEdit()
       this.input.insert(key.text)
       return
     }
-    if (key.alt && key.name === 'char' && key.text) {
+    if (
+      key.alt &&
+      key.name === 'char' &&
+      key.text &&
+      this.options.features?.inputEditable?.() !== false
+    ) {
       this.clearNoticeOnEdit()
       this.input.insert(key.text)
       return
@@ -531,6 +546,19 @@ export class NanoApp {
       this.scheduleRender()
       return
     }
+    // activation 卡的 pressId 指向子代理详情；导航拒绝时（external / 非主视图）
+    // 回落到该工具卡自己的展开，不把 external 卡变成点不动。
+    if (id.startsWith('subagent:result:')) {
+      const unit = this.options.conversation.model
+        .units({ width: this.options.terminal.width, expanded: this.expanded })
+        .find((item) => item.pressId === id)
+      if (unit !== undefined) {
+        if (this.expanded.has(unit.id)) this.expanded.delete(unit.id)
+        else this.expanded.add(unit.id)
+        this.scheduleRender()
+      }
+      return
+    }
     if (id.startsWith('decision:approval:')) {
       const index = Number(id.slice('decision:approval:'.length))
       const option = APPROVAL_OPTIONS[index]
@@ -631,10 +659,14 @@ export class NanoApp {
         : {}),
     }
     // 内容变少、窗口变高都会让旧的偏移越过顶部；在出口统一夹住。
-    this.maxScroll = Math.max(0, total - transcriptBodyHeight(snapshot))
-    if (this.scrollOffset > this.maxScroll) {
-      this.scrollOffset = this.maxScroll
-      if (this.scrollOffset === 0) this.stickBottom = true
+    // 详情 / 列表替换正文时不夹主对话偏移：它们的正文高度不同，
+    // 夹一次会让返回后的主对话少几行（§4.2 返回必须复原）。
+    if (snapshot.featureFullBody !== true) {
+      this.maxScroll = Math.max(0, total - transcriptBodyHeight(snapshot))
+      if (this.scrollOffset > this.maxScroll) {
+        this.scrollOffset = this.maxScroll
+        if (this.scrollOffset === 0) this.stickBottom = true
+      }
     }
     return this.scrollOffset === snapshot.scrollOffset && this.stickBottom === snapshot.stickBottom
       ? snapshot

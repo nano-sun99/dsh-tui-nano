@@ -64,6 +64,27 @@ describe('dock 渲染', () => {
     expect(dock.render(60, 's1')).not.toBeNull()
   })
 
+  it('溢出行聚焦时也有指针，键盘焦点可见', async () => {
+    const entries = Array.from({ length: 6 }, (_, index) => ({
+      id: `s${index}`,
+      mode: 'continuable',
+      label: `任务 ${index}`,
+    }))
+    const fake = fakeCtx(entries)
+    const dock = new SubagentDock({
+      ctx: fake.ctx,
+      rootId: 'root',
+      onChange: () => {},
+      pollMs: 1e9,
+    })
+    dock.start()
+    for (const entry of entries) fake.emit('subagent/start', { id: entry.id })
+    await dock.refresh()
+    const line = render(dock.render(60, 'overflow')).find((text) => text.includes('还有 2'))
+    expect(line).toBeDefined()
+    expect(line?.startsWith('›')).toBe(true)
+  })
+
   it('终态行显示完成灯与状态词', async () => {
     const fake = fakeCtx([{ id: 'a', mode: 'continuable', label: '任务 A' }])
     const dock = new SubagentDock({
@@ -136,7 +157,7 @@ describe('全部子代理列表渲染', () => {
     expect(flat).toContain('任务 A')
     expect(flat).toContain('一次性')
     expect(flat).toContain('外部')
-    expect(flat).toContain('诊断')
+    expect(flat).toContain('诊断 · corrupt')
     expect(flat).toContain('└ 后代任务')
     expect(flat).toContain('×')
   })

@@ -3,6 +3,7 @@ import {
   DOCK_GRACE_MS,
   type DockRow,
   deriveStatus,
+  PROVISIONAL_MS,
   pruneRows,
   SubagentDock,
   statusWord,
@@ -23,11 +24,13 @@ function row(id: string, status: DockRow['status'], terminalAt?: number): DockRo
 function fakeCtx(options: {
   entries?: Array<{ id: string; mode: string; label?: string }>
   live?: Set<string>
+  liveStatus?: Record<string, string>
 }) {
   const handlers = new Map<string, (info: any) => void>()
   const state = {
     entries: options.entries ?? [],
     live: options.live ?? new Set<string>(),
+    liveStatus: options.liveStatus ?? {},
   }
   const ctx = {
     get(name: string) {
@@ -35,7 +38,10 @@ function fakeCtx(options: {
         return { listChildren: async () => state.entries }
       }
       if (name === 'agents') {
-        return { get: (id: string) => (state.live.has(id) ? { status: 'running' } : undefined) }
+        return {
+          get: (id: string) =>
+            state.live.has(id) ? { status: state.liveStatus[id] ?? 'running' } : undefined,
+        }
       }
       return undefined
     },
@@ -162,10 +168,12 @@ describe('SubagentDock 展示窗口', () => {
     now += DOCK_GRACE_MS
     await dock.refresh()
     expect(dock.entryIds()).toEqual([])
-    // 目录里仍有该 id，但已出列，refresh 不复活。
-    now += 1
-    await dock.refresh()
-    expect(dock.entryIds()).toEqual([])
+    // 目录里仍有该 id，但已出列，连续 3 次 refresh 都不复活。
+    for (let index = 0; index < 3; index++) {
+      now += 1
+      await dock.refresh()
+      expect(dock.entryIds()).toEqual([])
+    }
   })
 
   it('未知 stopReason 显示未运行，但仍保留 30 秒', async () => {
@@ -232,6 +240,70 @@ describe('SubagentDock 展示窗口', () => {
     now += DOCK_GRACE_MS - 1
     await dock.refresh()
     expect(dock.entryIds()).toEqual(['a'])
+  })
+
+  it('同一 id 在行仍存在时再次 start，必须清掉旧 terminalAt，运行中不能被 30 秒规则出列', async () => {
+    let now = 1_000_000
+    const fake = fakeCtx({ entries: [{ id: 'a', mode: 'continuable' }] })
+    const dock = startDock({
+      ctx: fake.ctx,
+      rootId: 'root',
+      onChange: () => {},
+      now: () => now,
+    })
+    fake.emit('subagent/start', { id: 'a' })
+    await dock.refresh()
+    fake.emit('subagent/end', { id: 'a', stopReason: 'completed' })
+    await dock.refresh()
+    expect(dock.terminalAtOf('a')).toBe(now)
+    now += 10_000
+    // 可续聊会话冷恢复：同一 id 再次 start，行还在。
+    fake.emit('subagent/start', { id: 'a' })
+    await dock.refresh()
+    expect(dock.terminalAtOf('a')).toBeUndefined()
+    expect(dock.statusOf('a')).toBe('running')
+    now += DOCK_GRACE_MS
+    await dock.refresh()
+    expect(dock.entryIds()).toEqual(['a'])
+    expect(dock.dismissedIds().has('a')).toBe(false)
+  })
+
+  it('external 的 start 不进 dock', async () => {
+    const fake = fakeCtx({ entries: [{ id: 'ext', mode: 'external' }] })
+    const dock = startDock({ ctx: fake.ctx, rootId: 'root', onChange: () => {} })
+    fake.emit('subagent/start', { id: 'ext', local: false })
+    await dock.refresh()
+    expect(dock.entryIds()).toEqual([])
+  })
+
+  it('后代 start 只短暂占位，目录始终不列出时窗口过后不进 dock', async () => {
+    let now = 1_000_000
+    const fake = fakeCtx({ entries: [] })
+    const dock = startDock({
+      ctx: fake.ctx,
+      rootId: 'root',
+      onChange: () => {},
+      now: () => now,
+    })
+    fake.emit('subagent/start', { id: 'deep', local: true })
+    // 目录晚一拍时先占位，避免键盘焦点竞态。
+    expect(dock.entryIds()).toEqual(['deep'])
+    await dock.refresh()
+    expect(dock.entryIds()).toEqual(['deep'])
+    now += PROVISIONAL_MS
+    await dock.refresh()
+    expect(dock.entryIds()).toEqual([])
+  })
+
+  it('活对象存在但未运行，不建行（I1 只认观察到的 running）', async () => {
+    const fake = fakeCtx({
+      entries: [{ id: 'idle', mode: 'continuable' }],
+      live: new Set(['idle']),
+      liveStatus: { idle: 'idle' },
+    })
+    const dock = startDock({ ctx: fake.ctx, rootId: 'root', onChange: () => {} })
+    await dock.refresh()
+    expect(dock.entryIds()).toEqual([])
   })
 
   it('窗口最多 4 行 + 1 个溢出入口，焦点在整套行上循环', async () => {

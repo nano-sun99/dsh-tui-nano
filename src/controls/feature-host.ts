@@ -249,6 +249,11 @@ export class Features implements FeatureHost {
     return true
   }
 
+  /** 只读详情 / 列表打开时，输入内容不可改（paste 与换行都不得写入）。 */
+  inputEditable(): boolean {
+    return this.navigation?.inputEditable ?? true
+  }
+
   handleKey(key: Key): boolean {
     // 面板打开时先独占按键：否则 Ctrl+T/J/L/I 会在它上面再叠开别的面板。
     if (this.modelPanel?.open && this.modelPanel.handleKey(key)) return true

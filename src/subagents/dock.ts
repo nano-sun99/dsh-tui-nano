@@ -10,6 +10,8 @@ import { displayWidth, truncateText } from '../render/text.ts'
 import { activeTheme, type Theme } from '../theme/theme.ts'
 
 export const DOCK_GRACE_MS = 30_000
+/** start 后目录尚未列出时的占位行保留窗口；避免键盘焦点竞态，也防止后代行常驻。 */
+export const PROVISIONAL_MS = 10_000
 const BLINK_MS = 400
 
 export type DockStatus = 'running' | 'done' | 'killed' | 'error' | 'idle'
@@ -118,6 +120,7 @@ export class SubagentDock {
   private rows: DockRow[] = []
   private readonly dismissed = new Set<string>()
   private readonly started = new Set<string>()
+  private readonly startedAt = new Map<string, number>()
   private readonly terminal = new Map<string, { status: DockStatus; at: number }>()
   private readonly statuses = new Map<string, DockStatus>()
   private timer: NodeJS.Timeout | undefined
@@ -148,18 +151,24 @@ export class SubagentDock {
         on('subagent/start', (info: any) => {
           const id = rowId(info)
           if (id === '') return
+          // external 激活共享同一事件，但 dock 只列本地直接子代理（ADR/§4.1）。
+          // 直接父子关系由 refresh 的 listChildren 过滤；这里只记录 start 授权。
+          if (info?.local === false) return
           this.started.add(id)
+          this.startedAt.set(id, this.now())
           this.dismissed.delete(id)
           this.terminal.delete(id)
           this.statuses.set(id, 'running')
-          if (!this.rows.some((row) => row.id === id)) {
-            this.rows.push({
-              id,
-              name: id,
-              mode: 'unknown',
-              local: true,
-              status: 'running',
-            })
+          // 行已存在时也必须复位 terminalAt：续聊会以同一 id 再次 start。
+          const existing = this.rows.some((row) => row.id === id)
+          this.rows = this.rows.map((row) => {
+            if (row.id !== id) return row
+            const { terminalAt: _terminalAt, ...rest } = row
+            return { ...rest, status: 'running' }
+          })
+          // 目录可能晚一拍；先建占位行让 dock 焦点与按键立刻可用。
+          if (!existing) {
+            this.rows.push({ id, name: id, mode: 'unknown', local: true, status: 'running' })
           }
           void this.refresh()
           // 目录里的 label 可能晚一拍才持久化；补一次，别让 dock 长时间显示 id。
@@ -242,9 +251,10 @@ export class SubagentDock {
         const old = previous.get(id)
         const ended = this.terminal.get(id)
         const live = this.options.ctx.get?.('agents')?.get?.(id)
-        // 目录只提供身份；没有 start、没有活对象、也没有旧行时，不建行。
+        const liveRunning = live !== undefined && deriveStatus(live) === 'running'
+        // 目录只提供身份；没有 start、没有「观察到的 running」、也没有旧行时，不建行。
         // 单独收到 end 不建行（I1：入列只靠事件 / 首次观察到 running）。
-        if (!old && !live && !this.started.has(id)) continue
+        if (!old && !this.started.has(id) && !liveRunning) continue
         const status: DockStatus =
           ended?.status ?? (live ? deriveStatus(live) : (old?.status ?? 'running'))
         const terminalAt = ended?.at ?? old?.terminalAt
@@ -258,11 +268,21 @@ export class SubagentDock {
           ...(terminalAt !== undefined ? { terminalAt } : {}),
         })
       }
-      // 目录暂时读不到刚 start 的行时，保留占位行，等下一轮补 label。
+      // 目录是直接父子关系的唯一来源；但目录可能晚一拍。只给刚 start 的行
+      // 一个短窗口（10 秒）兜底，避免键盘焦点竞态；后代 start 事件也会到达
+      // 根作用域，窗口过后仍不在 listChildren(rootId) 里就丢弃。
       for (const row of this.rows) {
         if (next.some((item) => item.id === row.id)) continue
         if (this.dismissed.has(row.id)) continue
-        if (this.started.has(row.id) && !this.terminal.has(row.id)) next.push(row)
+        const startedAt = this.startedAt.get(row.id)
+        if (
+          startedAt === undefined ||
+          this.terminal.has(row.id) ||
+          now - startedAt >= PROVISIONAL_MS
+        ) {
+          continue
+        }
+        next.push(row)
       }
       const kept = pruneRows(next, now)
       for (const row of next) {
@@ -348,7 +368,20 @@ export class SubagentDock {
         ? [
             createElement(
               Box,
-              { key: 'overflow', flexDirection: 'row', width, onPress: 'subagent:overflow' },
+              {
+                key: 'overflow',
+                flexDirection: 'row',
+                width,
+                onPress: 'subagent:overflow',
+                ...(focusId === 'overflow'
+                  ? { backgroundColor: [...theme.focusBg] as [number, number, number] }
+                  : {}),
+              },
+              createElement(
+                Text,
+                { color: [...theme.faint] as [number, number, number], wrap: false },
+                focusId === 'overflow' ? '› ' : '  ',
+              ),
               createElement(
                 Text,
                 { color: [...theme.accent] as [number, number, number], wrap: false },

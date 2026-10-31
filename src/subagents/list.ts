@@ -174,15 +174,11 @@ function renderListRow(row: ListRow, width: number, theme: Theme, focused: boole
   const indent = row.indent * 2
   const depthMark = row.depth > 1 ? '└ ' : ''
   const suffix = row.modeLabel === '' ? '' : ` · ${row.modeLabel}`
-  const fixed =
-    2 +
-    indent +
-    depthMark.length +
-    2 +
-    (row.diagnostic === undefined ? statusWord(row.status).length + 2 : 0)
-  const budget = Math.max(1, width - fixed - suffix.length)
   const light = row.diagnostic === undefined ? statusLight(row.status) : '⚠'
-  const status = row.diagnostic === undefined ? statusWord(row.status) : '诊断'
+  // A11：诊断行必须显示原因，而不是只写「诊断」。
+  const status = row.diagnostic === undefined ? statusWord(row.status) : `诊断 · ${row.diagnostic}`
+  const fixed = 2 + indent + depthMark.length + 2 + status.length + 2
+  const budget = Math.max(1, width - fixed - suffix.length)
   return createElement(
     Box,
     {

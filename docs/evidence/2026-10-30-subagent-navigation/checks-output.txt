@@ -1,6 +1,8 @@
 
+
 > dsh-tui-nano@0.2.0 typecheck
 > tsc -p tsconfig.json --noEmit
+
 
 
 > dsh-tui-nano@0.2.0 lint
@@ -116,9 +118,34 @@ tests/unit/model-panel.test.ts:372:29 lint/correctness/noUnusedFunctionParameter
     374 374 │     })
   
 
-Checked 113 files in 43ms. No fixes applied.
+tests/unit/sv-app.test.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    240 240 │         'subagent:result:ext-1',
+    241 241 │       )
+    242     │ - ····expect(
+    243     │ - ······(harness.app·as·never·as·{·expanded:·Set<string>·}).expanded.has(unit?.id·??·''),
+    244     │ - ····).toBe(true)
+        242 │ + ····expect((harness.app·as·never·as·{·expanded:·Set<string>·}).expanded.has(unit?.id·??·'')).toBe(
+        243 │ + ······true,
+        244 │ + ····)
+    245 245 │       await settle()
+    246 246 │       harness.renderer.unmount()
+  
+
+Checked 113 files in 56ms. No fixes applied.
+Found 1 error.
 Found 5 warnings.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+
+
 
 > dsh-tui-nano@0.2.0 build
 > tsc -p tsconfig.json
 
+
+keymap-docs: 两个 README 均为最新

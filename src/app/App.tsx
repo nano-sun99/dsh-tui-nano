@@ -214,7 +214,7 @@ function buildInputSpans(
   withCaret = snapshot.caretActive !== false,
 ): Span[] {
   const disabled = snapshot.decisions.hasDecision || snapshot.inputDisabled === true
-  const placeholder = ` ${snapshot.inputPlaceholder ?? ' 输入消息…'}`.trimEnd()
+  const placeholder = ` ${snapshot.inputPlaceholder ?? '输入消息…'}`.trimEnd()
   const chars = graphemes(snapshot.text)
   const before = chars.slice(0, snapshot.cursor).join('')
   const after = chars.slice(snapshot.cursor).join('')
