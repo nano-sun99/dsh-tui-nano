@@ -1,11 +1,11 @@
 # ADR-20261022-subagent-dock-lifecycle：dock 无标题，官方终态 30 秒后统一清理
 
-- 状态：生效中
+- 状态：已被取代
 - 日期：2026-10-22
 - 决策人：用户
 - 适用范围：子代理 dock 的标题、行内容、状态词与完成行生命周期
 - 取代：`2026-10-20-nano-v1` S12 的「可续聊子代理普通回合完成不清理」「dock 保留 N local agents/活动/用时」条款
-- 被取代：无
+- 被取代：[ADR-20261031-subagent-turn-settlement](2026-10-31-subagent-turn-settlement.md)
 - 决策来源：`docs/specs/2026-10-22-nano-visual-followup/README.md` §3.2；用户 2026-10-22 选择「完全按设计稿」「30 秒后消失」
 
 ## 决定
