@@ -113,6 +113,10 @@ export interface FeatureHost {
   inputActive?(): boolean
   /** 输入内容是否可改；只读详情 / 列表打开时为 false，paste 与换行也不得写入。 */
   inputEditable?(): boolean
+  /** 状态栏之后、终端最底部的 dock；与 body() 的全文面板分开。 */
+  dockBody?(): ReactNode
+  /** dock 占用的终端行数；从正文高度扣除。 */
+  dockRows?(): number
   body?(): ReactNode
   /** 补全弹层：正文与状态行之间，独立占行。 */
   completionBody?(): ReactNode
@@ -617,6 +621,7 @@ export class NanoApp {
     const contextRatio = occupancyRatio(this.options.core.ctx, this.options.conversation.agent)
     const completionRows = this.options.features?.completionRows?.() ?? 0
     const modelPanelRows = this.options.features?.modelPanelRows?.() ?? 0
+    const dockRows = this.options.features?.dockRows?.() ?? 0
     const inputPlaceholder = this.options.features?.inputPlaceholder?.()
     const base: AppSnapshot = {
       transcript: this.options.conversation.model,
@@ -640,6 +645,7 @@ export class NanoApp {
       ...(contextRatio !== undefined ? { contextRatio } : {}),
       ...(completionRows > 0 ? { completionRows } : {}),
       ...(modelPanelRows > 0 ? { modelPanelRows } : {}),
+      ...(dockRows > 0 ? { dockRows } : {}),
       ...(inputPlaceholder !== undefined ? { inputPlaceholder } : {}),
       ...(this.options.features?.inputDisabled?.() === true ? { inputDisabled: true } : {}),
       ...(this.options.features?.inputHidden?.() === true ? { inputHidden: true } : {}),
@@ -648,8 +654,10 @@ export class NanoApp {
     }
     // 正文区高度先算好，S02 的详情 / 列表才能按同一高度裁剪。
     this.currentBodyHeight = transcriptBodyHeight(base)
+    const dockBody = this.options.features?.dockBody?.()
     const snapshot: AppSnapshot = {
       ...base,
+      ...(dockBody !== undefined && dockBody !== null ? { dockBody } : {}),
       ...(this.options.features?.body ? { featureBody: this.options.features.body() } : {}),
       ...(this.options.features?.completionBody
         ? { completionBody: this.options.features.completionBody() }

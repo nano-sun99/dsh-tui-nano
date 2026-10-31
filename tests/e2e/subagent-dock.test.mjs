@@ -113,7 +113,13 @@ test('真实 PTY：subagent 工具启动子代理后 dock 入列并显示状态'
     const screen = readFileSync(out, 'utf8').replaceAll(home, '<home>')
     assert.match(screen, /父任务完成：子任务已分派。/, '父对话应收到最终回复')
     assert.match(screen, /查找配置依赖/, 'dock 应显示子代理名字')
-    assert.match(screen, /(执行中|完成)/, 'dock 应显示状态词')
+    const final = new Screen(100, 30)
+    final.feed(screen)
+    const lines = final.lines()
+    const dockIndex = lines.findLastIndex((line) => line.includes('查找配置依赖'))
+    const statusIndex = lines.findLastIndex((line) => line.includes('Enter 发送 · Ctrl+C 退出'))
+    assert.ok(dockIndex > statusIndex, 'dock 应在状态栏之后')
+    assert.match(lines[dockIndex] ?? '', /完成/, 'turn/end 后 dock 应显示完成')
     saveEvidence('pty-dock', screen)
   } finally {
     if (mock) mock.child.kill('SIGKILL')
@@ -128,7 +134,19 @@ function runSubagentScreen() {
   return { home, dshHome, out }
 }
 
-function spawnScreen({ home, dshHome, out, port, sendUntil, keys, keysUntil, keysWait, root }) {
+function spawnScreen({
+  home,
+  dshHome,
+  out,
+  port,
+  sendUntil,
+  keys,
+  keysUntil,
+  keysWait,
+  root,
+  cols = 100,
+  rows = 30,
+}) {
   const args = [
     'tests/e2e/pty-start.py',
     '--out',
@@ -144,9 +162,9 @@ function spawnScreen({ home, dshHome, out, port, sendUntil, keys, keysUntil, key
     '--send-until',
     sendUntil,
     '--cols',
-    '100',
+    String(cols),
     '--rows',
-    '30',
+    String(rows),
   ]
   if (keys) {
     args.push('--keys', keys, '--keys-wait', String(keysWait ?? 3))
@@ -160,6 +178,38 @@ function spawnScreen({ home, dshHome, out, port, sendUntil, keys, keysUntil, key
     timeout: 120000,
   })
 }
+
+test('真实 PTY：60 列下 dock 仍在状态栏之后，不压输入', async () => {
+  const frame = runSubagentScreen()
+  let mock
+  try {
+    mock = await startMock('subagent')
+    const result = spawnScreen({
+      ...frame,
+      port: mock.port,
+      sendUntil: '父任务完成',
+      keys: 'esc',
+      keysWait: 2,
+      cols: 60,
+      root: 'subagent-dock-60-e2e',
+    })
+    assert.equal(result.status, 0, `pty-start.py 失败：${result.stderr}`)
+    const screen = readFileSync(frame.out, 'utf8').replaceAll(frame.home, '<home>')
+    const final = new Screen(60, 30)
+    final.feed(screen)
+    const lines = final.lines()
+    const inputIndex = lines.findLastIndex((line) => line.includes('输入消息'))
+    const statusIndex = lines.findLastIndex((line) => line.includes('Enter 发送'))
+    const dockIndex = lines.findLastIndex((line) => line.includes('查找配置依赖'))
+    assert.ok(inputIndex >= 0, '输入框应可见')
+    assert.ok(statusIndex > inputIndex, '状态栏应在输入框之后')
+    assert.ok(dockIndex > statusIndex, 'dock 应在状态栏之后')
+    saveEvidence('pty-dock-60', screen)
+  } finally {
+    if (mock) mock.child.kill('SIGKILL')
+    rmSync(frame.home, { recursive: true, force: true })
+  }
+})
 
 test('真实 PTY：Alt+L 打开全部子代理列表并显示计数', async () => {
   const frame = runSubagentScreen()
@@ -205,7 +255,7 @@ test('真实 PTY：从 dock 进入详情，顶部标识与输入占位按设计�
     const final = new Screen(100, 30)
     final.feed(screen)
     const flat = final.lines().join('\n')
-    assert.match(flat, /子代理 · 查找配置依赖/, '详情顶部应显示名字')
+    assert.match(flat, /← 子代理 查找配置依赖/, '详情顶部应显示「← 子代理 名字」')
     assert.match(flat, /给 查找配置依赖 发送消息/, '详情输入框应显示设计稿占位')
     assert.match(flat, /子任务：核对配置依赖/, '详情应显示 child 正文')
     assert.doesNotMatch(flat, /读取中…/, '详情不应停在读取中')

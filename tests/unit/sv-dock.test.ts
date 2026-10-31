@@ -25,12 +25,14 @@ function fakeCtx(options: {
   entries?: Array<{ id: string; mode: string; label?: string }>
   live?: Set<string>
   liveStatus?: Record<string, string>
+  liveAgents?: Map<string, any>
 }) {
   const handlers = new Map<string, (info: any) => void>()
   const state = {
     entries: options.entries ?? [],
     live: options.live ?? new Set<string>(),
     liveStatus: options.liveStatus ?? {},
+    liveAgents: options.liveAgents ?? new Map<string, any>(),
   }
   const ctx = {
     get(name: string) {
@@ -40,7 +42,8 @@ function fakeCtx(options: {
       if (name === 'agents') {
         return {
           get: (id: string) =>
-            state.live.has(id) ? { status: state.liveStatus[id] ?? 'running' } : undefined,
+            state.liveAgents.get(id) ??
+            (state.live.has(id) ? { status: state.liveStatus[id] ?? 'running' } : undefined),
         }
       }
       return undefined
@@ -58,6 +61,36 @@ function fakeCtx(options: {
     state,
     emit(event: string, info: any) {
       handlers.get(event)?.(info)
+    },
+  }
+}
+
+function childAgent(status = 'running') {
+  const session = { id: 'child-session' }
+  const handlers = new Map<string, (subject: any, event: any) => void>()
+  const agent: any = {
+    status,
+    session,
+    ctx: {
+      on(event: string, handler: (subject: any, event: any) => void) {
+        handlers.set(event, handler)
+        return () => handlers.delete(event)
+      },
+      off(event: string) {
+        handlers.delete(event)
+      },
+    },
+  }
+  return {
+    agent,
+    setStatus(next: string) {
+      agent.status = next
+    },
+    emit(event: any) {
+      handlers.get('session/event')?.(session, event)
+    },
+    emitForeign(event: any) {
+      handlers.get('session/event')?.({ id: 'other' }, event)
     },
   }
 }
@@ -266,6 +299,93 @@ describe('SubagentDock 展示窗口', () => {
     await dock.refresh()
     expect(dock.entryIds()).toEqual(['a'])
     expect(dock.dismissedIds().has('a')).toBe(false)
+  })
+
+  it('子会话 turn/end completed 立即完成；turn/start 复位；activation end 不覆盖', async () => {
+    let now = 1_000_000
+    const child = childAgent()
+    const fake = fakeCtx({
+      entries: [{ id: 'a', mode: 'continuable', label: '任务 A' }],
+      liveAgents: new Map([['a', child.agent]]),
+    })
+    const dock = startDock({
+      ctx: fake.ctx,
+      rootId: 'root',
+      onChange: () => {},
+      now: () => now,
+    })
+    await dock.refresh()
+    expect(dock.statusOf('a')).toBe('running')
+    child.emit({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+    expect(dock.statusOf('a')).toBe('done')
+    expect(dock.terminalAtOf('a')).toBe(now)
+    // activation end 后到：turn 状态权威，不改时间与状态。
+    now += 5_000
+    fake.emit('subagent/end', { id: 'a', stopReason: 'error' })
+    await dock.refresh()
+    expect(dock.statusOf('a')).toBe('done')
+    expect(dock.terminalAtOf('a')).toBe(1_000_000)
+    // 30 秒后出列；新的一轮 turn/start 清 dismissed 与 terminal，重新出现。
+    now += DOCK_GRACE_MS
+    await dock.refresh()
+    expect(dock.entryIds()).toEqual([])
+    child.emit({ type: 'turn/start', data: { turn: 2 } })
+    await dock.refresh()
+    expect(dock.statusOf('a')).toBe('running')
+    expect(dock.terminalAtOf('a')).toBeUndefined()
+    expect(dock.entryIds()).toEqual(['a'])
+    expect(dock.dismissedIds().has('a')).toBe(false)
+  })
+
+  it('activation end 先到、turn/end 后到：状态以 turn 为准，terminalAt 不变', async () => {
+    let now = 1_000_000
+    const child = childAgent()
+    const fake = fakeCtx({
+      entries: [{ id: 'a', mode: 'continuable' }],
+      liveAgents: new Map([['a', child.agent]]),
+    })
+    const dock = startDock({
+      ctx: fake.ctx,
+      rootId: 'root',
+      onChange: () => {},
+      now: () => now,
+    })
+    await dock.refresh()
+    fake.emit('subagent/end', { id: 'a', stopReason: 'error' })
+    expect(dock.statusOf('a')).toBe('error')
+    expect(dock.terminalAtOf('a')).toBe(now)
+    now += 5_000
+    child.emit({ type: 'turn/end', data: { reason: { kind: 'completed' } } })
+    expect(dock.statusOf('a')).toBe('done')
+    expect(dock.terminalAtOf('a')).toBe(1_000_000)
+  })
+
+  it('one-shot live 子代理同样走 turn/end 完成态', async () => {
+    const child = childAgent()
+    const fake = fakeCtx({
+      entries: [{ id: 'o', mode: 'one-shot' }],
+      liveAgents: new Map([['o', child.agent]]),
+    })
+    const dock = startDock({ ctx: fake.ctx, rootId: 'root', onChange: () => {} })
+    await dock.refresh()
+    child.emit({ type: 'turn/end', data: { reason: { kind: 'completed' } } })
+    expect(dock.statusOf('o')).toBe('done')
+  })
+
+  it('turn/end 的 blocked/interrupted/forked/未知映射未运行；别的 session 事件不生效', async () => {
+    const child = childAgent()
+    const fake = fakeCtx({
+      entries: [{ id: 'a', mode: 'continuable' }],
+      liveAgents: new Map([['a', child.agent]]),
+    })
+    const dock = startDock({ ctx: fake.ctx, rootId: 'root', onChange: () => {} })
+    await dock.refresh()
+    child.emitForeign({ type: 'turn/end', data: { reason: { kind: 'completed' } } })
+    expect(dock.statusOf('a')).toBe('running')
+    for (const kind of ['blocked', 'interrupted', 'forked', 'future-variant']) {
+      child.emit({ type: 'turn/end', data: { reason: { kind } } })
+      expect(dock.statusOf('a')).toBe('idle')
+    }
   })
 
   it('external 的 start 不进 dock', async () => {

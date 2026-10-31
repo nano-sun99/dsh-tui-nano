@@ -10,18 +10,17 @@ import type { DraftStore } from '../input/drafts.ts'
 import { HISTORY_LIMIT, type HistoryStore } from '../input/history.ts'
 import type { Key } from '../input/parser.ts'
 import { Box, Text } from '../render/components.ts'
-import { truncateText } from '../render/text.ts'
+import { displayWidth, truncateText } from '../render/text.ts'
 import { activeTheme } from '../theme/theme.ts'
 import { TranscriptModel } from '../transcript/model.ts'
 import {
   composerState,
-  detailTitle,
   foldSessionEvent,
   modeAllowsDetail,
   replaySessionMessages,
   type SubagentMode,
 } from './detail.ts'
-import type { DockStatus, SubagentDock } from './dock.ts'
+import { type DockStatus, type SubagentDock, statusWord } from './dock.ts'
 import {
   buildListRows,
   countDirectChildren,
@@ -232,7 +231,22 @@ export class SubagentNavigation {
     this.width = Math.max(1, width)
     if (this.viewState.mode === 'child') return this.renderChild(width)
     if (this.viewState.listOpen) return this.renderList(width)
-    return this.options.dock.render(width, this.viewState.dockFocusId)
+    return null
+  }
+
+  /** 主视图底部的 dock；由 App 放在状态栏之后。 */
+  dock(width: number): ReactNode {
+    this.width = Math.max(1, width)
+    if (this.viewState.mode !== 'main' || this.viewState.listOpen) return null
+    return this.options.dock.render(this.width, this.viewState.dockFocusId)
+  }
+
+  /** dock 占用的终端行数：顶边框 + 可见行 + 溢出。 */
+  dockRows(): number {
+    if (this.viewState.mode !== 'main' || this.viewState.listOpen) return 0
+    const { visible, extra } = this.options.dock.window()
+    if (visible.length === 0) return 0
+    return 1 + visible.length + (extra > 0 ? 1 : 0)
   }
 
   handleWheel(delta: number): boolean {
@@ -913,6 +927,7 @@ export class SubagentNavigation {
     if (child === undefined) return null
     const theme = activeTheme()
     const height = Math.max(1, this.options.bodyHeight())
+    const statusText = statusWord(this.statusFor(child.id))
     const header = createElement(
       Box,
       { flexDirection: 'row', width },
@@ -922,13 +937,24 @@ export class SubagentNavigation {
         createElement(
           Text,
           { color: [...theme.accent] as [number, number, number], wrap: false },
-          '‹ 返回 ',
+          '← ',
         ),
       ),
       createElement(
         Text,
+        { color: [...theme.muted] as [number, number, number], wrap: false },
+        '子代理 ',
+      ),
+      createElement(
+        Text,
         { color: [...theme.fg] as [number, number, number], bold: true, wrap: false },
-        truncateText(detailTitle(child.name, this.statusFor(child.id)), Math.max(1, width - 8)),
+        truncateText(child.name, Math.max(1, width - 6 - displayWidth(statusText))),
+      ),
+      createElement(Box, { flexGrow: 1 }),
+      createElement(
+        Text,
+        { color: [...theme.muted] as [number, number, number], wrap: false },
+        statusText,
       ),
     )
     let content: ReactNode

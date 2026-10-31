@@ -62,6 +62,24 @@ export function endStatus(info: any): DockStatus {
   return stopReasonStatus(info?.stopReason)
 }
 
+/** 子会话 turn/end 的 reason → dock 状态；未知变体并入未运行。 */
+export function turnEndStatus(reason: unknown): DockStatus {
+  const kind =
+    reason !== null && typeof reason === 'object' ? (reason as { kind?: unknown }).kind : undefined
+  switch (kind) {
+    case 'completed':
+      return 'done'
+    case 'aborted':
+      return 'killed'
+    case 'error':
+      return 'error'
+    case 'max-tokens':
+      return 'killed'
+    default:
+      return 'idle'
+  }
+}
+
 /** 活对象状态（只有 idle / running 这一类粗状态）。 */
 export function deriveStatus(view: any): DockStatus {
   const status = String(view?.status ?? '')
@@ -123,6 +141,7 @@ export class SubagentDock {
   private readonly startedAt = new Map<string, number>()
   private readonly terminal = new Map<string, { status: DockStatus; at: number }>()
   private readonly statuses = new Map<string, DockStatus>()
+  private readonly childSubscriptions = new Map<string, () => void>()
   private timer: NodeJS.Timeout | undefined
   private blinkTimer: NodeJS.Timeout | undefined
   private blinkOn = true
@@ -159,6 +178,10 @@ export class SubagentDock {
           this.dismissed.delete(id)
           this.terminal.delete(id)
           this.statuses.set(id, 'running')
+          // 新 activation 可能换了 agent ctx；旧订阅等 refresh 重挂。
+          this.disposeChild(id)
+          const startedLive = this.options.ctx.get?.('agents')?.get?.(id)
+          if (startedLive !== undefined) this.watchChild(id, startedLive)
           // 行已存在时也必须复位 terminalAt：续聊会以同一 id 再次 start。
           const existing = this.rows.some((row) => row.id === id)
           this.rows = this.rows.map((row) => {
@@ -180,6 +203,11 @@ export class SubagentDock {
         on('subagent/end', (info: any) => {
           const id = rowId(info)
           if (id === '') return
+          // turn/end 已经写过终态：turn 状态权威，activation end 只兜底。
+          if (this.terminal.has(id)) {
+            void this.refresh()
+            return
+          }
           const status = stopReasonStatus(info?.stopReason)
           const at = this.now()
           this.terminal.set(id, { status, at })
@@ -207,6 +235,56 @@ export class SubagentDock {
     this.blinkTimer = undefined
     for (const dispose of this.disposers) dispose()
     this.disposers.length = 0
+    for (const dispose of this.childSubscriptions.values()) dispose()
+    this.childSubscriptions.clear()
+  }
+
+  private disposeChild(id: string): void {
+    const dispose = this.childSubscriptions.get(id)
+    if (dispose === undefined) return
+    dispose()
+    this.childSubscriptions.delete(id)
+  }
+
+  /** 订阅子 agent 的轮级事件；过滤 session，避免后代 scope 串行。 */
+  private watchChild(id: string, agent: any): void {
+    if (this.childSubscriptions.has(id)) return
+    const ctx = agent?.ctx
+    if (typeof ctx?.on !== 'function') return
+    const session = agent.session
+    const dispose = ctx.on('session/event', (subject: any, event: any) => {
+      if (subject !== session) return
+      if (event?.type === 'turn/start') this.onTurnStart(id)
+      else if (event?.type === 'turn/end') this.onTurnEnd(id, event?.data?.reason)
+    })
+    this.childSubscriptions.set(id, dispose)
+  }
+
+  private onTurnStart(id: string): void {
+    this.started.add(id)
+    this.startedAt.set(id, this.now())
+    this.dismissed.delete(id)
+    this.terminal.delete(id)
+    this.statuses.set(id, 'running')
+    this.rows = this.rows.map((row) => {
+      if (row.id !== id) return row
+      const { terminalAt: _terminalAt, ...rest } = row
+      return { ...rest, status: 'running' }
+    })
+    this.options.onChange()
+    void this.refresh()
+  }
+
+  private onTurnEnd(id: string, reason: unknown): void {
+    const status = turnEndStatus(reason)
+    const at = this.now()
+    const existing = this.terminal.get(id)
+    const terminalAt = existing?.at ?? at
+    this.terminal.set(id, { status, at: terminalAt })
+    this.statuses.set(id, status)
+    this.rows = this.rows.map((row) => (row.id === id ? { ...row, status, terminalAt } : row))
+    this.options.onChange()
+    void this.refresh()
   }
 
   /** 只有可见且含 running 行时才闪；reduced-motion 静止。 */
@@ -236,6 +314,10 @@ export class SubagentDock {
     if (!subagents?.listChildren) return
     this.refreshing = true
     try {
+      const agents = this.options.ctx.get?.('agents')
+      for (const id of [...this.childSubscriptions.keys()]) {
+        if (agents?.get?.(id) === undefined) this.disposeChild(id)
+      }
       const entries = (await subagents.listChildren(this.options.rootId)) as Array<{
         id: string
         mode: string
@@ -251,6 +333,7 @@ export class SubagentDock {
         const old = previous.get(id)
         const ended = this.terminal.get(id)
         const live = this.options.ctx.get?.('agents')?.get?.(id)
+        if (live !== undefined) this.watchChild(id, live)
         const liveRunning = live !== undefined && deriveStatus(live) === 'running'
         // 目录只提供身份；没有 start、没有「观察到的 running」、也没有旧行时，不建行。
         // 单独收到 end 不建行（I1：入列只靠事件 / 首次观察到 running）。
