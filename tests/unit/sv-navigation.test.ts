@@ -179,6 +179,44 @@ describe('SubagentNavigation：dock 焦点与进入', () => {
     expect(input.text).toBe('主草稿')
   })
 
+  it('dockRows 按边框 + 可见行 + 溢出计算，详情/列表为 0', async () => {
+    const entries = Array.from({ length: 6 }, (_, index) => ({
+      kind: 'child' as const,
+      id: `s${index}`,
+      mode: 'continuable',
+      label: `任务 ${index}`,
+      activity: 'running' as const,
+      depth: 1,
+    }))
+    const { dock, nav, emit } = setup({ entries })
+    for (const entry of entries) emit('subagent/start', { id: entry.id })
+    await dock.refresh()
+    expect(nav.dockRows()).toBe(6)
+    nav.handlePress('subagent:row:s0')
+    await flush()
+    expect(nav.view.mode).toBe('child')
+    expect(nav.dockRows()).toBe(0)
+    nav.handleKey(key('escape'))
+    nav.handleKey(key('char', { text: 'l', alt: true }))
+    await flush()
+    expect(nav.view.mode).toBe('main')
+    expect(nav.dockRows()).toBe(0)
+  })
+
+  it('详情头部是「← 子代理 名字」+ 右侧状态词', async () => {
+    const { dock, nav, emit } = setup({
+      entries: [{ kind: 'child', id: 'a', mode: 'continuable', label: '任务 A' }],
+    })
+    emit('subagent/start', { id: 'a' })
+    await dock.refresh()
+    nav.handlePress('subagent:row:a')
+    await flush()
+    const flat = renderNode(nav.body(40), 40, 10)
+    expect(flat).toContain('← 子代理 任务 A')
+    expect(flat).toContain('执行中')
+    expect(flat).not.toContain('‹ 返回')
+  })
+
   it('终态行也能用 ↓ 聚焦并用 Enter 进入', async () => {
     const { dock, nav, emit } = setup({
       entries: [{ kind: 'child', id: 'a', mode: 'continuable', label: '任务 A' }],

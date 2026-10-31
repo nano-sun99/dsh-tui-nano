@@ -1,0 +1,7 @@
+# npm run test:e2e 全量摘要（2026-10-31 dock 对齐）
+
+- 47 tests：44 pass / 1 fail / 2 skipped，总耗时约 359s。
+- fail：`tests/e2e/release.test.mjs`「pack 产物可复现且与版本矩阵一致」。
+  原因：`docs/release/0.2.0/version-matrix.md` 绑定的是 0.2.0 冻结 tarball 的 SHA-256；
+  任何源码变更都会改变 tarball 摘要。本次不是发布 PR，未改冻结矩阵。
+- 本 PR 相关的 5 条子代理 PTY e2e 全绿（含 100/60 列，见 `e2e-output.txt`）。

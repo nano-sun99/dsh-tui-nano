@@ -2,13 +2,13 @@
 
 - 组标识：`2026-10-31-nano-subagent-dock-alignment`
 - 角色：单份 spec，总纲与执行规格合一
-- 状态：方案中（待确认）
+- 状态：实施中（issue #122）
 - 结构：不拆——1 份 spec + 1 张执行 issue
 - 机制范围：**2 个新增机制**——① 子会话 turn 级状态源，② dock 底部占位与正文高度预算
 - 上游：设计稿 [`preview/README.md` §子代理交互](../../design/2026-10-17-dsh-tui-ux-research/preview/README.md)、`preview/index.html`（dock 在 `footer.status` 之后）、`preview/subagents.js`、[ADR-20261022-subagent-dock-lifecycle](../../decisions/2026-10-22-subagent-dock-lifecycle.md)、已合并 spec [`2026-10-30-nano-subagent-navigation`](../2026-10-30-nano-subagent-navigation/README.md)
 - 替代关系：修正已合并 spec 的两处错误——dock 位置写成「输入框上方」、完成态只认 `subagent/end`；不重开旧 spec，新开本份
 - ADR：新增 [ADR-20261031-subagent-turn-settlement](../../decisions/2026-10-31-subagent-turn-settlement.md)，**取代** [ADR-20261022-subagent-dock-lifecycle](../../decisions/2026-10-22-subagent-dock-lifecycle.md) 的保留计时触发点；30 秒时长、状态词、行内容不变，旧 ADR 同变更标记「已被取代」
-- 下游：spec 合并后开执行 issue
+- 下游：执行 issue [#122](https://github.com/nano-sun99/dsh-tui-nano/issues/122)
 - 合入前提：spec 合并后开执行 issue；实施需单测 / feature / PTY 证据齐全
 
 ## 1. 目标
@@ -122,7 +122,7 @@ type DockRow = {
 |---|---|
 | `src/app/App.tsx` | 新增独立 `dockBody` 节点：主视图顺序为正文 → 输入 → 状态栏 → dock；`transcriptBodyHeight` 扣 `dockRows`；dock 容器加左右 2ch；`modelPanelRows > 0` 时 dock 隐藏 |
 | `src/app/nano-app.ts` | snapshot 暴露 `dockBody` / `dockRows`；`currentBodyHeight` 与高度计算同步 |
-| `src/controls/feature-host.ts` | 把 dock 从 `body()` 的全文面板栈中拆出，单独提供 `dock()` / `dockRows()`；terminal/info/sessions/jobs 仍走 `body()` |
+| `src/controls/feature-host.ts` | 把 dock 从 `body()` 的全文面板栈中拆出，单独提供 `dockBody()` / `dockRows()`；terminal/info/sessions/jobs 仍走 `body()` |
 | `src/subagents/view.ts` | dock 高度、详情头部布局；dock 订阅与 turn 状态委托给 `dock.ts` |
 | `src/subagents/detail.ts` | 详情头部拆成名字与状态两段 |
 | `src/subagents/dock.ts` | live child 的 `turn/start` / `turn/end` 订阅与过滤、turn 状态应用、activation 兜底去重、`rows()` 高度 |

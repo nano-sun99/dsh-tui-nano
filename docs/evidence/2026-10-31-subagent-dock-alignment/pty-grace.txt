@@ -1,0 +1,30 @@
+                                                                                                    
+  nano  deepseek-official/deepseek-flash · 空闲                                                     
+                                                                                                    
+  已加载来源： profile                                                                              
+  <home>/.dsh-tui-nano/profile                                                                      
+  settings                                                                                          
+  <home>/.dsh-tui-nano/profile/cordis                                                               
+  .patch.yml 生效层 @deepseek-ai/dsh-base 凭据                                                      
+  <home>/.dsh/.credentials.yaml（未找                                                               
+  到） 全局指令 无                                                                                  
+                                                                                                    
+  › 跑个子代理                                                                                      
+                                                                                                    
+  ✓ subagent subagent · 点击展开                                                                    
+                                                                                                    
+  父任务完成：子任务已分派。                                                                        
+                                                                                                    
+  Background subagent c1d18328-fb3e-4268-bc29-05bea5a5763a finished and will do no further work     
+  unless you send it more.                                                                          
+                                                                                                    
+  父任务完成：子任务已分派。                                                                        
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+  ────────────────────────────────────────────────────────────────────────────────────────────────  
+  ›  输入消息…                                                                                      
+  ────────────────────────────────────────────────────────────────────────────────────────────────  
+  …/worktrees/issue-122                                                   Enter 发送 · Ctrl+C 退出  
