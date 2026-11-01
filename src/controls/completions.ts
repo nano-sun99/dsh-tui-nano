@@ -193,13 +193,14 @@ export class Completions {
 
   /** 每次输入框内容变化后调用：决定开/关补全并异步取条目。 */
   sync(): void {
+    // 清空或移出触发区也要作废旧查询，不能等下一次有效触发才递增。
+    const token = ++this.requestToken
     const trigger = detectTrigger(this.options.input.text, this.options.input.cursor)
     this.lastTrigger = trigger
     if (!trigger) {
       if (this.session.isOpen) this.session.close()
       return
     }
-    const token = ++this.requestToken
     void this.refresh(trigger, token)
   }
 
@@ -238,6 +239,18 @@ export class Completions {
 
   get kind(): CompletionKind | undefined {
     return this.session.kind
+  }
+
+  /** 只有光标位于独立命令末尾时，Enter 才能直接执行；正文中的补全只插入。 */
+  get standaloneCommand(): boolean {
+    const { input } = this.options
+    const trigger = detectTrigger(input.text, input.cursor)
+    return (
+      this.session.selected?.kind === 'command' &&
+      trigger?.kind === 'command' &&
+      trigger.remove === input.cursor &&
+      input.cursor === input.graphemes.length
+    )
   }
 
   /** 补全弹层占用的行数；关闭时为 0。 */
@@ -290,9 +303,12 @@ export class Completions {
 
   /** Tab 走 keymap 时的入口（S01 未消费的 action）。 */
   accept(): void {
-    const trigger = this.lastTrigger
+    // 同一批按键可先移动光标再接受；每帧保存的 lastTrigger 此时已过期。
+    const trigger = detectTrigger(this.options.input.text, this.options.input.cursor)
+    const kind = this.session.kind
     const inserted = this.session.accept()
-    if (inserted === undefined || !trigger) {
+    ++this.requestToken
+    if (inserted === undefined || !trigger || trigger.kind !== kind) {
       this.session.close()
       this.options.onChange()
       return
@@ -362,15 +378,11 @@ function truncateWidth(text: string, max: number): string {
   return `${out}…`
 }
 
-/** 从光标往回找触发符：`@` 在开头或空白后；`/` 只在整行开头。 */
+/** 从光标往回找触发符：`@` 在开头或空白后；`/` 可在正文中插入。 */
 export function detectTrigger(text: string, cursor: number): Trigger | undefined {
   const cells = graphemes(text)
   const before = cells.slice(0, cursor)
-  const head = before.join('')
-  // 命令只在整行以 `/` 开头且还没打字到空白时触发。
-  if (head.startsWith('/') && !/\s/u.test(head)) {
-    return { kind: 'command', query: head.slice(1), remove: before.length }
-  }
+  // 文件引用优先：`@src/file` 中的 `/` 不应变成命令触发符。
   // `@`：从光标往回找最近的 `@`，且它前面必须是行首或空白。
   for (let index = before.length - 1; index >= 0; index--) {
     const char = before[index]
@@ -385,7 +397,22 @@ export function detectTrigger(text: string, cursor: number): Trigger | undefined
       }
       return undefined
     }
-    if (/\s/u.test(char ?? '')) return undefined
+    if (/\s/u.test(char ?? '')) break
+  }
+  for (let index = before.length - 1; index >= 0; index--) {
+    const char = before[index]
+    if (char === '/') {
+      const prev = before[index - 1]
+      // 英文标识符、URL、相对路径与连续斜线不是正文中的命令边界；
+      // 中文/emoji 紧邻以及空白后的 `/` 仍可唤起补全。
+      if (prev !== undefined && /[A-Za-z0-9_./\\:~@%+-]/u.test(prev)) return undefined
+      return {
+        kind: 'command',
+        query: before.slice(index + 1).join(''),
+        remove: before.length - index,
+      }
+    }
+    if (/\s/u.test(char ?? '')) break
   }
   return undefined
 }
