@@ -30,3 +30,25 @@ export interface AskUserQuestionAnswerItem {
 export interface AskUserQuestionAnswer {
   readonly answers: AskUserQuestionAnswerItem[]
 }
+
+export interface QuestionDraft {
+  readonly selected: Set<string>
+  custom: string
+  customMode: boolean
+  skipped: boolean
+  focusedOption: number
+}
+
+export interface QuestionPrompt {
+  readonly kind: 'question'
+  readonly address: string
+  readonly questions: readonly AskUserQuestionItem[]
+  /** questions.length denotes the batch review/submit page. */
+  readonly current: number
+  /** options.length denotes the custom-answer row. */
+  readonly focusedOption: number
+  readonly drafts: Map<string, QuestionDraft>
+  readonly scrollOffset: number
+  readonly error?: string
+  readonly planReview: boolean
+}

@@ -1,0 +1,38 @@
+[
+  {
+    "name": "dark-100-question",
+    "size": [
+      1762,
+      1460
+    ],
+    "unique_colors": 1096,
+    "non_black_ratio": 0.9997
+  },
+  {
+    "name": "dark-60-question",
+    "size": [
+      1082,
+      1460
+    ],
+    "unique_colors": 1095,
+    "non_black_ratio": 0.9995
+  },
+  {
+    "name": "light-100-question",
+    "size": [
+      1762,
+      1460
+    ],
+    "unique_colors": 1183,
+    "non_black_ratio": 0.9997
+  },
+  {
+    "name": "light-60-question",
+    "size": [
+      1082,
+      1460
+    ],
+    "unique_colors": 898,
+    "non_black_ratio": 0.9995
+  }
+]

@@ -2,7 +2,8 @@
 
 - 组标识：`2026-11-01-nano-question-card-parity`
 - 角色：单份 spec，总纲与执行规格合一
-- 状态：方案中（草案，待审）
+- 状态：已批准实施；实施交付待审（尚未合并）。
+- Issue：#125；实施证据：[终端与测试](../../evidence/2026-11-01-nano-question-card-parity/README.md)。
 - 结构：不拆——1 份 spec + 1 张执行 issue
 - 机制范围：**3 项新增机制**——① 卡片内滚动位置；② 题签回看 + 提交页；③ 取消语义（aborted，不提交半成品）。其余复用官方 `ask()` 与既有主题/渲染层
 - 上游：设计稿 `docs/design/2026-10-17-dsh-tui-ux-research/preview/`（`choices.js` + `index.html` CSS）、[S03 §4](../../specs/2026-10-20-nano-v1/S03-reading-decisions.md)、[visual-v1 §4.2/§4.3/第二批](../../specs/2026-10-22-nano-visual-v1/README.md)、[design-contract §2/§4/§6](../../release/design-contract.md)、[调研笔记](../../evidence/2026-11-01-question-card-research/research.md)

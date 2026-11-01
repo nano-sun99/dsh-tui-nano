@@ -104,7 +104,7 @@ describe('question custom input', () => {
         ...extra,
       },
     })
-    app.handleInput([key('char', { text: 'c' })])
+    app.handleInput([key('down')])
     for (const char of ['a', 'c', ' ', 'b']) app.handleInput([key('char', { text: char })])
     const prompt = manager.prompt
     expect(prompt?.kind).toBe('question')

@@ -27,6 +27,7 @@ import { activeTheme } from '../theme/theme.ts'
 import { App, type AppSnapshot, transcriptBodyHeight } from './App.tsx'
 import { InputModel } from './input-model.ts'
 import { NoticeState, type NoticeTone } from './notice.ts'
+import { buildQuestionCard, questionCardCap, questionCardWindow } from './question-card.ts'
 
 export interface NanoAppOptions {
   readonly core: CoreBoot
@@ -466,13 +467,35 @@ export class NanoApp {
       }
       return
     }
-    // Question overlay: while typing a custom answer every printable key is
-    // text, including space and the letter "c".
     const question = prompt.questions[prompt.current]
+    const optionCount = question?.options?.length ?? 0
     const draft = question ? prompt.drafts.get(question.id) : undefined
-    if (draft?.customMode) {
-      if (key.name === 'escape') this.decisions.toggleCustom()
-      else if (key.name === 'enter') this.decisions.advanceQuestion()
+    const atSubmit = prompt.current >= prompt.questions.length
+    if (key.name === 'escape') {
+      this.decisions.cancelQuestions()
+      this.notices.set('已取消，未提交答案')
+      return
+    }
+    if (key.alt && key.name === 'char' && key.text === 'n') {
+      this.finishQuestionAction(() => this.decisions.skipQuestion())
+      return
+    }
+    if (key.name === 'pageup') {
+      this.scrollDecision(-5)
+      return
+    }
+    if (key.name === 'pagedown') {
+      this.scrollDecision(5)
+      return
+    }
+    if (key.name === 'tab') {
+      this.decisions.navigateQuestions(key.shift ? -1 : 1)
+      return
+    }
+    if (draft?.customMode === true) {
+      if (key.name === 'up') this.decisions.move(-1)
+      else if (key.name === 'down') this.decisions.move(1)
+      else if (key.name === 'enter') this.confirmDecision()
       else if (key.name === 'backspace') {
         this.clearNoticeOnEdit()
         this.decisions.backspaceCustom()
@@ -482,16 +505,70 @@ export class NanoApp {
       }
       return
     }
+    if (atSubmit) {
+      if (key.name === 'enter') this.confirmDecision()
+      else if (key.name === 'left') this.decisions.navigateQuestions(-1)
+      else if (key.name === 'right') this.decisions.navigateQuestions(1)
+      return
+    }
     if (key.name === 'up') this.decisions.move(-1)
     else if (key.name === 'down') this.decisions.move(1)
-    else if (key.name === 'enter') this.decisions.advanceQuestion()
-    else if (key.name === 'escape') this.decisions.escape()
-    else if (key.name === 'tab') this.decisions.move(1)
-    else if (key.name === 'char' && key.text === ' ') this.decisions.toggleOption()
-    else if (key.name === 'char' && key.text === 'c' && !key.ctrl) this.decisions.toggleCustom()
-    else if (key.name === 'backspace') this.decisions.backspaceCustom()
-    else if (key.name === 'char' && key.text && !key.ctrl && !key.alt)
-      this.decisions.typeCustom(key.text)
+    else if (key.name === 'enter') this.confirmDecision()
+    else if (key.name === 'left') this.decisions.navigateQuestions(-1)
+    else if (key.name === 'right') this.decisions.navigateQuestions(1)
+    else if (key.name === 'char' && key.text === ' ' && !key.ctrl && !key.alt && !key.meta)
+      this.finishQuestionAction(() => this.decisions.selectIndex(prompt.focusedOption))
+    else if (
+      key.name === 'char' &&
+      !key.ctrl &&
+      !key.alt &&
+      !key.meta &&
+      /^[1-9]$/u.test(key.text ?? '')
+    ) {
+      const index = Number(key.text) - 1
+      if (index <= optionCount) this.finishQuestionAction(() => this.decisions.selectIndex(index))
+    }
+  }
+
+  private scrollDecision(delta: number): void {
+    const prompt = this.decisions.prompt
+    if (prompt?.kind !== 'question') return
+    const cap = questionCardCap(this.options.terminal.height)
+    const parts = buildQuestionCard(prompt, Math.max(1, this.options.terminal.width - 4), cap)
+    const visible = questionCardWindow(parts, cap, prompt.scrollOffset)
+    const target = Math.max(0, Math.min(visible.maxStart, visible.start + delta))
+    if (
+      parts.focusBodyRow >= 0 &&
+      (parts.focusBodyRow < target || parts.focusBodyRow >= target + visible.room)
+    ) {
+      const candidates = parts.body
+        .map((row, index) => ({ row, index }))
+        .filter(
+          ({ row, index }) =>
+            index >= target &&
+            index < target + visible.room &&
+            /^ ?[> ]? ?[1-9][0-9]*\./u.test(row.spans.map((span) => span.text).join('')),
+        )
+      const candidate = delta > 0 ? candidates[0] : candidates.at(-1)
+      const id = candidate?.row.pressId
+      if (id?.startsWith('decision:option:'))
+        this.decisions.focusOption(Number(id.slice('decision:option:'.length)))
+      else if (id === 'decision:custom') this.decisions.focusCustom()
+    }
+    this.decisions.setScrollOffset(target)
+  }
+
+  /** Enter on the card: confirm the row, or submit the batch. */
+  private confirmDecision(): void {
+    this.finishQuestionAction(() => this.decisions.confirmFocused())
+  }
+
+  private finishQuestionAction(action: () => void): void {
+    const before = this.decisions.prompt
+    action()
+    if (before?.kind === 'question' && !this.decisions.hasDecision) {
+      this.notices.set(`已回答 ${before.questions.length} 题`)
+    }
   }
 
   private handleMouse(event: {
@@ -571,15 +648,24 @@ export class NanoApp {
     }
     if (id.startsWith('decision:option:')) {
       const index = Number(id.slice('decision:option:'.length))
-      const prompt = this.decisions.prompt
-      if (prompt?.kind === 'question') {
-        this.decisions.move(index - prompt.focusedOption)
-        this.decisions.toggleOption()
-      }
+      this.finishQuestionAction(() => this.decisions.selectIndex(index))
+      return
+    }
+    if (id.startsWith('decision:tab:')) {
+      const index = Number(id.slice('decision:tab:'.length))
+      this.decisions.focusQuestion(index)
       return
     }
     if (id === 'decision:custom') {
-      this.decisions.toggleCustom()
+      const prompt = this.decisions.prompt
+      if (prompt?.kind === 'question') {
+        const question = prompt.questions[prompt.current]
+        this.decisions.selectIndex(question?.options?.length ?? 0)
+      }
+      return
+    }
+    if (id === 'decision:confirm') {
+      this.confirmDecision()
       return
     }
     if (this.expanded.has(id)) this.expanded.delete(id)
@@ -640,7 +726,9 @@ export class NanoApp {
       stickBottom: this.stickBottom,
       ...(this.notices.current
         ? { notice: { text: this.notices.current.text, tone: this.notices.current.tone } }
-        : {}),
+        : this.decisions.prompt?.kind === 'question'
+          ? { notice: { text: '等待你的选择', tone: 'info' as const } }
+          : {}),
       caretActive: this.options.features?.inputActive?.() ?? true,
       ...(contextRatio !== undefined ? { contextRatio } : {}),
       ...(completionRows > 0 ? { completionRows } : {}),

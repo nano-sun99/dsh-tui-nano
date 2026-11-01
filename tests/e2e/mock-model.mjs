@@ -175,6 +175,45 @@ const handler = (req, res) => {
       res.end()
       return
     }
+    if (mode === 'question-parity' && withTools) {
+      const results = collectToolResults(body.messages)
+      sse(res)
+      start(res, body.model)
+      if (results.length === 0) {
+        toolUse(res, 'toolu_question_parity', 'ask_user_question', {
+          questions: [
+            {
+              id: 'checks',
+              header: '验收方式',
+              multi_select: false,
+              question: '这次改动采用哪种验收方式？',
+              options: [
+                { label: '聚焦回归（推荐）', description: '覆盖本次修改相关的检查，反馈较快。' },
+                { label: '完整回归', description: '检查范围更广，需要等待更多脚本完成。' },
+                { label: '静态检查', description: '先确认类型和边界，行为验证留待下一步。' },
+              ],
+            },
+            {
+              id: 'surfaces',
+              header: '测试范围',
+              multi_select: true,
+              question: '需要覆盖哪些终端场景？',
+              options: [
+                { label: '普通宽度', description: '检查常规终端里的阅读与输入。' },
+                { label: '窄终端', description: '检查换行、折叠和选项可见性。' },
+                { label: '流式输出', description: '检查内容增长时的阅读位置。' },
+                { label: '带侧栏', description: '检查焦点和滚轮是否落到正确区域。' },
+              ],
+            },
+          ],
+        })
+      } else {
+        text(res, `QUESTION_PARITY_RESULT ${JSON.stringify(results)}`)
+      }
+      send(res, 'message_stop', { type: 'message_stop' })
+      res.end()
+      return
+    }
     if (mode === 'question' && withTools) {
       sse(res)
       start(res, body.model)

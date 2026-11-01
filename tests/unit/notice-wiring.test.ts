@@ -139,7 +139,7 @@ describe('composer notice wiring', () => {
     expect(harness.renderer.snapshotLines().join('\n')).not.toContain('提示')
 
     harness.app.decisionsManager.escape()
-    await pending
+    await pending.catch(() => {})
     await new Promise((resolve) => setImmediate(resolve))
     harness.renderer.unmount()
   })

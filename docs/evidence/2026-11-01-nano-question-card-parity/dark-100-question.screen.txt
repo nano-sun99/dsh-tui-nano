@@ -1,0 +1,36 @@
+
+  nano  deepseek-official/deepseek-flash · 运行中
+
+  已加载来源： profile
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghostty-visual-x_jqzzxu/dark-100-question/.n
+  ano/profile settings
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghostty-visual-x_jqzzxu/dark-100-question/.n
+  ano/profile/cordis.patch.yml 生效层 @deepseek-ai/dsh-base 凭据
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghostty-visual-x_jqzzxu/dark-100-question/.d
+  sh/.credentials.yaml（未找到） 全局指令 无
+
+  › 请展示问卷卡片。
+
+  … ask_user_question ask_user_question · 点击展开
+
+
+
+
+
+
+
+
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  [x] 验收方式  [x] 测试范围  提交
+
+  提交这组答案
+  [x] 验收方式
+      聚焦回归（推荐）
+  [x] 测试范围
+      普通宽度
+       提交答案
+
+  Enter 提交 · Tab / ←→ 回看 · Esc 取消
+  等待你的选择                                                            Enter 插话 · Ctrl+C 停止
