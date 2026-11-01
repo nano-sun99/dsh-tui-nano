@@ -376,6 +376,20 @@ describe('core activity layout and actual renderer', () => {
 })
 
 describe('controller event wiring', () => {
+  it('replays history without starting an activity animation', () => {
+    const c = new ConversationController({
+      ctx: {},
+      official: {} as never,
+      rootId: 'r',
+      cwd: '/tmp',
+      history: {} as never,
+    })
+    const replay = (c as unknown as { replay: (session: unknown) => void }).replay.bind(c)
+    replay({
+      deriveMessages: () => [{ role: 'assistant', content: [{ type: 'text', text: 'old answer' }] }],
+    })
+    expect(c.activity.project()).toEqual({ text: '' })
+  })
   it('filters old end, keeps the committed answer hidden, and samples retries by official identity', () => {
     const c = new ConversationController({
       ctx: {},
