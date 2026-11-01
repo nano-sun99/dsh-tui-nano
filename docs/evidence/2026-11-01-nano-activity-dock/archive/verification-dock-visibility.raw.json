@@ -1,0 +1,69 @@
+{
+  "parity": {
+    "matchingFrames": 36,
+    "nativeSize": [
+      180,
+      180
+    ],
+    "previewSize": [
+      180,
+      180
+    ]
+  },
+  "animationChecks": [
+    {
+      "id": "official",
+      "distinctPaths": 5
+    },
+    {
+      "id": "wag",
+      "distinctPaths": 5
+    },
+    {
+      "id": "sway",
+      "distinctPaths": 5
+    },
+    {
+      "id": "twist",
+      "distinctPaths": 5
+    }
+  ],
+  "stable": {
+    "noReroll": true,
+    "nextThoughtOneDraw": true
+  },
+  "layouts": [
+    {
+      "name": "visibility-desktop",
+      "states": 11,
+      "fixedHeight": 22,
+      "noHorizontalOverflow": true,
+      "reducedMotion": true,
+      "focusAndDraft": true,
+      "streamingDockBlank": true,
+      "hiddenAnimationPaused": true
+    },
+    {
+      "name": "visibility-narrow",
+      "states": 11,
+      "fixedHeight": 22,
+      "noHorizontalOverflow": true,
+      "reducedMotion": true,
+      "focusAndDraft": true,
+      "streamingDockBlank": true,
+      "hiddenAnimationPaused": true
+    },
+    {
+      "name": "visibility-mobile",
+      "states": 11,
+      "fixedHeight": 22,
+      "noHorizontalOverflow": true,
+      "reducedMotion": true,
+      "focusAndDraft": true,
+      "streamingDockBlank": true,
+      "hiddenAnimationPaused": true
+    }
+  ],
+  "errors": [],
+  "productionCodeChanged": false
+}

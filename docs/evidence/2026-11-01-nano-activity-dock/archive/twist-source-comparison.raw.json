@@ -1,0 +1,305 @@
+{
+  "native": {
+    "duration": 2000,
+    "timing": {
+      "delay": 0,
+      "direction": "normal",
+      "duration": 2000,
+      "easing": "linear",
+      "endDelay": 0,
+      "fill": "none",
+      "iterationStart": 0,
+      "iterations": null
+    },
+    "frames": [
+      {
+        "offset": 0,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 88 84 L 93 73 L 101 68 L 112 68 L 125 74 L 159 84 L 163 87 L 1",
+        "computedOffset": 0
+      },
+      {
+        "offset": 0.027777777777777776,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 122 260 L 128 232 L 137 213 L 152 191 L 157 178 L 157 166 L 14",
+        "computedOffset": 0.027777777777777776
+      },
+      {
+        "offset": 0.05555555555555555,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 136 151 L 140 140 L 145 135 L 155 130 L 160 124 L 164 123 L 16",
+        "computedOffset": 0.05555555555555555
+      },
+      {
+        "offset": 0.08333333333333334,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 77 154 L 78 148 L 82 141 L 93 134 L 114 130 L 142 120 L 176 11",
+        "computedOffset": 0.08333333333333334
+      },
+      {
+        "offset": 0.1111111111111111,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 76 149 L 82 139 L 92 134 L 113 130 L 141 120 L 176 118 L 192 1",
+        "computedOffset": 0.1111111111111111
+      },
+      {
+        "offset": 0.1388888888888889,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 113 176 L 116 172 L 114 160 L 115 149 L 122 137 L 136 132 L 15",
+        "computedOffset": 0.1388888888888889
+      },
+      {
+        "offset": 0.16666666666666669,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 170 148 L 171 143 L 176 146 L 178 138 L 182 119 L 181 106 L 18",
+        "computedOffset": 0.16666666666666669
+      },
+      {
+        "offset": 0.19444444444444442,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 138 94 L 139 80 L 142 73 L 148 68 L 156 68 L 168 78 L 179 84 L",
+        "computedOffset": 0.19444444444444442
+      },
+      {
+        "offset": 0.2222222222222222,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 169 159 L 173 113 L 177 91 L 177 74 L 182 68 L 189 68 L 193 71",
+        "computedOffset": 0.2222222222222222
+      },
+      {
+        "offset": 0.25,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 125 179 L 127 175 L 135 168 L 134 157 L 138 141 L 144 135 L 15",
+        "computedOffset": 0.25
+      },
+      {
+        "offset": 0.2777777777777778,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 94 151 L 97 143 L 104 136 L 107 136 L 109 134 L 126 130 L 149 ",
+        "computedOffset": 0.2777777777777778
+      },
+      {
+        "offset": 0.3055555555555556,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 71 154 L 72 148 L 76 141 L 85 135 L 110 130 L 118 126 L 139 12",
+        "computedOffset": 0.3055555555555556
+      },
+      {
+        "offset": 0.33333333333333337,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 77 151 L 80 143 L 90 135 L 114 130 L 142 120 L 176 118 L 193 1",
+        "computedOffset": 0.33333333333333337
+      },
+      {
+        "offset": 0.36111111111111116,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 113 153 L 115 145 L 121 137 L 126 134 L 135 132 L 155 121 L 17",
+        "computedOffset": 0.36111111111111116
+      },
+      {
+        "offset": 0.38888888888888884,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 169 164 L 184 94 L 185 74 L 190 68 L 197 68 L 202 74 L 202 95 ",
+        "computedOffset": 0.38888888888888884
+      },
+      {
+        "offset": 0.41666666666666663,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 122 260 L 130 227 L 142 204 L 149 195 L 156 179 L 155 163 L 13",
+        "computedOffset": 0.41666666666666663
+      },
+      {
+        "offset": 0.4444444444444444,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 94 83 L 101 71 L 107 68 L 117 68 L 137 77 L 164 85 L 165 87 L ",
+        "computedOffset": 0.4444444444444444
+      },
+      {
+        "offset": 0.4722222222222222,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 91 85 L 93 78 L 98 71 L 104 68 L 115 68 L 130 75 L 149 80 L 16",
+        "computedOffset": 0.4722222222222222
+      },
+      {
+        "offset": 0.5,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 122 87 L 123 80 L 128 71 L 133 68 L 144 69 L 152 75 L 177 87 L",
+        "computedOffset": 0.5
+      },
+      {
+        "offset": 0.5277777777777778,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 122 260 L 126 240 L 134 222 L 148 205 L 148 203 L 156 195 L 16",
+        "computedOffset": 0.5277777777777778
+      },
+      {
+        "offset": 0.5555555555555556,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 122 260 L 126 241 L 132 228 L 139 221 L 139 219 L 145 213 L 14",
+        "computedOffset": 0.5555555555555556
+      },
+      {
+        "offset": 0.5833333333333334,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 84 151 L 87 143 L 93 137 L 99 134 L 119 130 L 126 126 L 145 12",
+        "computedOffset": 0.5833333333333334
+      },
+      {
+        "offset": 0.6111111111111112,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 70 150 L 73 143 L 78 138 L 86 134 L 109 130 L 117 126 L 139 12",
+        "computedOffset": 0.6111111111111112
+      },
+      {
+        "offset": 0.6388888888888888,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 82 151 L 85 143 L 95 135 L 114 131 L 144 120 L 176 118 L 196 9",
+        "computedOffset": 0.6388888888888888
+      },
+      {
+        "offset": 0.6666666666666667,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 112 177 L 115 172 L 113 161 L 114 149 L 121 137 L 135 132 L 15",
+        "computedOffset": 0.6666666666666667
+      },
+      {
+        "offset": 0.6944444444444444,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 122 260 L 125 247 L 129 239 L 137 231 L 157 220 L 180 211 L 19",
+        "computedOffset": 0.6944444444444444
+      },
+      {
+        "offset": 0.7222222222222223,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 148 205 L 152 195 L 159 186 L 160 180 L 163 177 L 197 165 L 20",
+        "computedOffset": 0.7222222222222223
+      },
+      {
+        "offset": 0.75,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 133 87 L 137 73 L 143 68 L 151 68 L 166 79 L 178 85 L 186 93 L",
+        "computedOffset": 0.75
+      },
+      {
+        "offset": 0.7777777777777777,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 148 206 L 151 196 L 155 190 L 155 179 L 163 174 L 177 170 L 18",
+        "computedOffset": 0.7777777777777777
+      },
+      {
+        "offset": 0.8055555555555556,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 122 260 L 125 247 L 129 239 L 137 231 L 161 218 L 167 217 L 18",
+        "computedOffset": 0.8055555555555556
+      },
+      {
+        "offset": 0.8333333333333333,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 117 177 L 122 170 L 121 150 L 124 142 L 128 137 L 143 131 L 14",
+        "computedOffset": 0.8333333333333333
+      },
+      {
+        "offset": 0.8611111111111112,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 92 150 L 96 141 L 104 135 L 127 129 L 131 126 L 148 120 L 177 ",
+        "computedOffset": 0.8611111111111112
+      },
+      {
+        "offset": 0.8888888888888888,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 72 149 L 75 143 L 81 137 L 88 134 L 110 130 L 118 126 L 139 12",
+        "computedOffset": 0.8888888888888888
+      },
+      {
+        "offset": 0.9166666666666667,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 80 150 L 85 140 L 93 135 L 116 130 L 123 126 L 143 120 L 176 1",
+        "computedOffset": 0.9166666666666667
+      },
+      {
+        "offset": 0.9444444444444444,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 122 260 L 126 241 L 131 229 L 139 220 L 139 218 L 164 194 L 16",
+        "computedOffset": 0.9444444444444444
+      },
+      {
+        "offset": 0.9722222222222223,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 122 260 L 127 235 L 132 222 L 142 204 L 146 200 L 147 196 L 14",
+        "computedOffset": 0.9722222222222223
+      },
+      {
+        "offset": 1,
+        "easing": "steps(1)",
+        "composite": "auto",
+        "d": "path(\"M 88 84 L 93 73 L 101 68 L 112 68 L 125 74 L 159 84 L 163 87 L 1",
+        "computedOffset": 1
+      }
+    ],
+    "viewBox": "20 40 300 240",
+    "size": {
+      "width": 180,
+      "height": 180
+    },
+    "svgOverflow": "visible",
+    "fillRule": "evenodd",
+    "stroke": "none",
+    "transform": "none",
+    "animationName": "dsh-status-rotator-whale-twist"
+  },
+  "local": {
+    "viewBox": "20 40 300 240",
+    "size": {
+      "width": 20,
+      "height": 16
+    },
+    "largeSize": {
+      "width": 54,
+      "height": 44
+    },
+    "svgOverflow": "hidden",
+    "fillRule": "evenodd",
+    "stroke": "none",
+    "transform": "none"
+  },
+  "frameCount": 36,
+  "matchingFrames": 36,
+  "mismatches": [],
+  "errors": []
+}

@@ -1,0 +1,31 @@
+{
+  "recordedDate": "2026-11-01",
+  "scope": "Historical design comparison only; not the selected four-motion product asset and not terminal acceptance.",
+  "localHarnessAnimation": {
+    "package": "@deepseek-ai/dsh-client-ui-chat",
+    "packageVersion": "0.2.1-rc.2",
+    "sourceFile": "/Users/sunchongsheng/.nvm/versions/node/v24.18.0/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js",
+    "sourceFileSha256": "a00e5176d1257d51604cefbe9a15d326d4283439df31f76ba20ff690c76e10a1",
+    "entrypoint": "RunningWhaleTail and its embedded base64 PNG CSS mask",
+    "format": "APNG",
+    "dimensionsPx": [28, 28],
+    "frameCount": 60,
+    "frameDurationMs": 50,
+    "cycleMs": 3000,
+    "loopCount": 0,
+    "assetSha256": "0fd990d118113d19af7af4480f2b55d610b103451a08be6f7bf5a146823f8bd3",
+    "verificationMethod": "Decoded the CSS mask and confirmed byte identity with the earlier extracted APNG; read IHDR, acTL and all fcTL chunk delays. No animation playback test rerun.",
+    "assetIncluded": false,
+    "recheckLimit": "Source fingerprint and parsed metadata are archived, not the complete local Harness bundle or its image. Byte-level reproduction requires the exact source identified above."
+  },
+  "initialVisualComparison": {
+    "screenshot": "archive/initial-original-vs-character.png",
+    "screenshotSha256": "3742c23feba123b94eac3f77b5943df60b054a131ce1e710836293969e58d736",
+    "originalFilename": "desktop-dark.png",
+    "sourceDirectory": "/tmp/nano-whale-loading.eI7FkZ",
+    "whatItShows": "Browser prototype with the original image and a four-column, one-row braille conversion shown side by side below it.",
+    "interpretation": "The author judged the one-row conversion to lose the whale-tail outline; this is a visual assessment, not a measured fidelity score or a verbatim user verdict.",
+    "userDecision": "The user explicitly included terminal image support to retain the original whale-tail appearance.",
+    "captureLimit": "Static historical browser screenshot; no live animation, terminal rendering, or later revised visibility behavior proven."
+  }
+}
