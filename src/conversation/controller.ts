@@ -4,6 +4,7 @@
  * become history, and queue/steer/stop/clear semantics.
  */
 import { randomUUID } from 'node:crypto'
+import { ActivityState } from '../activity/state.ts'
 import type { OfficialModules } from '../boot/official.ts'
 import type { HistoryStore } from '../input/history.ts'
 import { type Block, TranscriptModel } from '../transcript/model.ts'
@@ -77,6 +78,8 @@ export async function saveDefaultSelection(
 
 export class ConversationController {
   readonly model = new TranscriptModel()
+  readonly activity = new ActivityState()
+  private sessionSeq = -1
   private readonly options: ConversationOptions
   private handle: any
   private statusValue: 'idle' | 'running' = 'idle'
@@ -95,7 +98,7 @@ export class ConversationController {
   }
 
   get status(): 'idle' | 'running' {
-    return this.statusValue
+    return this.activity.isWorking ? 'running' : this.statusValue
   }
 
   get agent(): any {
@@ -222,6 +225,8 @@ export class ConversationController {
     const onStatus = (payload: any) => {
       if (payload?.agent !== agent) return
       this.statusValue = payload.status === 'running' ? 'running' : 'idle'
+      if (this.statusValue === 'running') this.activity.running()
+      else this.activity.endTurn()
       this.notifyStatus()
     }
     const onError = (payload: any) => {
@@ -240,11 +245,28 @@ export class ConversationController {
       () => ctx.off?.('agent/error', onError),
     )
     this.statusValue = agent.status === 'running' ? 'running' : 'idle'
+    if (this.statusValue === 'running') this.activity.running()
   }
 
   private handleSessionEvent(event: any): void {
     const data = event.data ?? {}
+    if (typeof event.seq === 'number') {
+      if (event.seq <= this.sessionSeq) return
+      this.sessionSeq = event.seq
+    }
+    if (
+      typeof data.turn === 'number' &&
+      event.type !== 'turn/start' &&
+      !this.activity.acceptsTurn(data.turn) &&
+      event.type !== 'session/title'
+    )
+      return
     switch (event.type) {
+      case 'turn/start':
+        if (!this.activity.startTurn(data.turn)) return
+        this.statusValue = 'running'
+        this.notifyStatus()
+        break
       case 'user/message': {
         const text = textOf(data.content)
         const sourceKind = data.source?.kind ?? 'unknown'
@@ -264,6 +286,8 @@ export class ConversationController {
           if (block.type === 'text') blocks.push({ type: 'text', text: block.text })
           else if (block.type === 'reasoning') blocks.push({ type: 'reasoning', text: block.text })
         }
+        // Latch visibility across preview -> durable message; end is emitted after this append.
+        for (const block of blocks) if (block.type === 'text') this.activity.body(block.text)
         this.model.appendAssistant(event.seq, blocks)
         break
       }
@@ -273,9 +297,11 @@ export class ConversationController {
           this.model.appendNotice('本次回复未确认（没有产生可见消息）。', 'warning')
         break
       case 'tool/call':
+        this.activity.toolStart(data.callId, data.name, data.turn)
         this.model.appendTool(data.callId, data.name, data.arguments ?? '')
         break
       case 'tool/result': {
+        this.activity.toolEnd(data.message?.toolCallId ?? data.message?.source?.callId, data.turn)
         const text = textOf(data.message?.content)
         const isError = data.message?.isError === true || data.error !== undefined
         const reason =
@@ -291,6 +317,7 @@ export class ConversationController {
         break
       }
       case 'turn/end':
+        if (!this.activity.endTurn(data.turn)) return
         this.statusValue = 'idle'
         this.notifyStatus()
         break
@@ -300,11 +327,13 @@ export class ConversationController {
       default:
         break
     }
+    this.notifyStatus()
   }
 
   private handleStreamFrame(frame: any): void {
     switch (frame.type) {
       case 'start':
+        if (!this.activity.start(frame)) return
         this.model.setPreview({
           attemptId: String(frame.attemptId),
           revision: frame.revision,
@@ -314,23 +343,36 @@ export class ConversationController {
         break
       case 'chunk': {
         const current = this.model.preview
-        if (!current || current.attemptId !== String(frame.attemptId)) return
+        if (
+          !current ||
+          current.attemptId !== String(frame.attemptId) ||
+          !this.activity.frame(frame)
+        )
+          return
         // Official frames carry a strictly increasing revision per frame, so it
         // orders frames within one attempt but never identifies the attempt.
         const chunk = frame.chunk
         if (chunk?.type === 'reasoning-delta') {
+          this.activity.reasoning(chunk.text)
           this.model.setPreview({ ...current, reasoning: current.reasoning + chunk.text })
         } else if (chunk?.type === 'text-delta') {
-          this.model.setPreview({ ...current, text: current.text + chunk.text })
+          const text = current.text + chunk.text
+          this.activity.body(text)
+          this.model.setPreview({ ...current, text })
+        } else if (chunk?.type === 'tool-call-delta') {
+          this.activity.parameters()
         }
         break
       }
       case 'end':
+        if (!this.activity.frame(frame)) return
+        this.activity.endAttempt()
         this.model.clearPreview()
         break
       default:
         break
     }
+    this.notifyStatus()
   }
 
   /** Submit a prompt. Running steers the current turn; idle starts a new turn. */
@@ -356,6 +398,8 @@ export class ConversationController {
     const delivery = this.statusValue === 'running' ? 'steer' : 'followup'
     this.model.appendUser(display, requestId)
     if (display !== '') this.options.history.record(display)
+    this.activity.accepted()
+    this.notifyStatus()
     try {
       const userMessage = this.options.official.llm.createUserMessage({
         content: prompt.content,
@@ -364,6 +408,8 @@ export class ConversationController {
       if (delivery === 'steer') this.agent.steer(userMessage)
       else this.agent.followup(userMessage)
     } catch (error) {
+      this.activity.rejected()
+      this.notifyStatus()
       this.model.markUnconfirmed(requestId)
       this.model.appendNotice(`提交失败：${message(error)}`, 'danger')
       throw error
@@ -386,6 +432,8 @@ export class ConversationController {
     if (display === '' && !hasAttachment(prompt.content)) return
     this.model.appendUser(display, randomUUID())
     if (display !== '') this.options.history.record(display)
+    this.activity.accepted()
+    this.notifyStatus()
     this.agent.steer(
       this.options.official.llm.createUserMessage({
         content: prompt.content,
@@ -396,20 +444,25 @@ export class ConversationController {
 
   /** Stop keeps queued work (spec: 停止保留队列). */
   stop(): void {
+    this.activity.stop()
+    this.notifyStatus()
     this.agent.cancel({ kind: 'user' }, { keepInbox: true })
     this.model.clearPreview()
   }
 
   /** Clear is a compound action: stop the active turn and drop queued work. */
   clear(): void {
+    this.activity.stop()
+    this.notifyStatus()
     this.agent.cancel({ kind: 'user' })
     this.model.clearPreview()
-    this.model.appendNotice('已停止当前回合并清空队列。', 'info')
+    this.model.appendNotice('已发送停止请求并清空队列。', 'info')
   }
 
   async dispose(): Promise<void> {
     if (this.disposed) return
     this.disposed = true
+    this.activity.endTurn()
     for (const dispose of this.disposers) dispose()
     this.disposers = []
     await this.handle?.dispose?.()

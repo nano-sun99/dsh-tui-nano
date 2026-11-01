@@ -24,10 +24,16 @@ import { writeHandoff } from '../runtime/handoff.ts'
 import { formatShutdownReport, Lifecycle } from '../runtime/lifecycle.ts'
 import type { Terminal } from '../runtime/terminal.ts'
 import { activeTheme } from '../theme/theme.ts'
-import { App, type AppSnapshot, QuestionCard, transcriptBodyHeight } from './App.tsx'
+import {
+  App,
+  type AppSnapshot,
+  QuestionCard,
+  questionActivityCap,
+  transcriptBodyHeight,
+} from './App.tsx'
 import { InputModel } from './input-model.ts'
 import { NoticeState, type NoticeTone } from './notice.ts'
-import { buildQuestionCard, questionCardCap, questionCardWindow } from './question-card.ts'
+import { buildQuestionCard, questionCardWindow } from './question-card.ts'
 
 export interface NanoAppOptions {
   readonly core: CoreBoot
@@ -156,6 +162,7 @@ export class NanoApp {
 
   constructor(options: NanoAppOptions) {
     this.options = options
+    options.renderer.configureActivity(() => options.terminal.activityGraphics)
   }
 
   get decisionsManager(): DecisionManager {
@@ -318,7 +325,7 @@ export class NanoApp {
         return
       case 'conversation.cancel':
         this.options.conversation.stop()
-        this.notices.set('已停止当前回合（队列保留）')
+        this.notices.set('已发送停止请求（队列保留）')
         return
       case 'conversation.steer': {
         const text = this.input.text
@@ -335,7 +342,7 @@ export class NanoApp {
       }
       case 'conversation.clear':
         this.options.conversation.clear()
-        this.notices.set('已停止并清空队列')
+        this.notices.set('已发送停止请求并清空队列')
         return
       case 'app.exit':
         if (key.ctrl && key.text === 'c' && this.input.text !== '') {
@@ -477,7 +484,14 @@ export class NanoApp {
       return
     }
     // Never accept an answer while the compact screen cannot show the choices.
-    if (questionCardCap(this.options.terminal.height) < 4) return
+    if (
+      questionActivityCap({
+        height: this.options.terminal.height,
+        dockRows: this.options.features?.dockRows?.() ?? 0,
+        activityOwned: this.activityOwnedNow(),
+      }) < 4
+    )
+      return
     if (key.alt && key.name === 'char' && key.text === 'n') {
       this.finishQuestionAction(() => this.decisions.skipQuestion())
       return
@@ -536,7 +550,10 @@ export class NanoApp {
   private scrollDecision(delta: number): void {
     const prompt = this.decisions.prompt
     if (prompt?.kind !== 'question') return
-    const cap = questionCardCap(this.options.terminal.height)
+    const cap = questionActivityCap({
+      height: this.options.terminal.height,
+      dockRows: this.options.features?.dockRows?.() ?? 0,
+    })
     const parts = buildQuestionCard(prompt, Math.max(1, this.options.terminal.width - 4), cap)
     const visible = questionCardWindow(parts, cap, prompt.scrollOffset, !prompt.manualScroll)
     if (visible.room <= 1 && parts.focusBodyRow >= 0) return
@@ -611,7 +628,11 @@ export class NanoApp {
   private handlePress(id: string): void {
     if (
       this.decisions.prompt?.kind === 'question' &&
-      (!id.startsWith('decision:') || questionCardCap(this.options.terminal.height) < 4)
+      (!id.startsWith('decision:') ||
+        questionActivityCap({
+          height: this.options.terminal.height,
+          dockRows: this.options.features?.dockRows?.() ?? 0,
+        }) < 4)
     )
       return
     if (!id.startsWith('decision:') && this.options.features?.handlePress?.(id) === true) {
@@ -679,6 +700,13 @@ export class NanoApp {
     }
   }
 
+  /** Root input surface owns the activity line; takeover surfaces suppress it. */
+  private activityOwnedNow(): boolean {
+    if (this.options.features?.replacesTranscript?.() === true) return false
+    if (this.options.features?.inputActive?.() === false) return false
+    return this.decisions.hasDecision || (this.options.features?.modelPanelRows?.() ?? 0) === 0
+  }
+
   private snapshot(): AppSnapshot {
     const width = this.options.terminal.width
     const lines = this.options.conversation.model.layout({
@@ -696,6 +724,17 @@ export class NanoApp {
     const modelPanelRows = this.options.features?.modelPanelRows?.() ?? 0
     const dockRows = this.options.features?.dockRows?.() ?? 0
     const inputPlaceholder = this.options.features?.inputPlaceholder?.()
+    const prompt = this.decisions.prompt
+    const activityOwned = this.activityOwnedNow()
+    const waiting =
+      prompt?.kind === 'approval'
+        ? 'approval'
+        : prompt?.kind === 'question'
+          ? prompt.planReview
+            ? 'plan-review'
+            : 'question'
+          : undefined
+    const activity = this.options.conversation.activity.project(waiting, activityOwned)
     const base: AppSnapshot = {
       transcript: this.options.conversation.model,
       decisions: this.decisions,
@@ -708,14 +747,14 @@ export class NanoApp {
       modelLabel: this.options.conversation.selectionInfo,
       cwd: this.options.cwd,
       status: this.options.conversation.status,
+      activity,
+      activityOwned,
       expanded: this.expanded,
       scrollOffset: this.scrollOffset,
       stickBottom: this.stickBottom,
       ...(this.notices.current
         ? { notice: { text: this.notices.current.text, tone: this.notices.current.tone } }
-        : this.decisions.prompt?.kind === 'question'
-          ? { notice: { text: '等待你的选择', tone: 'info' as const } }
-          : {}),
+        : {}),
       caretActive: this.options.features?.inputActive?.() ?? true,
       ...(contextRatio !== undefined ? { contextRatio } : {}),
       ...(completionRows > 0 ? { completionRows } : {}),
@@ -812,6 +851,7 @@ export class NanoApp {
       return
     }
     this.stopping = true
+    this.options.renderer.stopActivity()
     this.shutdownStartedAt = Date.now()
     this.notices.dispose()
     this.options.writeDiagnostic(`nano: 开始关停（${reason}）`)

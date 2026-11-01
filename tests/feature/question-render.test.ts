@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   App,
   type AppSnapshot,
+  questionActivityCap,
   questionCardRows,
   transcriptBodyHeight,
 } from '../../src/app/App.tsx'
@@ -65,7 +66,7 @@ function snapshot(
     scrollOffset: 0,
     stickBottom: true,
     userName: '用户',
-    notice: { text: '等待你的选择', tone: 'info' },
+    activity: { text: '等待你的选择' },
   }
 }
 
@@ -133,7 +134,7 @@ describe('question card rendered surface', () => {
           expect(lines[rule]?.trim()).toHaveLength(width - 4)
           expect(lines[rule + 1]?.trim()).toBe('')
           for (const text of lines) expect(displayWidth(text)).toBeLessThanOrEqual(width)
-          expect(questionCardRows(view)).toBeLessThanOrEqual(questionCardCap(view.height))
+          expect(questionCardRows(view)).toBeLessThanOrEqual(questionActivityCap(view))
           expect(transcriptBodyHeight(view)).toBeGreaterThanOrEqual(8)
           expect(output).toContain(
             `\x1b[0;1;38;2;${theme.success.join(';')}m  1. 聚焦回归（推荐） ✓`,
@@ -165,9 +166,9 @@ describe('question card rendered surface', () => {
         renderer.mount(createElement(App, { snapshot: view }))
         renderer.flushFrame()
         const screen = renderer.snapshotLines().join('\n')
-        expect(questionCardRows(view)).toBeLessThanOrEqual(questionCardCap(height))
+        expect(questionCardRows(view)).toBeLessThanOrEqual(questionActivityCap(view))
         expect(screen).toContain('等待你的选择')
-        if (questionCardCap(height) >= 4) {
+        if (questionActivityCap(view) >= 4) {
           expect(screen).toContain('请至少选择一项。')
           expect(screen).toContain('> 1.')
           expect(screen).toContain('Esc 取消')
@@ -233,6 +234,31 @@ describe('question card rendered surface', () => {
     expect(buildQuestionCard(prompt, 56).tabs.map(rowText)).toEqual(['[ ] 当前标', '提交'])
     manager.cancelQuestions()
     await rejected
+  })
+
+  it('charges the activity line once when a subagent dock shares a short terminal', async () => {
+    const manager = new DecisionManager()
+    const pending = manager.simulateQuestion(questions)
+    const rejected = pending.catch(() => {})
+    try {
+      const view = { ...snapshot(manager, 60, darkTheme, 21), dockRows: 5 }
+      const cap = questionActivityCap(view)
+      expect(cap).toBeGreaterThanOrEqual(4)
+      expect(questionCardRows(view)).toBeLessThanOrEqual(cap)
+      const renderer = new Renderer({ width: 60, height: 21, write: () => {} })
+      try {
+        renderer.mount(createElement(App, { snapshot: view }))
+        renderer.flushFrame()
+        const screen = renderer.snapshotLines().join('\n')
+        expect(screen).toContain('等待你的选择')
+        expect(screen).not.toContain('终端过矮')
+      } finally {
+        renderer.unmount()
+      }
+    } finally {
+      manager.cancelQuestions()
+      await rejected
+    }
   })
 
   it('budgets the submit page and errors within the cap across short heights', async () => {

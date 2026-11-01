@@ -14,6 +14,7 @@ import Yoga, {
   PositionType,
   type Node as YogaNode,
 } from 'yoga-layout'
+import type { Activity } from '../activity/state.ts'
 import type { Rgb } from '../theme/theme.ts'
 import type { Style } from './ansi.ts'
 import type { CellGrid } from './grid.ts'
@@ -59,6 +60,8 @@ export interface BoxProps {
   readonly clear?: boolean
   /** Zero-width marker: park the hidden hardware cursor on this box's cell. */
   readonly cursor?: boolean
+  /** Core-owned activity marker; never a generic image surface. */
+  readonly activityImage?: Activity & { readonly color: Rgb }
   readonly display?: 'flex' | 'none'
   readonly children?: unknown
 }

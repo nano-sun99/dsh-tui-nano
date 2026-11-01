@@ -3,6 +3,7 @@
 //
 // 边界：PTY 只证明「nano 发了什么颜色/序列」，不证明 Ghostty 的合成、透明、
 // 字体与窗口观感；后者仍需要真机截图，不能由本文件替代。
+// biome-ignore-all lint/suspicious/noControlCharactersInRegex: 解析终端 CSI/APC/DCS/OSC 必须匹配 ESC
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -68,7 +69,6 @@ function runInPty(theme, cols) {
 /** 拆出每个 SGR 的参数列表；`38;2;r;g;b` 的 RGB 数值不算独立颜色码。 */
 function sgrParams(screen) {
   const blocks = []
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: 解析终端 SGR 必须匹配 ESC
   const re = /\x1b\[([0-9;]*)m/g
   let match = re.exec(screen)
   while (match) {
@@ -123,11 +123,14 @@ function skeletonLineWidths(screen) {
   const widths = []
   for (const chunk of screen.split('\r\n')) {
     if (!chunk.includes('\x1b[K')) continue
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: 解析终端 CSI 必须匹配 ESC
     if (/\x1b\[\d+;\d+H/.test(chunk)) continue // 后面带光标定位的是正式 UI 片段，不是整行
-    // 去掉 CSI（含 `ESC[>1u` 这类 kitty 协议）与行尾残留的 `\r`。
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: 解析终端 CSI 必须匹配 ESC
-    const text = chunk.replace(/\x1b\[[0-9;?>]*[A-Za-z]/g, '').replace(/\r+$/, '')
+    // 去掉 CSI（含 `ESC[>1u` 这类 kitty 协议）与行尾残留的 `\r`；
+    // Ghostty 图形探测的 APC/DCS/OSC 回应也是不可见控制序列，不算骨架文本。
+    const text = chunk
+      .replace(/\x1b[_P^][^\x1b]*(?:\x1b\\)?/g, '')
+      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+      .replace(/\x1b\[[0-9;?>]*[A-Za-z]/g, '')
+      .replace(/\r+$/, '')
     widths.push(stringWidth(text))
   }
   return widths

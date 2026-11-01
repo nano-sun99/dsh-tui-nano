@@ -203,7 +203,8 @@ describe('question card layout (spec §3/§4)', () => {
   })
 
   it('renders tabs, review rows and the submit page for a batch', async () => {
-    const harness = makeHarness()
+    // 活动栏固定占 1 行；本用例验证提交页内容，给它补回这一行预算。
+    const harness = makeHarness(80, 25)
     const close = await openQuestion(harness, [
       {
         id: 'q1',
@@ -257,6 +258,25 @@ describe('question card layout (spec §3/§4)', () => {
     const screen = lines(harness).join('\n')
     expect(screen).toContain('已取消，未提交答案')
     expect(screen).not.toContain('聚焦回归')
+    harness.renderer.unmount()
+  })
+
+  it('does not draw the waiting activity line on a takeover surface', async () => {
+    const harness = makeHarness(80, 24, { replacesTranscript: () => true })
+    harness.app.start().catch(() => {})
+    await tick()
+    const handler = harness.ctx.handlers.get('user-questions/request') as
+      | ((payload: unknown) => Promise<unknown>)
+      | undefined
+    const pending = handler?.({
+      questions: [{ id: 'q', question: '选吗', options: [{ label: 'A' }] }],
+    })
+    await tick()
+    harness.app.render()
+    harness.renderer.flushFrame()
+    expect(lines(harness).join('\n')).not.toContain('等待你的选择')
+    harness.app.handleInput([key('escape')])
+    await expect(pending).rejects.toMatchObject({ code: 'ASK_ABORTED' })
     harness.renderer.unmount()
   })
 

@@ -5,10 +5,11 @@
  */
 
 import { Fragment, type ReactNode } from 'react'
+import type { Activity } from '../activity/state.ts'
 import { APPROVAL_OPTIONS, type DecisionManager } from '../decisions/manager.ts'
 import { Box, Overlay, Text } from '../render/components.ts'
 import { displayWidth, graphemes, truncateText } from '../render/text.ts'
-import { CHROME_GAP, EDGE, INLINE } from '../theme/spacing.ts'
+import { ACTIVITY_ROWS, ACTIVITY_SLOT, CHROME_GAP, EDGE, INLINE } from '../theme/spacing.ts'
 import type { Theme } from '../theme/theme.ts'
 import type { TranscriptModel } from '../transcript/model.ts'
 import { type Row, type Span, type Tone, wrapSpans } from '../transcript/spans.ts'
@@ -31,6 +32,8 @@ export interface AppSnapshot {
   readonly rootId: string
   readonly modelLabel: string
   readonly status: 'idle' | 'running'
+  readonly activity?: Activity
+  readonly activityOwned?: boolean
   readonly cwd?: string
   readonly expanded: ReadonlySet<string>
   readonly scrollOffset: number
@@ -273,7 +276,7 @@ export function transcriptBodyHeight(snapshot: AppSnapshot): number {
   const asking = snapshot.decisions.prompt?.kind === 'question'
   const completionRows = asking ? 0 : (snapshot.completionRows ?? 0)
   const modelRows = snapshot.modelPanelRows ?? 0
-  const dockRows = asking ? 0 : (snapshot.dockRows ?? 0)
+  const dockRows = snapshot.dockRows ?? 0
   const headerHeight = 1 + 2 * CHROME_GAP
   const decisionRows = questionCardRows(snapshot)
   const bottomRows =
@@ -282,7 +285,10 @@ export function transcriptBodyHeight(snapshot: AppSnapshot): number {
       : modelRows > 0
         ? modelRows
         : inputHeight + 1 + dockRows
-  return Math.max(1, snapshot.height - bottomRows - completionRows - headerHeight)
+  return Math.max(
+    1,
+    snapshot.height - bottomRows - completionRows - headerHeight - activityRows(snapshot),
+  )
 }
 
 /** 输入块上/下边框：左侧按上下文占比着色，右侧为普通边框色。 */
@@ -415,6 +421,52 @@ function ApprovalOverlay(props: { snapshot: AppSnapshot; width: number; height: 
   )
 }
 
+export function activityRows(snapshot: AppSnapshot): number {
+  if (snapshot.activityOwned === false) return 0
+  if (snapshot.decisions.prompt?.kind === 'question') return ACTIVITY_ROWS
+  return snapshot.featureFullBody !== true &&
+    !(snapshot.modelPanelRows && snapshot.modelPanelRows > 0)
+    ? ACTIVITY_ROWS
+    : 0
+}
+export function questionActivityCap(
+  snapshot: Pick<AppSnapshot, 'height' | 'dockRows' | 'activityOwned'>,
+): number {
+  const activity = snapshot.activityOwned === false ? 0 : ACTIVITY_ROWS
+  // The activity line is charged once; dock rows are bounded by the actual
+  // layout so a 4+1 subagent bar cannot double-charge the card budget.
+  const available =
+    snapshot.height - (1 + 2 * CHROME_GAP) - 1 - activity - 1 - (snapshot.dockRows ?? 0)
+  return Math.max(1, Math.min(questionCardCap(snapshot.height - activity), available))
+}
+
+function ActivityLine({ snapshot }: { snapshot: AppSnapshot }) {
+  const activity = snapshot.activity ?? { text: '' }
+  const slot = activity.tail ? ACTIVITY_SLOT : 0
+  const width = Math.max(1, snapshot.width - 2 * EDGE - slot)
+  return (
+    <Box
+      flexDirection="row"
+      width={snapshot.width}
+      paddingX={EDGE}
+      height={ACTIVITY_ROWS}
+      flexShrink={0}
+      overflow="hidden"
+    >
+      {slot > 0 ? (
+        <Box
+          width={slot}
+          height={ACTIVITY_ROWS}
+          activityImage={{ ...activity, color: snapshot.theme.accent }}
+        />
+      ) : null}
+      <Text color={snapshot.theme.muted} wrap={false}>
+        {truncateText(activity.text, width)}
+      </Text>
+    </Box>
+  )
+}
+
 function questionCardWidth(snapshot: AppSnapshot): number {
   return Math.max(1, snapshot.width - EDGE * 2)
 }
@@ -422,7 +474,7 @@ function questionCardWidth(snapshot: AppSnapshot): number {
 function questionCardParts(snapshot: AppSnapshot): QuestionCardParts | undefined {
   const prompt = snapshot.decisions.prompt
   if (prompt?.kind !== 'question') return undefined
-  return buildQuestionCard(prompt, questionCardWidth(snapshot), questionCardCap(snapshot.height))
+  return buildQuestionCard(prompt, questionCardWidth(snapshot), questionActivityCap(snapshot))
 }
 
 /** 卡片占用的终端行数：顶线 + 可见的 body 窗口 + 固定的头尾。 */
@@ -433,7 +485,7 @@ export function questionCardRows(snapshot: AppSnapshot): number {
   if (prompt?.kind !== 'question') return 0
   return questionCardWindow(
     parts,
-    questionCardCap(snapshot.height),
+    questionActivityCap(snapshot),
     prompt.scrollOffset,
     !prompt.manualScroll,
   ).total
@@ -447,7 +499,7 @@ export function QuestionCard(props: { snapshot: AppSnapshot; width: number }) {
   if (prompt?.kind !== 'question' || !parts) return null
   const { start, body } = questionCardWindow(
     parts,
-    questionCardCap(snapshot.height),
+    questionActivityCap(snapshot),
     prompt.scrollOffset,
     !prompt.manualScroll,
   )
@@ -532,13 +584,15 @@ export function App(props: { snapshot: AppSnapshot }) {
         snapshot.modelPanelBody
       ) : (
         <>
+          {!asking && activityRows(snapshot) > 0 ? <ActivityLine snapshot={snapshot} /> : null}
           {asking ? (
             (snapshot.decisionBody ?? <QuestionCard snapshot={snapshot} width={width} />)
           ) : snapshot.inputHidden === true ? null : (
             <InputLine snapshot={snapshot} width={width} />
           )}
+          {asking && activityRows(snapshot) > 0 ? <ActivityLine snapshot={snapshot} /> : null}
           <StatusLine snapshot={snapshot} width={width} />
-          {!asking && snapshot.dockBody ? (
+          {snapshot.dockBody ? (
             <Box paddingX={EDGE} width={width} flexShrink={0}>
               {snapshot.dockBody}
             </Box>
