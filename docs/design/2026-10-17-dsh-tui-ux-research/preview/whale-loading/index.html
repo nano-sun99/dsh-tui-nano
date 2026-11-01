@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>活动 Dock · 四款鲸尾</title>
+<style>
+:root{color-scheme:light;--page:#f3f2ef;--ink:#30343b;--secondary:#646a73;--edge:#d5d6d6;--focus:#365f9d}*{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--ink);font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:1320px;margin:auto;padding:28px 32px}h1{font-size:23px;line-height:1.4;margin:0 0 8px;font-weight:650;letter-spacing:-.02em}h2{font-size:17px;margin:0 0 10px}.intro{margin:0 0 18px;color:var(--secondary);max-width:76ch}.toolbar{display:flex;gap:12px 24px;flex-wrap:wrap;padding:16px 0;border-bottom:1px solid var(--edge)}label{display:flex;gap:8px;align-items:center}button,select{font:inherit;color:var(--ink);border:1px solid var(--edge);border-radius:3px;background:transparent;padding:5px 9px;cursor:pointer}button:hover{background:#e6e8e9}button:disabled{cursor:default;opacity:.6}button:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--focus);outline-offset:3px}.primary{background:#dfe5ec;color:#223b5f;font-weight:600;border-color:#bbc9db}.strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px;margin:20px 0 0;padding-bottom:16px;border-bottom:1px solid var(--edge)}.motion-item{min-width:0}.motion-heading{display:flex;gap:10px;align-items:center;min-height:58px;margin-bottom:6px}.motion-item .large-icon{width:54px;height:54px;color:var(--focus);flex:none;overflow:visible}.motion-item h3{font-size:14px;line-height:1.4;margin:0 0 3px}.motion-item small{display:block;color:var(--secondary);font-size:12px}.motion-item button{font-size:12px;padding:3px 8px}.motion-item button[aria-pressed=true]{background:#dfe5ec;color:#223b5f;border-color:#93aac8}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 245px;gap:24px;margin-top:20px;align-items:start}.stage{min-width:0}.terminal{--cols:100;--line:22px;--bg:#17191d;--fg:#e8e6e0;--muted:#8d95a6;--accent:#7da1de;--rule:#424953;--warning:#d8b270;--error:#da8a93;background:var(--bg);color:var(--fg);font:14px/var(--line) "SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;font-variant-numeric:tabular-nums;width:100%;max-width:calc(var(--cols)*1ch + 4ch + 2px);height:430px;border:1px solid var(--rule);border-radius:3px;display:flex;flex-direction:column;overflow:hidden}.terminal.light{--bg:#f6f3ed;--fg:#343945;--muted:#626978;--accent:#365f9d;--rule:#c4c6c9;--warning:#855b18;--error:#a33e4c}.terminal ::selection{background:#3b4a66;color:var(--fg)}.terminal.light ::selection{background:#d5def2}.terminal-head{padding:22px 2ch 0;display:flex;gap:2ch;white-space:nowrap}.muted{color:var(--muted)}.viewport{padding:22px 2ch;flex:1;min-height:0;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--rule) var(--bg)}.user{color:var(--accent);font-weight:700;margin:0 0 22px}.narration{margin:0 0 22px}.process{color:var(--muted);margin-bottom:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.activity{flex:none;height:var(--line);margin:0 2ch;color:var(--muted);white-space:nowrap;overflow:hidden;display:flex;align-items:center}.glyph-slot{display:inline-flex;align-items:center;flex:none;width:3ch;height:var(--line);color:var(--accent)}.main-icon{width:20px;height:20px;flex:none;overflow:visible}#main-glyph[hidden]{display:inline-flex!important;visibility:hidden;pointer-events:none}.activity.waiting{color:var(--warning)}.activity.error{color:var(--error)}.text-body{min-width:0;overflow:hidden;text-overflow:ellipsis}.composer{margin:0 2ch;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:11px 0;position:relative;flex:none}.composer:before,.composer:after{content:"";position:absolute;left:0;width:36%;border-top:2px solid var(--accent)}.composer:before{top:-2px}.composer:after{bottom:-2px}.prompt{display:flex;align-items:center;gap:1ch}.prompt input{border:0;padding:0;background:transparent;min-width:0;flex:1;font:inherit;color:var(--fg);caret-color:var(--fg);outline:none}.prompt input:focus-visible{outline:1px solid var(--accent);outline-offset:3px}.prompt input::placeholder{color:var(--muted)}.prompt-symbol{color:var(--accent);font-weight:700}.terminal-status{display:flex;gap:2ch;justify-content:space-between;padding:11px 2ch;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden}.terminal-status span{overflow:hidden;text-overflow:ellipsis}.caption{color:var(--secondary);font-size:13px;margin-top:8px}.notes h2{font-size:15px;margin:0 0 6px}.notes p{font-size:13px;line-height:1.75;margin:0 0 16px;color:var(--secondary)}.current{font-size:14px;color:var(--ink);min-height:24px}.history{font-size:12px;color:var(--secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:20px}.provenance{margin:22px 0 0;padding-top:14px;border-top:1px solid var(--edge);font-size:12px;color:var(--secondary)}.provenance summary{cursor:pointer}.provenance p{max-width:90ch;margin:8px 0}a{color:var(--focus);text-underline-offset:3px}.error-note{color:#a33e4c}[hidden]{display:none!important}@media(max-width:900px){main{padding:20px 16px}.workspace{grid-template-columns:1fr}.notes{display:flex;gap:24px;flex-wrap:wrap}.notes section{max-width:37ch}.strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.toolbar{gap:10px 16px}.terminal-status{font-size:11px}.terminal-status .path{display:none}.terminal{height:430px}.motion-item .large-icon{width:44px;height:44px}}
+.twist-compare{padding:16px 0 20px;border-top:1px solid var(--edge);border-bottom:1px solid var(--edge)}.twist-pair{display:flex;flex-wrap:wrap;gap:20px 32px}.twist-surface{width:224px;height:224px;background:#fff;display:flex;align-items:center;justify-content:center}.twist-surface iframe{width:224px;height:224px;border:0}.twist-surface>svg{width:180px;height:180px;color:#345dc1;overflow:visible}.twist-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px}.twist-controls input{width:220px;max-width:60vw;accent-color:var(--focus)}.twist-label{margin:0 0 4px;font-weight:600}.twist-note{font-size:12px;color:var(--secondary);max-width:80ch;margin:6px 0 0}.twist-badge{font-size:12px;color:var(--secondary)}
+</style>
+</head>
+<body><main>
+<h1>活动 Dock · 四款鲸尾</h1>
+<p class="intro">四款都用你指定仓库的原始轮廓。每次模型请求等概率抽一种；正文已显示时收起，等待确认时只留静态提示，空闲留一行。场景菜单仅供测试，不是产品功能。</p>
+<section class="twist-compare" aria-label="Twist 原生对照"><h2>Twist：仓库原生播放与当前预览</h2><div class="twist-pair"><div><p class="twist-label">仓库原生组件</p><div class="twist-surface"><iframe id="native-twist" title="仓库原生 Twist，隔离演示" sandbox="allow-scripts allow-same-origin" data-fixture="bundled-native-fixture"></iframe></div></div><div><p class="twist-label">当前预览 · 同尺寸同进度</p><div class="twist-surface"><svg viewBox="20 40 300 240" aria-hidden="true"><path id="compare-twist-path" fill="currentColor" fill-rule="evenodd"/></svg></div></div></div><div class="twist-controls"><button id="twist-pause" type="button" disabled>暂停对照</button><label>逐帧核对 <input id="twist-frame" type="range" min="0" max="35" value="0" disabled></label><span class="twist-badge" id="twist-check">正在载入原生组件…</span></div><p class="twist-note">原生栏直接运行仓库演示组件，不另画动画；两侧使用相同尺寸、36 帧与 2 秒周期。左侧保留仓库变色，右侧只用 Nano 单色。拖动滑条可对齐检查每一帧。</p></section>
+<div id="loading" role="status">正在加载四款动作…</div>
+<div class="strip" id="motion-strip" aria-label="四款动作放大对比"></div>
+<div class="toolbar">
+<button id="next-thought" class="primary" disabled>下一次模型请求 · 随机抽取</button>
+<label>测试场景 <select id="state"><option value="requesting">请求已开始</option><option value="thinking">思考中</option><option value="toolInput">准备工具参数</option><option value="tool">工具正在执行</option><option value="respondingPending">文字未显示</option><option value="responding">流式正文已显示</option><option value="approval">等待授权</option><option value="question">等待选择</option><option value="stopping">停止请求待确认</option><option value="idle">回合结束／空闲</option><option value="error">失败已结束</option></select></label>
+<label>宽度 <select id="width"><option value="100">100 列</option><option value="60">60 列</option></select></label>
+<label>主题 <select id="theme"><option value="dark">深色</option><option value="light">浅色</option></select></label>
+<label><input type="checkbox" id="reduce">减少动态效果</label>
+</div>
+<div class="workspace"><div class="stage">
+<div class="terminal" id="terminal">
+<header class="terminal-head"><strong>nano</strong><span class="muted">~/code/dsh-TUI</span></header>
+<div class="viewport"><p class="user">&gt; 检查配置读取，修复空配置报错，再跑验证。</p><p class="narration">我会先核对读取入口，再检查空配置和解析失败两条路径。</p><div class="process" id="thinking-row">▸ 思考　进行中…</div><div class="process">▸ Read 2 个文件 · Grep 1 次</div><div class="process">▸ Bash　node --input-type=module　· 等待结果</div><p id="streaming-answer" hidden>空配置将使用默认值；我正在整理验证结果…</p><p id="result-error" class="error-note" hidden>执行失败（演示）：错误保留在正文，不让鲸尾继续假装忙碌。</p></div>
+<div class="activity" id="activity" aria-live="off"><span class="glyph-slot" id="main-glyph" aria-hidden="true"><svg class="main-icon" viewBox="20 40 300 240" focusable="false"><path id="main-path" fill="currentColor" fill-rule="evenodd"/></svg></span><span class="text-body" id="activity-copy"></span></div>
+<div class="composer" id="composer"><label class="prompt"><span class="prompt-symbol">&gt;</span><input id="prompt" aria-label="预览消息输入框" placeholder="继续提问…"></label></div>
+<footer class="terminal-status"><span id="hint">Enter 插话 · Ctrl+C 停止</span><span class="path">~/code/dsh-TUI</span></footer>
+</div>
+<div class="current" id="current" role="status"></div><div class="history" id="history"></div>
+<p class="caption">上方放大对比，Dock 使用与原生相同的正方形容器（20×20px）。官方款 4 秒一轮，其余 2 秒一轮：沿用仓库演示速度，尚非产品定稿值。</p>
+</div><aside class="notes">
+<section><h2>按每次模型请求抽取</h2><p>点击按钮模拟下一次模型请求。四款各 25%，允许连续同款；一次用户任务可能包含多次请求。收到流式片段、工具事件、重绘或授权恢复均不重抽。</p></section>
+<section><h2>正文显示才收起</h2><p>只有当前请求的流式正文已交给正文区展示，才清空 Dock 内容；收到文字但尚未展示时仍保留。隐藏后仍留固定一行；工具开始执行或下一次请求开始时再显示。</p></section>
+<section><h2>空闲也占一行</h2><p>回合结束清空图标与文字，保留固定一行；输入框不跟着上下跳动。</p></section>
+<section><h2>不扩进其它特效</h2><p>只借四款鲸尾，不引入弹幕、随机梗文案、渐变、按速度加速或工具触发换款。</p></section>
+</aside></div>
+<details class="provenance"><summary>显隐调研、素材来源与预览边界</summary><p>显隐依据为本机 Claude Code 2.1.88 源码归档；<a href="../../../../evidence/2026-11-01-nano-activity-dock/research.md">查看调研证据与 Nano 适配边界</a>。停止待确认是 Nano 的保守反馈，不冒充 Claude Code 的原生状态。</p><p>源：01Virex/dsh-status-rotator，提交 0d486a80c55dabee9e62ce8d87612dc15792c805。Copyright (c) 2026 01Virex，MIT；<a href="./LICENSE.status-rotator.txt">保留的许可原文</a>。主预览仅提取帧数据；原生对照栏在隔离的演示环境运行仓库组件，未安装进 Harness 或 Nano。</p><p>这里的“官方原版晃动”是仓库按参考 GIF 描出的 150 帧轮廓，不是上一版从本机 Harness 提取的 60 帧 APNG。全部保持源轮廓与帧顺序，速度使用仓库演示值。</p><p>减少动态效果时冻结在选中动作首帧。浏览器预览只证明外观和状态规则；Nano 的终端图片绘制、清除残影和终端兼容性仍需专门验证。任务文案及当前段切换均为演示数据。</p></details>
+</main>
+<script src="./assets.js"></script>
+<script>
+'use strict';
+const archive=window.NanoWhaleArchive;
+const $=id=>document.getElementById(id);
+const modes={thinking:'思考中…',requesting:'正在处理…',toolInput:'正在准备工具…',tool:'正在运行 Bash…',respondingPending:'正在处理…',responding:'',approval:'等待你的授权',question:'等待你的选择',stopping:'正在停止…',idle:'',error:''};
+const busyModes=new Set(['thinking','requesting','toolInput','tool','respondingPending']);
+const runningModes=new Set([...busyModes,'responding']);
+const osReduce=matchMedia('(prefers-reduced-motion: reduce)');
+const ordered=['official','wag','sway','twist'];
+let motionData=null,byId={},thoughtId=null,selected=null,drawCount=0,nextId=0,state='thinking',history=[],manual=false;
+let mainElapsed=0;
+const players=new Map();let comparisonPaused=false,comparisonReady=false;
+const keyframeStyle=document.createElement('style');document.head.appendChild(keyframeStyle);
+function reduced(){return $('reduce').checked||osReduce.matches;}
+function drawIndex(){const value=new Uint32Array(1);crypto.getRandomValues(value);return value[0]%4;}
+function chooseForThought(previous,id,index){if(previous&&previous.id===id)return previous;return {id,action:ordered[index]};}
+function beginThought(id){
+ if(thoughtId===id)return selected;
+ const choice=chooseForThought(thoughtId===null?null:{id:thoughtId,action:selected},id,drawIndex());
+ thoughtId=choice.id;selected=choice.action;manual=false;drawCount++;mainElapsed=0;
+ history.push(byId[selected].label);if(history.length>8)history.shift();state='requesting';$('state').value=state;render();resetMain();return selected;
+}
+function setState(next){if(!Object.hasOwn(modes,next))throw new Error('Unknown state');state=next;$('state').value=next;render();}
+function installKeyframes(){for(const motion of motionData.motions){const poses=motion.paths;keyframeStyle.sheet.insertRule('@keyframes nano-source-'+motion.id+'{'+poses.map((pose,i)=>i*100/poses.length+'%{d:path(\"'+pose+'\")}').join('')+'100%{d:path(\"'+poses[0]+'\")}}',keyframeStyle.sheet.cssRules.length);}}
+function ensurePlayer(node,motion){if(!motion)return null;let player=players.get(node);if(!player||player.motion.id!==motion.id){for(const old of node.getAnimations())old.cancel();node.style.animation='none';node.setAttribute('d',motion.paths[0]);getComputedStyle(node).animationName;node.style.animation='nano-source-'+motion.id+' '+motion.cycleMs+'ms steps(1,end) infinite';getComputedStyle(node).d;player={motion,animation:node.getAnimations()[0],held:null};if(!player.animation)throw Error('CSS animation unavailable');players.set(node,player);}return player;}
+function applyPlayer(player,active){if(!player)return;const a=player.animation;if(reduced()){if(player.held===null)player.held=Number(a.currentTime)||0;a.pause();a.currentTime=0;return;}if(player.held!==null){a.currentTime=player.held;player.held=null;}if(active&&!document.hidden)a.play();else a.pause();}
+function paint(){if(!motionData)return;for(const m of motionData.motions)applyPlayer(ensurePlayer(document.querySelector('[data-motion-path=\"'+m.id+'\"]'),m),true);const main=ensurePlayer($('main-path'),byId[selected]);applyPlayer(main,busyModes.has(state));mainElapsed=Number(main?.animation.currentTime)||0;const compare=ensurePlayer($('compare-twist-path'),byId.twist);applyPlayer(compare,!comparisonPaused);syncNative(!comparisonPaused);}
+function resetMain(){const p=players.get($('main-path'));if(p){p.animation.currentTime=0;if(p.held!==null)p.held=0;}}
+function nativeAnimation(){try{return $('native-twist').contentDocument?.querySelector('.dsh-status-rotator-tail-morph > path')?.getAnimations()[0]??null;}catch{return null;}}
+function syncNative(play){const a=nativeAnimation(),own=players.get($('compare-twist-path'));if(!a||!own)return;a.pause();a.currentTime=reduced()?0:Number(own.animation.currentTime)||0;if(play&&!reduced()&&!document.hidden)a.play();}
+function compareFrame(index){comparisonPaused=true;const own=players.get($('compare-twist-path'));const time=(Number(index)+.25)*2000/36;if(own){own.animation.pause();own.animation.currentTime=time;}const a=nativeAnimation();if(a){a.pause();a.currentTime=time;}const p=$('native-twist').contentDocument?.querySelector('.dsh-status-rotator-tail-morph > path');const normalize=s=>s.replace(/[\s,]+/g,'');const same=p&&normalize(getComputedStyle(p).d)===normalize(getComputedStyle($('compare-twist-path')).d);$('twist-check').textContent='第 '+(Number(index)+1)+' / 36 帧'+(same?' · 轮廓一致':'');$('twist-frame').value=String(index);$('twist-pause').textContent='继续同步播放';return Boolean(same);}
+function initializeComparison(){if(!motionData||!nativeAnimation())return false;comparisonReady=true;syncNative(true);$('twist-pause').disabled=false;$('twist-frame').disabled=false;$('twist-check').textContent='原生组件已同步 · 可暂停逐帧检查';return true;}
+$('twist-frame').addEventListener('input',event=>compareFrame(event.target.value));
+$('twist-pause').addEventListener('click',()=>{comparisonPaused=!comparisonPaused;const own=players.get($('compare-twist-path'));applyPlayer(own,!comparisonPaused);syncNative(!comparisonPaused);$('twist-pause').textContent=comparisonPaused?'继续同步播放':'暂停对照';});
+$('native-twist').addEventListener('load',()=>{let attempts=0;const timer=setInterval(()=>{if(initializeComparison()||++attempts>50)clearInterval(timer);},100);});
+Promise.resolve().then(()=>{if(!archive?.nativeFixture||!archive.nativeComponentSource)throw Error('归档原生对照素材缺失');$('native-twist').srcdoc=archive.nativeFixture.replace('new URLSearchParams(location.search)','new URLSearchParams("view=row&motion=twist&icon=1")').replace('script.src="/files/status-rotator-client.js";','script.textContent=parent.NanoWhaleArchive.nativeComponentSource;').replace('};document.head.appendChild(script);','};document.head.appendChild(script);script.onload();');}).catch(error=>{$('twist-check').textContent=error.message;});
+function render(){
+ $('terminal').classList.toggle('light',$('theme').value==='light');$('terminal').style.setProperty('--cols',$('width').value);
+ const waiting=state==='approval'||state==='question',busy=busyModes.has(state);
+ $('activity').className='activity'+(waiting?' waiting':state==='error'?' error':'');
+ $('main-glyph').hidden=!busy;$('activity-copy').textContent=modes[state];$('thinking-row').hidden=state!=='thinking';
+ $('streaming-answer').hidden=state!=='responding';$('result-error').hidden=state!=='error';
+ $('hint').textContent=runningModes.has(state)?'Enter 插话 · Ctrl+C 停止':waiting?'等待你处理确认 · 动效暂停':state==='stopping'?'停止请求已发出，尚未确认结束':'Enter 发送 · Ctrl+C 退出';
+ if(selected){$('current').textContent=(manual?'定款查看：':'本次请求随机结果：')+byId[selected].label+' · 位置固定，切换状态不换款';$('history').textContent='最近抽取：'+history.join(' → ');}
+ for(const btn of document.querySelectorAll('[data-view]'))btn.setAttribute('aria-pressed',String(btn.dataset.view===selected));
+ paint();
+}
+function manualView(id){selected=id;manual=true;mainElapsed=0;state='thinking';$('state').value=state;render();resetMain();}
+for(const id of ['width','theme','reduce'])$(id).addEventListener('change',render);
+$('state').addEventListener('change',()=>setState($('state').value));
+$('next-thought').addEventListener('click',()=>beginThought('preview-request-'+(++nextId)));
+osReduce.addEventListener('change',render);document.addEventListener('visibilitychange',paint);
+window.whalePreview={ready:false,setState,beginThought,manualView,chooseForThought,ordered,geometry(){return {activity:$('activity').getBoundingClientRect().toJSON(),composer:$('composer').getBoundingClientRect().toJSON()};},comparisonReady(){return comparisonReady;},compareFrame,snapshot(){const p=players.get($('main-path'));const elapsed=Number(p?.animation.currentTime)||0;return {thoughtId,selected,drawCount,state,manual,mainElapsed:elapsed,frame:p?Math.floor(elapsed%p.motion.cycleMs/p.motion.cycleMs*p.motion.frameCount):0,reduced:reduced()};},motions(){return motionData?.motions.map(({paths,...m})=>m);}};
+Promise.resolve().then(()=>{if(!archive?.motionData)throw new Error('归档帧数据缺失');return archive.motionData;}).then(data=>{
+ if(data.motions.length!==4)throw new Error('必须包含四款动作');motionData=data;byId=Object.fromEntries(data.motions.map(m=>[m.id,m]));
+ $('motion-strip').innerHTML=data.motions.map(m=>'<section class="motion-item"><div class="motion-heading"><svg class="large-icon" viewBox="'+data.viewBox+'" aria-hidden="true" focusable="false"><path data-motion-path="'+m.id+'" fill="currentColor" fill-rule="evenodd"/></svg><div><h3>'+m.label+'</h3><small>'+m.frameCount+' 帧 · '+m.cycleMs/1000+' 秒／轮</small></div></div><button type="button" data-view="'+m.id+'" aria-pressed="false">在 Dock 查看</button></section>').join('');
+ for(const btn of document.querySelectorAll('[data-view]'))btn.addEventListener('click',()=>manualView(btn.dataset.view));
+ installKeyframes();$('loading').hidden=true;$('next-thought').disabled=false;beginThought('preview-request-'+(++nextId));if(new URLSearchParams(location.search).get('focus')==='twist')manualView('twist');window.whalePreview.ready=true;initializeComparison();
+}).catch(error=>{$('loading').textContent='动作加载失败：'+error.message;$('loading').className='error-note';console.error(error);});
+render();
+</script>
+</body></html>

@@ -1,0 +1,176 @@
+{
+  "verifiedAt": "2026-11-01T09:03:14.463Z",
+  "entry": "index.html",
+  "transport": "file://",
+  "networkOffline": true,
+  "externalRequests": [],
+  "parity": {
+    "matchingFrames": 36,
+    "nativeSize": [
+      180,
+      180
+    ],
+    "previewSize": [
+      180,
+      180
+    ],
+    "frameCount": 36,
+    "checkedFrameIndices": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35
+    ],
+    "mismatches": []
+  },
+  "animationChecks": [
+    {
+      "id": "official",
+      "distinctPaths": 5
+    },
+    {
+      "id": "wag",
+      "distinctPaths": 5
+    },
+    {
+      "id": "sway",
+      "distinctPaths": 5
+    },
+    {
+      "id": "twist",
+      "distinctPaths": 5
+    }
+  ],
+  "stable": {
+    "noReroll": true,
+    "nextThoughtOneDraw": true
+  },
+  "layouts": [
+    {
+      "name": "archive-desktop",
+      "viewportPx": [
+        1440,
+        1300
+      ],
+      "configuredColumns": 100,
+      "theme": "dark",
+      "mobileEmulation": false,
+      "stateNames": [
+        "thinking",
+        "requesting",
+        "toolInput",
+        "tool",
+        "respondingPending",
+        "responding",
+        "approval",
+        "question",
+        "idle",
+        "stopping",
+        "error"
+      ],
+      "states": 11,
+      "fixedHeight": 22,
+      "noHorizontalOverflow": true,
+      "reducedMotion": true,
+      "focusAndDraft": true,
+      "streamingDockBlank": true,
+      "hiddenAnimationPaused": true
+    },
+    {
+      "name": "archive-narrow",
+      "viewportPx": [
+        1100,
+        1300
+      ],
+      "configuredColumns": 60,
+      "theme": "light",
+      "mobileEmulation": false,
+      "stateNames": [
+        "thinking",
+        "requesting",
+        "toolInput",
+        "tool",
+        "respondingPending",
+        "responding",
+        "approval",
+        "question",
+        "idle",
+        "stopping",
+        "error"
+      ],
+      "states": 11,
+      "fixedHeight": 22,
+      "noHorizontalOverflow": true,
+      "reducedMotion": true,
+      "focusAndDraft": true,
+      "streamingDockBlank": true,
+      "hiddenAnimationPaused": true
+    },
+    {
+      "name": "archive-mobile",
+      "viewportPx": [
+        390,
+        1400
+      ],
+      "configuredColumns": 60,
+      "theme": "dark",
+      "mobileEmulation": false,
+      "stateNames": [
+        "thinking",
+        "requesting",
+        "toolInput",
+        "tool",
+        "respondingPending",
+        "responding",
+        "approval",
+        "question",
+        "idle",
+        "stopping",
+        "error"
+      ],
+      "states": 11,
+      "fixedHeight": 22,
+      "noHorizontalOverflow": true,
+      "reducedMotion": true,
+      "focusAndDraft": true,
+      "streamingDockBlank": true,
+      "hiddenAnimationPaused": true
+    }
+  ],
+  "errors": [],
+  "originalDesignChanged": false,
+  "productionCodeChanged": false,
+  "limits": "Browser-only preservation check. Not terminal acceptance, production state mapping, or the spec C01/C13 and priority-combination tests."
+}
