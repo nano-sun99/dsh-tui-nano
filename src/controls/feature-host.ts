@@ -269,7 +269,8 @@ export class Features implements FeatureHost {
       !key.ctrl &&
       !key.alt &&
       this.completions?.open &&
-      this.completions.kind === 'command'
+      this.completions.kind === 'command' &&
+      this.completions.standaloneCommand
     ) {
       this.completions.accept()
       const text = this.context?.input.text ?? ''
@@ -332,6 +333,7 @@ export class Features implements FeatureHost {
       model.appendNotice(`未知命令 /${name}：按普通消息发送（未注入命令）`, 'warning')
       try {
         const result = context.conversation.submit(text)
+        context.input.take()
         context.setNotice(deliveryNotice(result.delivery))
       } catch (error) {
         model.appendNotice(`发送失败：${String((error as Error)?.message ?? error)}`, 'danger')

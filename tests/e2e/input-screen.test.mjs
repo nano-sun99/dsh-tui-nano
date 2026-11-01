@@ -84,3 +84,27 @@ test('输入 /mode 时补全弹层可见、最多 5 项、包含 /model', () => 
   assert.ok(itemLines.length > 0, '补全候选应带描述')
   assert.ok(itemLines.length <= 5, `候选不应超过 5 项，实际 ${itemLines.length}`)
 })
+
+test('光标移到文字中间输入 /mode 时唤起补全，保留两侧文本', () => {
+  const lines = runScreen('before after\x1b[D\x1b[D\x1b[D\x1b[D\x1b[D/mode')
+  const text = lines.join('\n')
+  assert.match(text, /命令 \/ 技能/, '正文中也应出现补全提示行')
+  // 光标本身占一格：显示为 /mode after，底层文本由单元测试精确断言。
+  assert.match(text, /before \/mode after/, '正文两侧不得丢失')
+  assert.match(text, /\/model/, '应包含 /model 候选')
+})
+
+test('URL 和文件路径不误唤起命令补全', () => {
+  for (const raw of ['check https://example.com/docs', 'fix src/app']) {
+    const text = runScreen(raw).join('\n')
+    assert.ok(text.includes(raw), 'URL / 路径输入应原样保留')
+    assert.doesNotMatch(text, /命令 \/ 技能/, 'URL / 路径不应唤起命令补全')
+  }
+})
+
+test('Enter 发送 /技能 消息后输入框恢复空态，已发消息仍在正文', () => {
+  const lines = runScreen('/nano-test-unknown inspect this\r')
+  const text = lines.join('\n')
+  assert.match(text, /nano-test-unknown inspect this/, '已发消息应保留在正文')
+  assert.match(text, /输入消息/, '发送后输入框应恢复空态')
+})
