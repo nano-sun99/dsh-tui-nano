@@ -261,6 +261,25 @@ describe('question card layout (spec §3/§4)', () => {
     harness.renderer.unmount()
   })
 
+  it('does not draw the waiting activity line on a takeover surface', async () => {
+    const harness = makeHarness(80, 24, { replacesTranscript: () => true })
+    harness.app.start().catch(() => {})
+    await tick()
+    const handler = harness.ctx.handlers.get('user-questions/request') as
+      | ((payload: unknown) => Promise<unknown>)
+      | undefined
+    const pending = handler?.({
+      questions: [{ id: 'q', question: '选吗', options: [{ label: 'A' }] }],
+    })
+    await tick()
+    harness.app.render()
+    harness.renderer.flushFrame()
+    expect(lines(harness).join('\n')).not.toContain('等待你的选择')
+    harness.app.handleInput([key('escape')])
+    await expect(pending).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    harness.renderer.unmount()
+  })
+
   it.each(['number', 'space', 'click'])(
     'single choice advances via %s and shows the answer notice',
     async (method) => {

@@ -16,7 +16,7 @@ export interface ActivityImage extends Activity {
 const APC = '_G'
 const ST = String.fromCharCode(27, 92)
 export function deleteActivityImage(): string {
-  return `${APC}a=d,d=I,i=${ACTIVITY_IMAGE_ID},q=2${ST}`
+  return `${APC}a=d,d=I,i=${ACTIVITY_IMAGE_ID},q=1${ST}`
 }
 export function activityQuery(): string {
   return `${APC}a=q,i=${ACTIVITY_QUERY_ID},f=32,s=1,v=1;AAAAAA==${ST}[16t`
@@ -60,7 +60,7 @@ export class ActivityImagePlayer {
       const more = offset + 4096 < payload.length ? 1 : 0
       bytes +=
         offset === 0
-          ? `${APC}a=T,f=32,o=z,s=${size},v=${size},i=${ACTIVITY_IMAGE_ID},C=1,q=2,m=${more};${payload.slice(offset, offset + 4096)}${ST}`
+          ? `${APC}a=T,f=32,o=z,s=${size},v=${size},i=${ACTIVITY_IMAGE_ID},C=1,q=1,m=${more};${payload.slice(offset, offset + 4096)}${ST}`
           : `${APC}m=${more};${payload.slice(offset, offset + 4096)}${ST}`
     }
     this.present = true

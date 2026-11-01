@@ -488,6 +488,7 @@ export class NanoApp {
       questionActivityCap({
         height: this.options.terminal.height,
         dockRows: this.options.features?.dockRows?.() ?? 0,
+        activityOwned: this.activityOwnedNow(),
       }) < 4
     )
       return
@@ -699,6 +700,13 @@ export class NanoApp {
     }
   }
 
+  /** Root input surface owns the activity line; takeover surfaces suppress it. */
+  private activityOwnedNow(): boolean {
+    if (this.options.features?.replacesTranscript?.() === true) return false
+    if (this.options.features?.inputActive?.() === false) return false
+    return this.decisions.hasDecision || (this.options.features?.modelPanelRows?.() ?? 0) === 0
+  }
+
   private snapshot(): AppSnapshot {
     const width = this.options.terminal.width
     const lines = this.options.conversation.model.layout({
@@ -717,11 +725,7 @@ export class NanoApp {
     const dockRows = this.options.features?.dockRows?.() ?? 0
     const inputPlaceholder = this.options.features?.inputPlaceholder?.()
     const prompt = this.decisions.prompt
-    const activityOwned =
-      this.decisions.hasDecision ||
-      (this.options.features?.replacesTranscript?.() !== true &&
-        modelPanelRows === 0 &&
-        this.options.features?.inputActive?.() !== false)
+    const activityOwned = this.activityOwnedNow()
     const waiting =
       prompt?.kind === 'approval'
         ? 'approval'

@@ -66,7 +66,7 @@ function snapshot(
     scrollOffset: 0,
     stickBottom: true,
     userName: '用户',
-    notice: { text: '等待你的选择', tone: 'info' },
+    activity: { text: '等待你的选择' },
   }
 }
 
@@ -234,6 +234,31 @@ describe('question card rendered surface', () => {
     expect(buildQuestionCard(prompt, 56).tabs.map(rowText)).toEqual(['[ ] 当前标', '提交'])
     manager.cancelQuestions()
     await rejected
+  })
+
+  it('charges the activity line once when a subagent dock shares a short terminal', async () => {
+    const manager = new DecisionManager()
+    const pending = manager.simulateQuestion(questions)
+    const rejected = pending.catch(() => {})
+    try {
+      const view = { ...snapshot(manager, 60, darkTheme, 21), dockRows: 5 }
+      const cap = questionActivityCap(view)
+      expect(cap).toBeGreaterThanOrEqual(4)
+      expect(questionCardRows(view)).toBeLessThanOrEqual(cap)
+      const renderer = new Renderer({ width: 60, height: 21, write: () => {} })
+      try {
+        renderer.mount(createElement(App, { snapshot: view }))
+        renderer.flushFrame()
+        const screen = renderer.snapshotLines().join('\n')
+        expect(screen).toContain('等待你的选择')
+        expect(screen).not.toContain('终端过矮')
+      } finally {
+        renderer.unmount()
+      }
+    } finally {
+      manager.cancelQuestions()
+      await rejected
+    }
   })
 
   it('budgets the submit page and errors within the cap across short heights', async () => {

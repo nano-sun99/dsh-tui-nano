@@ -422,15 +422,22 @@ function ApprovalOverlay(props: { snapshot: AppSnapshot; width: number; height: 
 }
 
 export function activityRows(snapshot: AppSnapshot): number {
+  if (snapshot.activityOwned === false) return 0
   if (snapshot.decisions.prompt?.kind === 'question') return ACTIVITY_ROWS
-  return snapshot.activityOwned !== false &&
-    snapshot.featureFullBody !== true &&
+  return snapshot.featureFullBody !== true &&
     !(snapshot.modelPanelRows && snapshot.modelPanelRows > 0)
     ? ACTIVITY_ROWS
     : 0
 }
-export function questionActivityCap(snapshot: Pick<AppSnapshot, 'height' | 'dockRows'>): number {
-  return questionCardCap(snapshot.height - (snapshot.dockRows ?? 0) - ACTIVITY_ROWS)
+export function questionActivityCap(
+  snapshot: Pick<AppSnapshot, 'height' | 'dockRows' | 'activityOwned'>,
+): number {
+  const activity = snapshot.activityOwned === false ? 0 : ACTIVITY_ROWS
+  // The activity line is charged once; dock rows are bounded by the actual
+  // layout so a 4+1 subagent bar cannot double-charge the card budget.
+  const available =
+    snapshot.height - (1 + 2 * CHROME_GAP) - 1 - activity - 1 - (snapshot.dockRows ?? 0)
+  return Math.max(1, Math.min(questionCardCap(snapshot.height - activity), available))
 }
 
 function ActivityLine({ snapshot }: { snapshot: AppSnapshot }) {

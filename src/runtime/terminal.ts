@@ -176,7 +176,7 @@ export class Terminal {
       this.graphicsPending = false
       this.graphicsTimer = undefined
       if (this.parser.hasPending()) this.handleChunk('')
-    }, 750)
+    }, 400)
     this.write(activityQuery())
   }
 
@@ -199,13 +199,23 @@ export class Terminal {
       if (this.graphicsTimer) clearTimeout(this.graphicsTimer)
       this.graphicsTimer = undefined
       this.options.onResize(this.width, this.height)
+      if (this.parser.hasPending()) this.scheduleEscapeFlush()
     }
+  }
+
+  private scheduleEscapeFlush(): void {
+    if (this.escapeTimer) clearTimeout(this.escapeTimer)
+    this.escapeTimer = setTimeout(() => {
+      this.escapeTimer = undefined
+      const flushed = this.parser.flushPending(this.graphicsPending)
+      if (flushed.length > 0) this.options.onInput(flushed)
+    }, 30)
   }
 
   private handleChunk(text: string): void {
     let events: InputEvent[] = []
     try {
-      events = this.parser.feed(text)
+      events = this.parser.feed(text, this.graphicsPending || this.activityGraphics !== undefined)
     } catch (error) {
       this.options.onError(error)
       return
@@ -216,14 +226,7 @@ export class Terminal {
       return false
     })
     if (input.length > 0) this.options.onInput(input)
-    if (this.parser.hasPending()) {
-      if (this.escapeTimer) clearTimeout(this.escapeTimer)
-      this.escapeTimer = setTimeout(() => {
-        this.escapeTimer = undefined
-        const flushed = this.parser.flushPending(this.graphicsPending)
-        if (flushed.length > 0) this.options.onInput(flushed)
-      }, 30)
-    }
+    if (this.parser.hasPending()) this.scheduleEscapeFlush()
   }
 }
 

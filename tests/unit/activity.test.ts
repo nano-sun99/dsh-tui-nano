@@ -53,8 +53,9 @@ describe('activity C01-C13 and P01-P08', () => {
     s.start({ attemptId: 'root:2', revision: 4, turn: 1 }, 2000)
     expect(s.project().tail).toBe('official')
   })
-  it('C07/P06 body wins over concurrent ordinary tools; C08/C09/P02 waiting wins over both', () => {
+  it('C07/P06 body wins over tools already running concurrently; C08/C09/P02 waiting wins over both', () => {
     const { state: s, random } = working()
+    // P06 as clarified in the spec: the tool was already running when the body appeared.
     s.toolStart('a', 'Bash', 1)
     s.body('visible')
     expect(s.project()).toEqual({ text: '' })
@@ -152,7 +153,7 @@ describe('fixed assets and bounded player', () => {
     const first = p.paint(image, { cellWidth: 17, cellHeight: 37 }, true, 0)
     expect(first).toContain(`i=${ACTIVITY_IMAGE_ID}`)
     expect(first).toContain('s=37,v=37')
-    expect(first).toContain('C=1,q=2')
+    expect(first).toContain('C=1,q=1')
     const esc = String.fromCharCode(27)
     expect(first).toContain(`${esc}7`)
     expect(first.endsWith(`${esc}8`)).toBe(true)
@@ -171,8 +172,8 @@ describe('graphics responses cannot enter drafts', () => {
       response = `${E}_Gi=129002;OK${E}\\${E}[6;37;17t`
     for (let i = 1; i < response.length; i++) {
       const p = new InputParser()
-      const events = p.feed(response.slice(0, i))
-      events.push(...p.flushPending(true), ...p.feed(`${response.slice(i)}中文`))
+      const events = p.feed(response.slice(0, i), true)
+      events.push(...p.flushPending(true), ...p.feed(`${response.slice(i)}中文`, true))
       expect(
         events
           .filter((e) => e.type === 'key')
@@ -181,9 +182,27 @@ describe('graphics responses cannot enter drafts', () => {
       ).toBe('中文')
     }
   })
+  it('keeps a user Esc separate from a following graphics response', () => {
+    const E = String.fromCharCode(27),
+      p = new InputParser()
+    p.feed(E)
+    const events = p.feed(`${E}_Gi=129002;OK${E}\\${E}[6;18;8t`, true)
+    expect(events.filter((e) => e.type === 'key')).toMatchObject([{ key: { name: 'escape' } }])
+    expect(events.filter((e) => e.type === 'terminal-response')).toHaveLength(2)
+  })
+  it('does not treat Alt+Shift+P/^/_ as protocol prefixes when graphics are inactive', () => {
+    const E = String.fromCharCode(27),
+      p = new InputParser()
+    expect(p.feed(`${E}P`)).toMatchObject([{ type: 'key', key: { text: 'P', alt: true } }])
+    expect(p.feed(`${E}^`)).toMatchObject([{ type: 'key', key: { text: '^', alt: true } }])
+    expect(p.feed(`${E}_a`)).toMatchObject([
+      { type: 'key', key: { text: '_', alt: true } },
+      { type: 'key', key: { text: 'a' } },
+    ])
+  })
   it('drops a stalled protocol prefix after the graphics window instead of swallowing later input', () => {
     const p = new InputParser()
-    p.feed(`${String.fromCharCode(27)}_G`)
+    p.feed(`${String.fromCharCode(27)}_G`, true)
     expect(p.flushPending(true)).toEqual([])
     expect(p.flushPending(false)).toEqual([])
     expect(p.feed('a')).toMatchObject([{ type: 'key', key: { text: 'a' } }])
@@ -193,6 +212,7 @@ describe('graphics responses cannot enter drafts', () => {
       p = new InputParser()
     const events = p.feed(
       `${E}_Gi=129002;ENOTSUP${E}\\${E}Punknown${E}\\${E}[200~hello${E}[201~${E}[A`,
+      true,
     )
     expect(events.filter((e) => e.type === 'paste')).toEqual([{ type: 'paste', text: 'hello' }])
     expect(events.filter((e) => e.type === 'key')).toMatchObject([{ key: { name: 'up' } }])

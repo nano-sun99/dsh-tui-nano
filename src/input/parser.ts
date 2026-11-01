@@ -59,9 +59,12 @@ const PASTE_END = '\x1b[201~'
 
 export class InputParser {
   private pending = ''
+  /** True while the terminal may answer a graphics/cell-size probe. */
+  private protocol = false
 
   /** Feed one decoded chunk and return every complete event. */
-  feed(chunk: string): InputEvent[] {
+  feed(chunk: string, protocol = false): InputEvent[] {
+    this.protocol = protocol
     this.pending += chunk
     const events: InputEvent[] = []
     while (this.pending.length > 0) {
@@ -84,11 +87,6 @@ export class InputParser {
       this.pending = ''
       return [{ type: 'key', key: key('escape', '\x1b') }]
     }
-    if (
-      preserveQueryEscape &&
-      ['\x1b_', '\x1bP', '\x1b^', '\x1b]'].some((prefix) => this.pending.startsWith(prefix))
-    )
-      return []
     if (this.pending.startsWith('\x1b') && this.pending.length === 2) {
       const sequence = this.pending
       const ch = [...sequence][1] as string
@@ -159,9 +157,15 @@ export class InputParser {
     const text = this.pending
     if (text.length === 1) return 0
     const second = text[1] as string
+    if (this.protocol && second === '\x1b' && ['_', 'P', '^', '[', ']'].includes(text[2] ?? '')) {
+      // A user Esc followed by a split protocol response: keep the Esc and let
+      // the response parse from its own ESC instead of becoming Alt+Esc text.
+      events.push({ type: 'key', key: key('escape', '\x1b') })
+      return 1
+    }
     if (second === '[') return this.consumeCsi(events)
     if (second === 'O') return this.consumeSs3(events)
-    if (second === '_' || second === 'P' || second === '^') {
+    if (this.protocol && (second === '_' || second === 'P' || second === '^')) {
       const end = text.indexOf('\x1b\\', 2)
       if (end < 0) return 0
       if (second === '_' && text[2] === 'G') {
