@@ -42,7 +42,8 @@
     }
     showApproval(command,key) {
       if(this.key===key) {this.paint();return}
-      this.key=key;this.kind='approval';this.command=command;this.approvalFocus=0;this.error='';this.result=null;this.pending=true
+      this.host.hidden=true;this.host.innerHTML=''
+      this.key=key;this.kind='approval';this.command=command;this.approvalFocus=1;this.error='';this.result=null;this.pending=true
       this.paint();this.focusPanel()
     }
     /** Approval card now lives in the transcript flow; the host renders it there. */
@@ -57,6 +58,9 @@
       this.mount=section
     }
     approvalBody() {
+      const lines=String(this.command).split('\n')
+      const visible=lines.length>8?lines.slice(0,8):lines
+      const hidden=lines.length-visible.length
       const rows=[
         ['允许一次','仅允许本次命令，不更改后续权限。','allow'],
         ['拒绝','不执行本次命令。','deny'],
@@ -65,7 +69,8 @@
       ]
       return `<div class="choice-title">${this.cells('是否运行这条检查命令？')}</div>
         <div class="choice-context muted">${this.cells('当前模式要求逐次确认；这是已有授权流程的演示。')}</div>
-        <pre class="approval-command" tabindex="0" aria-label="完整命令，可滚动查看">${this.cells(this.command)}</pre>
+        <pre class="approval-command" aria-label="完整命令">${this.cells(visible.join('\n'))}</pre>
+        ${hidden>0?`<div class="choice-command-more muted">${this.cells(`…还有 ${hidden} 行`)}</div>`:''}
         <div class="choice-options" role="listbox" aria-label="授权选项">
           ${rows.map(([label,description,decision],index)=>this.optionRow(index,label,description,{focused:this.approvalFocus===index,decision})).join('')}
         </div>
@@ -138,11 +143,12 @@
         event.preventDefault();this.finish(this.kind==='approval'?{kind:'permission',decision:'cancel'}:{kind:'cancelled'});return true
       }
       if(this.kind==='approval') {
-        const command=event.target.closest('.approval-command')
-        if(command&&['ArrowUp','ArrowDown','PageUp','PageDown'].includes(event.key)) {
-          event.preventDefault();const up=event.key==='ArrowUp'||event.key==='PageUp';command.scrollTop+=(up?-1:1)*(event.key.startsWith('Page')?command.clientHeight:22);return true
+        if(event.key==='PageUp'||event.key==='PageDown') {
+          event.preventDefault()
+          document.getElementById('transcript').scrollTop+=(event.key==='PageUp'?-1:1)*110
+          return true
         }
-        if(['ArrowUp','ArrowDown','Tab'].includes(event.key)) {
+        if(['ArrowUp','ArrowDown'].includes(event.key)) {
           event.preventDefault()
           const step=event.key==='ArrowUp'?-1:1
           this.approvalFocus=(this.approvalFocus+step+4)%4

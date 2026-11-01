@@ -1,16 +1,21 @@
 # ADR-20261101-approval-card-in-transcript：审批卡进正文滚动区，输入块保留
 
-- 状态：待生效（随 spec `2026-11-01-nano-approval-card-in-transcript` 合并）
+- 状态：生效中（随 spec `2026-11-01-nano-approval-card-in-transcript` 合并进入仓库基线）
 - 日期：2026-11-01
-- 来源：用户 2026-11-01 拍板「那就走B」与「按 Claude Code（推荐）」；Claude Code 2.1.88 源码 `screens/REPL.tsx:4519,4565`、`components/FullscreenLayout.tsx:361`（`overlay` 注释：*Content rendered inside the ScrollBox after messages*）
-- 相关：[spec](../../specs/2026-11-01-nano-approval-card-in-transcript/README.md)、[visual-v1](../../specs/2026-10-22-nano-visual-v1/README.md)、[design-contract §1](../../release/design-contract.md)
+- 决策人：用户
+- 适用范围：审批卡的渲染落点、输入块共存、命令区块来源与 `Overlay` 原语的存废
+- 取代：无旧 ADR；局部取代的历史 spec 条款列于下条与 [spec §替代关系](../../specs/2026-11-01-nano-approval-card-in-transcript/README.md)
+- 被取代：无
+- 决策来源：用户 2026-11-01 拍板「那就走B」与「按 Claude Code（推荐）」；Claude Code 2.1.88 源码 `screens/REPL.tsx:4519,4565`、`components/FullscreenLayout.tsx:361`（`overlay` 注释：*Content rendered inside the ScrollBox after messages*）
+- 相关：[spec](../../specs/2026-11-01-nano-approval-card-in-transcript/README.md)、[visual-v1](../../specs/2026-10-22-nano-visual-v1/README.md)、[design-contract §1/§2](../../release/design-contract.md)
 
 ## 决定
 
 1. 审批卡**不再使用全屏浮层**：它的行块追加在 transcript 的滚动内容末尾，随正文一起滚动；输入块保持在底部可见（审批挂起时不可编辑）。
 2. 本决定**取代** `design-contract` §1 覆盖层规则中的「决策卡（审批/问卷/计划审阅）替换输入块」与 `visual-v1`「主界面槽位」条（`README.md:39`）的「决策卡打开时输入块隐藏」，**仅对审批卡**生效；问题卡与计划审阅卡不变。
-3. 删除 `Overlay` 原语（`src/render/components.ts` 的导出与 `src/render/host.ts` 的 `'overlay'` 分支）：它唯一的调用方是审批卡，而它在重绘时会丢失合成定位。
-4. 审批卡展示完整命令：`callId` → transcript `ToolEntry.args` 的 `command`；取不到时按 args 键值降级，再取不到则省略命令区。
+3. 配合落点，本决定同时取代两条旧口径，**仅对审批卡生效**：`visual-v1` 第 6 条（`README.md:65`）「命令窗口超出再滚动」改为 8 行截断 + 「…还有 k 行」；`design-contract` §2（`:78`）审批卡键位 `1/2/Esc` 扩为 `1–4` + `PageUp`/`PageDown` + 滚轮 + 鼠标点击。
+4. 删除 `Overlay` 原语（`src/render/components.ts` 的导出与 `src/render/host.ts` 的 `'overlay'` 分支）：它唯一的调用方是审批卡，而它在重绘时会丢失合成定位。
+5. 审批卡展示完整命令：`callId` → transcript `ToolEntry.args` 的 `command`；取不到时按 args 键值降级，再取不到则省略命令区。
 
 ## 为什么
 
