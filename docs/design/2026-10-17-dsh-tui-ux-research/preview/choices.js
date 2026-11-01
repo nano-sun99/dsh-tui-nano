@@ -32,7 +32,7 @@
         }
       })
     }
-    hide() { this.key=null;this.pending=false;this.host.hidden=true;this.host.innerHTML='' }
+    hide() { this.key=null;this.pending=false;if(this.mount){this.mount.remove();this.mount=null}this.host.hidden=true;this.host.innerHTML='' }
     showQuestions(mode,key) {
       if(this.key===key) {this.paint();return}
       this.key=key;this.kind='question';this.mode=mode;this.index=0;this.error='';this.result=null
@@ -42,10 +42,45 @@
     }
     showApproval(command,key) {
       if(this.key===key) {this.paint();return}
-      this.key=key;this.kind='approval';this.command=command;this.approvalFocus=0;this.error='';this.result=null;this.pending=true
+      this.host.hidden=true;this.host.innerHTML=''
+      this.key=key;this.kind='approval';this.command=command;this.approvalFocus=1;this.error='';this.result=null;this.pending=true
       this.paint();this.focusPanel()
     }
-    focusPanel() { this.host.querySelector('.choice-panel')?.focus({preventScroll:true}) }
+    /** Approval card now lives in the transcript flow; the host renders it there. */
+    mountApproval(container) {
+      if(this.mount?.isConnected) return
+      const section=document.createElement('section')
+      section.className='choice-panel transcript-approval'
+      section.tabIndex=0
+      section.setAttribute('aria-label','命令授权选项卡')
+      section.addEventListener('click',event=>this.click(event))
+      container.appendChild(section)
+      this.mount=section
+    }
+    approvalBody() {
+      const lines=String(this.command).split('\n')
+      const visible=lines.length>8?lines.slice(0,8):lines
+      const hidden=lines.length-visible.length
+      const rows=[
+        ['允许一次','仅允许本次命令，不更改后续权限。','allow'],
+        ['拒绝','不执行本次命令。','deny'],
+        ['取消请求','','cancel'],
+        ['无法回答（按失败关闭处理）','','unavailable'],
+      ]
+      return `<div class="choice-title">${this.cells('是否运行这条检查命令？')}</div>
+        <div class="choice-context muted">${this.cells('当前模式要求逐次确认；这是已有授权流程的演示。')}</div>
+        <pre class="approval-command" aria-label="完整命令">${this.cells(visible.join('\n'))}</pre>
+        ${hidden>0?`<div class="choice-command-more muted">${this.cells(`…还有 ${hidden} 行`)}</div>`:''}
+        <div class="choice-options" role="listbox" aria-label="授权选项">
+          ${rows.map(([label,description,decision],index)=>this.optionRow(index,label,description,{focused:this.approvalFocus===index,decision})).join('')}
+        </div>
+        <div class="choice-footer">${this.cells('↑↓ 移动 · Enter 确认 · 1–4 直选 · Esc 取消请求')}</div>`
+    }
+    focusPanel() {
+      const root=this.mount?.isConnected?this.mount:this.host
+      const panel=root.classList?.contains('choice-panel')?root:root.querySelector('.choice-panel')
+      panel?.focus({preventScroll:true})
+    }
     question() { return this.questions[this.index] }
     current() { return this.states[this.index] }
     valid(item) { return item.selected.length>0 || Boolean(item.other.trim()) }
@@ -105,18 +140,23 @@
       if(!this.pending)return false
       const typing=event.target.matches('[data-other-input]')
       if(event.key==='Escape') {
-        event.preventDefault();this.finish(this.kind==='approval'?{kind:'permission',decision:'deny'}:{kind:'cancelled'});return true
+        event.preventDefault();this.finish(this.kind==='approval'?{kind:'permission',decision:'cancel'}:{kind:'cancelled'});return true
       }
       if(this.kind==='approval') {
-        const command=event.target.closest('.approval-command')
-        if(command&&['ArrowUp','ArrowDown','PageUp','PageDown'].includes(event.key)) {
-          event.preventDefault();const up=event.key==='ArrowUp'||event.key==='PageUp';command.scrollTop+=(up?-1:1)*(event.key.startsWith('Page')?command.clientHeight:22);return true
+        if(event.key==='PageUp'||event.key==='PageDown') {
+          event.preventDefault()
+          document.getElementById('transcript').scrollTop+=(event.key==='PageUp'?-1:1)*110
+          return true
         }
-        if(['ArrowUp','ArrowDown','Tab'].includes(event.key)) {
-          event.preventDefault();this.approvalFocus=1-this.approvalFocus;this.paint();this.focusPanel()
-        } else if(event.key==='Enter'||event.key==='1'||event.key==='2') {
-          event.preventDefault();const index=event.key==='Enter'?this.approvalFocus:Number(event.key)-1
-          this.finish({kind:'permission',decision:index===0?'allow':'deny'})
+        if(['ArrowUp','ArrowDown'].includes(event.key)) {
+          event.preventDefault()
+          const step=event.key==='ArrowUp'?-1:1
+          this.approvalFocus=(this.approvalFocus+step+4)%4
+          this.paint();this.focusPanel()
+        } else if(event.key==='Enter'||/^[1-4]$/.test(event.key)) {
+          event.preventDefault()
+          const index=event.key==='Enter'?this.approvalFocus:Number(event.key)-1
+          this.finish({kind:'permission',decision:['allow','deny','cancel','unavailable'][index]})
         }
         return true
       }
@@ -164,7 +204,15 @@
       </div>`
     }
     receipt() {
-      if(this.result.kind==='permission')return `<div class="approval-result muted">${this.cells(this.result.decision==='allow'?'已演示“允许一次”。样稿不会执行命令。':'已演示“拒绝”。命令未执行。')}</div>`
+      if(this.result.kind==='permission') {
+        const text={
+          allow:'已演示“允许一次”。样稿不会执行命令。',
+          deny:'已演示“拒绝”。命令未执行。',
+          cancel:'已演示“取消请求”。命令未执行。',
+          unavailable:'已演示“无法回答”。按失败关闭处理。',
+        }[this.result.decision]??''
+        return `<div class="approval-result muted">${this.cells(text)}</div>`
+      }
       if(this.result.kind==='cancelled')return `<div class="muted">${this.cells('已取消，未提交答案。')}</div>`
       return `<div class="choice-receipt"><strong>${this.cells(`已回答 ${this.result.answers.length} 题`)}</strong>${this.result.answers.map(answer=>`<div class="muted">${this.cells(`· ${answer.header} → ${[...answer.selected,answer.custom].filter(Boolean).join('、')}`)}</div>`).join('')}</div>`
     }
@@ -172,21 +220,13 @@
       const previousInput=this.host.querySelector('[data-other-input]')
       const editing=previousInput&&document.activeElement===previousInput
       const caret=editing?previousInput.selectionStart:null
-      this.host.hidden=false
-      if(this.result){this.host.innerHTML=this.receipt();this.onChange(this);return}
-      if(this.kind==='approval') {
-        this.host.innerHTML=`<section class="choice-panel" tabindex="0" aria-label="命令授权选项卡">
-          <div class="choice-title">${this.cells('是否运行这条检查命令？')}</div>
-          <div class="choice-context muted">${this.cells('当前模式要求逐次确认；这是已有授权流程的演示。')}</div>
-          <pre class="approval-command" tabindex="0" aria-label="完整命令，可滚动查看">${this.cells(this.command)}</pre>
-          <div class="choice-options" role="listbox" aria-label="授权选项">
-            ${this.optionRow(0,'允许一次','仅允许本次命令，不更改后续权限。',{focused:this.approvalFocus===0,decision:'allow'})}
-            ${this.optionRow(1,'拒绝','不执行本次命令。',{focused:this.approvalFocus===1,decision:'deny'})}
-          </div>
-          <div class="choice-footer">${this.cells('↑↓ 移动 · Enter 确认 · 1/2 直选 · Esc 拒绝')}</div>
-        </section>`
+      if(this.kind==='approval'&&this.mount?.isConnected) {
+        this.mount.innerHTML=this.result?this.receipt():this.approvalBody()
         this.onChange(this);return
       }
+      if(this.kind==='approval') { this.onChange(this);return }
+      this.host.hidden=false
+      if(this.result){this.host.innerHTML=this.receipt();this.onChange(this);return}
       const submit=this.index===this.questions.length
       const tabs=this.questions.length>1?`<div class="choice-tabs" aria-label="题目导航">${this.questions.map((question,index)=>`<button data-question-tab="${index}" class="choice-tab" aria-current="${this.index===index}">${this.valid(this.states[index])?'[x]':'[ ]'} ${this.cells(question.header)}</button>`).join('')}<button data-question-tab="${this.questions.length}" class="choice-tab" aria-current="${submit}">${this.cells('提交')}</button></div>`:''
       let body,title,footer
