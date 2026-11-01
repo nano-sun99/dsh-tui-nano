@@ -5,18 +5,20 @@
  */
 
 import { Fragment, type ReactNode } from 'react'
-import {
-  APPROVAL_OPTIONS,
-  type DecisionManager,
-  type QuestionPrompt,
-} from '../decisions/manager.ts'
+import { APPROVAL_OPTIONS, type DecisionManager } from '../decisions/manager.ts'
 import { Box, Overlay, Text } from '../render/components.ts'
 import { displayWidth, graphemes, truncateText } from '../render/text.ts'
-import { EDGE, INLINE } from '../theme/spacing.ts'
+import { CHROME_GAP, EDGE, INLINE } from '../theme/spacing.ts'
 import type { Theme } from '../theme/theme.ts'
-import { renderMarkdown } from '../transcript/markdown.ts'
 import type { TranscriptModel } from '../transcript/model.ts'
 import { type Row, type Span, type Tone, wrapSpans } from '../transcript/spans.ts'
+import {
+  buildQuestionCard,
+  type QuestionCardParts,
+  questionCardCap,
+  questionCardWindow,
+  questionTabWidth,
+} from './question-card.ts'
 
 export interface AppSnapshot {
   readonly transcript: TranscriptModel
@@ -48,6 +50,8 @@ export interface AppSnapshot {
   readonly inputDisabled?: boolean
   /** 一次性 / 未知模式只读详情：不画输入框。 */
   readonly inputHidden?: boolean
+  /** Pending question owns this input-area slot before other bottom panels. */
+  readonly decisionBody?: ReactNode
   /** 补全弹层（正文与状态行之间）。 */
   readonly completionBody?: ReactNode
   readonly completionRows?: number
@@ -266,12 +270,18 @@ function inputLineCount(snapshot: AppSnapshot, width: number): number {
 /** 正文区可见高度；滚动上限与渲染共用这一份算法，别各算各的。 */
 export function transcriptBodyHeight(snapshot: AppSnapshot): number {
   const inputHeight = inputLineCount(snapshot, snapshot.width) + 2
-  const completionRows = snapshot.completionRows ?? 0
+  const asking = snapshot.decisions.prompt?.kind === 'question'
+  const completionRows = asking ? 0 : (snapshot.completionRows ?? 0)
   const modelRows = snapshot.modelPanelRows ?? 0
-  const dockRows = snapshot.dockRows ?? 0
-  const headerHeight = 3
+  const dockRows = asking ? 0 : (snapshot.dockRows ?? 0)
+  const headerHeight = 1 + 2 * CHROME_GAP
+  const decisionRows = questionCardRows(snapshot)
   const bottomRows =
-    modelRows > 0 ? modelRows : snapshot.inputHidden === true ? 1 : inputHeight + 1 + dockRows
+    decisionRows > 0
+      ? decisionRows + 1 + dockRows
+      : modelRows > 0
+        ? modelRows
+        : inputHeight + 1 + dockRows
   return Math.max(1, snapshot.height - bottomRows - completionRows - headerHeight)
 }
 
@@ -355,82 +365,12 @@ function InputLine(props: { snapshot: AppSnapshot; width: number }) {
   )
 }
 
-function DecisionOverlay(props: { snapshot: AppSnapshot; width: number; height: number }) {
+/** 审批卡仍是全屏浮层：审批卡的视觉与交互另立 spec，本 spec 不碰。 */
+function ApprovalOverlay(props: { snapshot: AppSnapshot; width: number; height: number }) {
   const { snapshot } = props
   const prompt = snapshot.decisions.prompt
-  if (!prompt) return null
-  if (prompt.kind === 'approval') {
-    const panelWidth = Math.min(72, Math.max(30, props.width - 8))
-    return (
-      <Overlay>
-        <Box
-          flexDirection="column"
-          justifyContent="center"
-          alignItems="center"
-          width={props.width}
-          height={props.height}
-        >
-          <Box flexDirection="column" width={panelWidth} padding={2} clear>
-            <Text color={snapshot.theme.warning} bold>
-              {`需要确认：${prompt.toolName}`}
-            </Text>
-            <Text> </Text>
-            {prompt.reason ? (
-              <Text color={snapshot.theme.muted} wrap>
-                {prompt.reason}
-              </Text>
-            ) : null}
-            <Text> </Text>
-            {APPROVAL_OPTIONS.map((option, index) => {
-              const selected = index === prompt.selected
-              return (
-                <Box
-                  key={option.outcome}
-                  flexDirection="row"
-                  onPress={`decision:approval:${index}`}
-                  {...(selected ? { backgroundColor: snapshot.theme.focusBg } : {})}
-                >
-                  <Text color={selected ? snapshot.theme.accent : snapshot.theme.fg}>
-                    {selected ? '▸ ' : '  '}
-                    {`${index + 1}. ${option.label}`}
-                  </Text>
-                </Box>
-              )
-            })}
-            <Text> </Text>
-            <Text color={snapshot.theme.faint}>
-              ↑/↓ 选择 · Enter 确认 · Esc 取消请求（默认拒绝）
-            </Text>
-          </Box>
-        </Box>
-      </Overlay>
-    )
-  }
-  return (
-    <QuestionOverlay
-      prompt={prompt}
-      snapshot={snapshot}
-      width={props.width}
-      height={props.height}
-    />
-  )
-}
-
-function QuestionOverlay(props: {
-  prompt: QuestionPrompt
-  snapshot: AppSnapshot
-  width: number
-  height: number
-}) {
-  const { prompt, snapshot } = props
-  const question = prompt.questions[prompt.current]
-  if (!question) return null
-  const draft = prompt.drafts.get(question.id)
-  const panelWidth = Math.min(84, Math.max(36, props.width - 8))
-  const detailRows =
-    question.detail && question.detail.trim() !== ''
-      ? renderMarkdown(question.detail, panelWidth - 4).slice(0, 14)
-      : []
+  if (prompt?.kind !== 'approval') return null
+  const panelWidth = Math.min(72, Math.max(30, props.width - 8))
   return (
     <Overlay>
       <Box
@@ -441,68 +381,126 @@ function QuestionOverlay(props: {
         height={props.height}
       >
         <Box flexDirection="column" width={panelWidth} padding={2} clear>
-          <Text color={snapshot.theme.info} bold>
-            {question.header ?? (prompt.planReview ? '计划审阅' : '需要你的回答')}
-            {prompt.questions.length > 1
-              ? `  (${prompt.current + 1}/${prompt.questions.length})`
-              : ''}
+          <Text color={snapshot.theme.warning} bold>
+            {`需要确认：${prompt.toolName}`}
           </Text>
           <Text> </Text>
-          <Text color={snapshot.theme.fg} wrap>
-            {question.question}
-          </Text>
-          {detailRows.map((row, index) => (
-            <RowView
-              key={`detail-${index}`}
-              row={row}
-              theme={snapshot.theme}
-              width={panelWidth - 4}
-            />
-          ))}
+          {prompt.reason ? (
+            <Text color={snapshot.theme.muted} wrap>
+              {prompt.reason}
+            </Text>
+          ) : null}
           <Text> </Text>
-          {(question.options ?? []).map((option, index) => {
-            const focused = index === prompt.focusedOption
-            const selected = draft?.selected.has(option.label) ?? false
-            const mark = question.multiSelect
-              ? selected
-                ? '[x] '
-                : '[ ] '
-              : selected
-                ? '(•) '
-                : '( ) '
-            const approve =
-              question.intent?.kind === 'plan-review' && question.intent.approve === option.label
+          {APPROVAL_OPTIONS.map((option, index) => {
+            const selected = index === prompt.selected
             return (
               <Box
-                key={option.label}
+                key={option.outcome}
                 flexDirection="row"
-                onPress={`decision:option:${index}`}
-                {...(focused ? { backgroundColor: snapshot.theme.focusBg } : {})}
+                onPress={`decision:approval:${index}`}
+                {...(selected ? { backgroundColor: snapshot.theme.focusBg } : {})}
               >
-                <Text color={focused ? snapshot.theme.accent : snapshot.theme.fg}>
-                  {focused ? '▸ ' : '  '}
-                  {`${mark}${option.label}`}
-                  {approve ? '  (批准)' : ''}
+                <Text color={selected ? snapshot.theme.accent : snapshot.theme.fg}>
+                  {selected ? '▸ ' : '  '}
+                  {`${index + 1}. ${option.label}`}
                 </Text>
               </Box>
             )
           })}
-          <Box
-            flexDirection="row"
-            onPress="decision:custom"
-            {...(draft?.customMode ? { backgroundColor: snapshot.theme.focusBg } : {})}
-          >
-            <Text color={draft?.customMode ? snapshot.theme.accent : snapshot.theme.muted}>
-              {`  ${draft?.customMode ? '✎' : '＋'} 其他：${draft?.custom ?? ''}${draft?.customMode ? '▏' : ''}`}
-            </Text>
-          </Box>
           <Text> </Text>
-          <Text color={snapshot.theme.faint}>
-            ↑/↓ 选择 · Space 勾选 · Enter 下一题/提交 · c 自定义 · Esc 跳过
-          </Text>
+          <Text color={snapshot.theme.faint}>↑/↓ 选择 · Enter 确认 · Esc 取消请求（默认拒绝）</Text>
         </Box>
       </Box>
     </Overlay>
+  )
+}
+
+function questionCardWidth(snapshot: AppSnapshot): number {
+  return Math.max(1, snapshot.width - EDGE * 2)
+}
+
+function questionCardParts(snapshot: AppSnapshot): QuestionCardParts | undefined {
+  const prompt = snapshot.decisions.prompt
+  if (prompt?.kind !== 'question') return undefined
+  return buildQuestionCard(prompt, questionCardWidth(snapshot), questionCardCap(snapshot.height))
+}
+
+/** 卡片占用的终端行数：顶线 + 可见的 body 窗口 + 固定的头尾。 */
+export function questionCardRows(snapshot: AppSnapshot): number {
+  const parts = questionCardParts(snapshot)
+  if (!parts) return 0
+  const prompt = snapshot.decisions.prompt
+  if (prompt?.kind !== 'question') return 0
+  return questionCardWindow(
+    parts,
+    questionCardCap(snapshot.height),
+    prompt.scrollOffset,
+    !prompt.manualScroll,
+  ).total
+}
+
+/** 问卷卡（spec §3）：占输入位、顶部 accent 线、无外框；body 超出时按焦点滚动。 */
+export function QuestionCard(props: { snapshot: AppSnapshot; width: number }) {
+  const { snapshot } = props
+  const prompt = snapshot.decisions.prompt
+  const parts = questionCardParts(snapshot)
+  if (prompt?.kind !== 'question' || !parts) return null
+  const { start, body } = questionCardWindow(
+    parts,
+    questionCardCap(snapshot.height),
+    prompt.scrollOffset,
+    !prompt.manualScroll,
+  )
+  const innerWidth = questionCardWidth(snapshot)
+  const rule = '─'.repeat(Math.max(1, props.width - EDGE * 2))
+  return (
+    <Box flexDirection="column" width={props.width} flexShrink={0}>
+      {parts.ruleRows > 0 ? (
+        <Box
+          flexDirection="row"
+          paddingX={EDGE}
+          width={props.width}
+          height={parts.ruleRows}
+          flexShrink={0}
+        >
+          <RowView
+            row={{ spans: [{ text: rule, tone: 'accent' }] }}
+            theme={snapshot.theme}
+            width={innerWidth}
+          />
+        </Box>
+      ) : null}
+      {parts.topGap > 0 ? <Box height={parts.topGap} flexShrink={0} /> : null}
+      <Box flexDirection="column" paddingX={EDGE} width={props.width} flexShrink={0}>
+        {parts.tabs.length > 0 ? (
+          <>
+            <Box flexDirection="row" width={innerWidth} height={1} flexShrink={0}>
+              {parts.tabs.map((tab, index) => (
+                <Fragment key={tab.pressId}>
+                  {index > 0 ? <Box width={EDGE} /> : null}
+                  <RowView row={tab} theme={snapshot.theme} width={questionTabWidth(tab)} />
+                </Fragment>
+              ))}
+            </Box>
+            {parts.tabGap > 0 ? <Box height={parts.tabGap} flexShrink={0} /> : null}
+          </>
+        ) : null}
+        {parts.header.map((row, index) => (
+          <RowView key={`qd-head-${index}`} row={row} theme={snapshot.theme} width={innerWidth} />
+        ))}
+        {body.map((row, index) => (
+          <RowView
+            key={`qd-body-${start + index}`}
+            row={row}
+            theme={snapshot.theme}
+            width={innerWidth}
+          />
+        ))}
+        {parts.footer.map((row, index) => (
+          <RowView key={`qd-foot-${index}`} row={row} theme={snapshot.theme} width={innerWidth} />
+        ))}
+      </Box>
+    </Box>
   )
 }
 
@@ -513,11 +511,12 @@ export function App(props: { snapshot: AppSnapshot }) {
   // 跟 Claude Code 的输入区高度：上方一行留白 + 输入行 + 一条下边框。
   const bodyHeight = transcriptBodyHeight(snapshot)
   const modelRows = snapshot.modelPanelRows ?? 0
+  const asking = snapshot.decisions.prompt?.kind === 'question'
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box height={1} />
+      <Box height={CHROME_GAP} />
       <Header snapshot={snapshot} width={width} />
-      <Box height={1} />
+      <Box height={CHROME_GAP} />
       <Box flexDirection="column" flexGrow={0} height={bodyHeight} width={width}>
         {snapshot.featureFullBody === true ? (
           snapshot.featureBody
@@ -528,21 +527,25 @@ export function App(props: { snapshot: AppSnapshot }) {
           </>
         )}
       </Box>
-      {snapshot.completionBody}
-      {modelRows > 0 ? (
+      {!asking ? snapshot.completionBody : null}
+      {modelRows > 0 && !asking ? (
         snapshot.modelPanelBody
       ) : (
         <>
-          {snapshot.inputHidden === true ? null : <InputLine snapshot={snapshot} width={width} />}
+          {asking ? (
+            (snapshot.decisionBody ?? <QuestionCard snapshot={snapshot} width={width} />)
+          ) : snapshot.inputHidden === true ? null : (
+            <InputLine snapshot={snapshot} width={width} />
+          )}
           <StatusLine snapshot={snapshot} width={width} />
-          {snapshot.dockBody ? (
+          {!asking && snapshot.dockBody ? (
             <Box paddingX={EDGE} width={width} flexShrink={0}>
               {snapshot.dockBody}
             </Box>
           ) : null}
         </>
       )}
-      <DecisionOverlay snapshot={snapshot} width={width} height={height} />
+      <ApprovalOverlay snapshot={snapshot} width={width} height={height} />
     </Box>
   )
 }

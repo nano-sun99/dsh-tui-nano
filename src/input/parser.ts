@@ -232,7 +232,14 @@ export class InputParser {
     const flags = parseModifierFlags(mods)
     const name = csiName(number, final)
     if (name) {
-      events.push({ type: 'key', key: { ...key(name, sequence), ...flags } })
+      events.push({
+        type: 'key',
+        key: {
+          ...key(name, sequence),
+          ...flags,
+          ...(final === 'Z' && body === '' ? { shift: true } : {}),
+        },
+      })
       return index + 1
     }
     return index + 1

@@ -174,3 +174,4 @@ reduced-motion 检测契约：
 
 - 2026-10-22：首版冻结；记录三项实现偏差。
 - 2026-10-30：按 #112 与 `ADR-20261030-main-agent-responsive` 更新运行中 Enter、插话键（`Ctrl+S`，仅运行中）与队列条款；受影响：S13 契约、S02 键位表。
+- 2026-11-01：问卷键位沿用已合并 [question-card-parity §3.7/§3.9/§3.12](../specs/2026-11-01-nano-question-card-parity/README.md)：`Tab` / `Shift+Tab` 和非输入态 `←` / `→` 在题与提交页间切换，`Esc` 取消整次（ASK_ABORTED），`Alt+N` 只跳过当前题。§2 旧问卷行的「收起」由该规格取代；`Alt+T`/倒计时未纳入 #125。Space 在单选为选择、多选为切勾选、Other 输入态为文本；本次逐项说明见 [重审处置记录](../evidence/2026-11-01-nano-question-card-parity/review-revisions.md)。

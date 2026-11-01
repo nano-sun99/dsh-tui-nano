@@ -28,7 +28,7 @@ describe('approval seam', () => {
 })
 
 describe('question seam', () => {
-  it('supports single-select and skipped answers', async () => {
+  it('supports single-select and deliberately skipped answers', async () => {
     const manager = new DecisionManager()
     const pending = manager.simulateQuestion([
       { id: 'q1', question: 'pick', options: [{ label: 'A' }, { label: 'B' }] },
@@ -37,12 +37,71 @@ describe('question seam', () => {
     await tick()
     manager.toggleOption()
     manager.advanceQuestion()
+    manager.skipQuestion()
     manager.submitQuestions()
     await expect(pending).resolves.toEqual({
       answers: [
         { id: 'q1', selected: ['A'] },
         { id: 'q2', selected: [] },
       ],
+    })
+  })
+
+  it('blocks an incomplete batch and jumps to the first unanswered question', async () => {
+    const manager = new DecisionManager()
+    const pending = manager.simulateQuestion([
+      { id: 'q1', question: 'pick', options: [{ label: 'A' }] },
+      { id: 'q2', question: 'also pick', options: [{ label: 'B' }] },
+    ])
+    await tick()
+    manager.submitQuestions()
+    const prompt = manager.prompt
+    expect(prompt).toMatchObject({ kind: 'question', current: 0, error: '请先回答这一题。' })
+    manager.toggleOption()
+    manager.advanceQuestion()
+    manager.submitQuestions()
+    expect(manager.prompt).toMatchObject({ current: 1, error: '请先回答这一题。' })
+    manager.toggleOption()
+    manager.advanceQuestion()
+    manager.submitQuestions()
+    await expect(pending).resolves.toEqual({
+      answers: [
+        { id: 'q1', selected: ['A'] },
+        { id: 'q2', selected: ['B'] },
+      ],
+    })
+  })
+
+  it('cancels with ASK_ABORTED instead of sending half-finished answers', async () => {
+    const manager = new DecisionManager()
+    const pending = manager.simulateQuestion([
+      { id: 'q1', question: 'pick', options: [{ label: 'A' }] },
+    ])
+    await tick()
+    manager.toggleOption()
+    manager.escape()
+    await expect(pending).rejects.toMatchObject({
+      name: 'UserQuestionError',
+      code: 'ASK_ABORTED',
+    })
+    expect(manager.prompt).toBeUndefined()
+  })
+
+  it('reaches the custom row with arrows and types into it', async () => {
+    const manager = new DecisionManager()
+    const pending = manager.simulateQuestion([
+      { id: 'q1', question: 'pick', options: [{ label: 'A' }] },
+    ])
+    await tick()
+    manager.move(1)
+    expect(manager.prompt).toMatchObject({ focusedOption: 1 })
+    expect(manager.prompt?.kind === 'question' && manager.prompt.drafts.get('q1')?.customMode).toBe(
+      true,
+    )
+    manager.typeCustom('自己写')
+    manager.confirmFocused()
+    await expect(pending).resolves.toEqual({
+      answers: [{ id: 'q1', selected: [], custom: '自己写' }],
     })
   })
 

@@ -41,7 +41,8 @@ describe('decision seams on a context', () => {
     })
     await tick()
     expect(manager.prompt).toMatchObject({ kind: 'question', planReview: true })
-    manager.escape()
+    manager.skipQuestion()
+    manager.submitQuestions()
     await expect(pending).resolves.toEqual({ answers: [{ id: 'plan', selected: [] }] })
   })
 

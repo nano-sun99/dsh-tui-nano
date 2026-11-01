@@ -1,0 +1,36 @@
+
+  nano  deepseek-official/deepseek-flash · 运行中
+
+  已加载来源： profile
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghos
+  tty-visual-egh23_ua/light-60-question/.nano/profile
+  settings
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghos
+  tty-visual-egh23_ua/light-60-question/.nano/profile/cordis
+  .patch.yml 生效层 @deepseek-ai/dsh-base 凭据
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghos
+  tty-visual-egh23_ua/light-60-question/.dsh/.credentials.ya
+  ml（未找到） 全局指令 无
+
+  › 请展示问卷卡片。
+
+  … ask_user_question ask_user_question · 点击展开
+
+
+
+
+  ────────────────────────────────────────────────────────
+
+  [ ] 验收方式  [ ] 测试范围  提交
+
+  这次改动采用哪种验收方式？
+  > 1. 聚焦回归（推荐）
+       覆盖本次修改相关的检查，反馈较快。
+    2. 完整回归
+       检查范围更广，需要等待更多脚本完成。
+    3. 静态检查
+       先确认类型和边界，行为验证留待下一步。
+    4. 其他：直接输入
+
+  ↑↓ 移动 · Enter 选择 · 数字直选 · Tab 切题 · Esc 取消
+  等待你的选择                    Enter 插话 · Ctrl+C 停止

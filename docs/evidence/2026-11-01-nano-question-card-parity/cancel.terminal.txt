@@ -1,0 +1,40 @@
+Scenario: cancel
+Dimensions: 100x36
+Input: [{"send":"显示问卷\r","until":"等待你的选择","timeout":15},{"send":"\u001b","delay":0.2,"until":"QUESTION_PARITY_RESULT","timeout":10}]
+
+
+  nano  deepseek-official/deepseek-flash · 空闲
+
+  已加载来源： profile
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-question-125-VMqnLf/cancel/.nano/profile
+  settings
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-question-125-VMqnLf/cancel/.nano/profile/cor
+  dis.patch.yml 生效层 @deepseek-ai/dsh-base 凭据
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-question-125-VMqnLf/cancel/.dsh/.credentials
+  .yaml（未找到） 全局指令 无
+
+  › 显示问卷
+
+  ✗ ask_user_question ask_user_question · 点击展开
+  Error: ask_user_question was aborted before the user answered
+
+  QUESTION_PARITY_RESULT
+  [{"type":"tool_result","tool_use_id":"toolu_question_parity","content":[{"type":"text","text":"Err
+  or: ask_user_question was aborted before the user answered"}],"is_error":true}]
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  ›  输入消息…
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  已取消，未提交答案                                                      Enter 发送 · Ctrl+C 退出
