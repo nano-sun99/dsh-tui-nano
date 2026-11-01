@@ -2,13 +2,13 @@
 
 - 组标识：`2026-11-01-nano-activity-dock`
 - 角色：单份 spec，总纲与执行规格合一
-- 状态：方案中（已收到轻审结论，按用户同意修订；未授权合并或实施）
+- 状态：实施中（关联 issue #129；本文件随实施 PR 回填）
 - 结构：不拆——1 份 spec + 1 张执行 issue；用户 2026-11-01 选择「不拆（推荐）」，随后明确「不拆，请你给我pr号」
 - 机制范围：4 项，用户选择「全要（推荐）」；见 §8
 - 调查基线：`origin/main` @ `2a0e7d999ce68d4028b3b71796913910963b83b2`；官方运行时 `@deepseek-ai/dsh` 0.2.1-rc.2
 - 上游：[visual-v1](../2026-10-22-nano-visual-v1/README.md)、[运行时与对话](../2026-10-28-nano-ts/S01-runtime-render-conversation.md)、[设计稿](../../design/2026-10-17-dsh-tui-ux-research/preview/index.html)、[本次调查证据](../../evidence/2026-11-01-nano-activity-dock/research.md)
 - 决策：新增 [ADR-20261101-activity-dock](../../decisions/2026-11-01-activity-dock.md)；沿用的现行决定见 §2
-- 实施 issue：待本 spec PR 合并后创建；本 PR 不含产品实现，不提前开执行单
+- 实施 issue：[#129](https://github.com/nano-sun99/dsh-tui-nano/issues/129)
 
 ## 1. 目标与边界
 
