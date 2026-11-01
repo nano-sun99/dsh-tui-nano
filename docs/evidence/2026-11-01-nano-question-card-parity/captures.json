@@ -5,7 +5,7 @@
       1762,
       1460
     ],
-    "unique_colors": 1096,
+    "unique_colors": 2150,
     "non_black_ratio": 0.9997
   },
   {
@@ -14,7 +14,7 @@
       1082,
       1460
     ],
-    "unique_colors": 1095,
+    "unique_colors": 2150,
     "non_black_ratio": 0.9995
   },
   {
@@ -23,7 +23,7 @@
       1762,
       1460
     ],
-    "unique_colors": 1183,
+    "unique_colors": 2448,
     "non_black_ratio": 0.9997
   },
   {
@@ -32,7 +32,7 @@
       1082,
       1460
     ],
-    "unique_colors": 898,
+    "unique_colors": 2447,
     "non_black_ratio": 0.9995
   }
 ]

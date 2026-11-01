@@ -49,6 +49,8 @@ export interface QuestionPrompt {
   readonly focusedOption: number
   readonly drafts: Map<string, QuestionDraft>
   readonly scrollOffset: number
+  /** Explicit paging pins the current focus while scrolling the surrounding text. */
+  readonly manualScroll?: boolean
   readonly error?: string
   readonly planReview: boolean
 }

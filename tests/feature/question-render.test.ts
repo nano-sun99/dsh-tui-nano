@@ -13,6 +13,7 @@ import {
   questionTabWidth,
 } from '../../src/app/question-card.ts'
 import { DecisionManager } from '../../src/decisions/manager.ts'
+import { Text } from '../../src/render/components.ts'
 import { Renderer } from '../../src/render/renderer.ts'
 import { displayWidth } from '../../src/render/text.ts'
 import { darkTheme, lightTheme } from '../../src/theme/theme.ts'
@@ -69,6 +70,34 @@ function snapshot(
 }
 
 describe('question card rendered surface', () => {
+  it('shows the question instead of an already-open model panel and restores the panel afterwards', async () => {
+    const manager = new DecisionManager()
+    const pending = manager.simulateQuestion(questions)
+    const cancelled = pending.catch(() => {})
+    const view = {
+      ...snapshot(manager, 80),
+      modelPanelRows: 18,
+      modelPanelBody: createElement(Text, {}, 'MODEL PANEL'),
+    }
+    const renderer = new Renderer({ width: 80, height: 36, write: () => {} })
+    try {
+      renderer.mount(createElement(App, { snapshot: view }))
+      renderer.flushFrame()
+      const screen = renderer.snapshotLines().join('\n')
+      expect(screen).toContain('这次改动采用哪种验收方式？')
+      expect(screen).toContain('等待你的选择')
+      expect(screen).not.toContain('MODEL PANEL')
+      expect(transcriptBodyHeight(view)).toBe(transcriptBodyHeight({ ...view, modelPanelRows: 0 }))
+      manager.cancelQuestions()
+      renderer.update(createElement(App, { snapshot: view }))
+      renderer.flushFrame()
+      expect(renderer.snapshotLines().join('\n')).toContain('MODEL PANEL')
+    } finally {
+      manager.cancelQuestions()
+      await cancelled
+      renderer.unmount()
+    }
+  })
   for (const width of [60, 100])
     for (const theme of [darkTheme, lightTheme]) {
       it(`${width} columns / ${theme === darkTheme ? 'dark' : 'light'}: inline layout, text and RGB roles`, async () => {
@@ -122,6 +151,47 @@ describe('question card rendered surface', () => {
       })
     }
 
+  it.each([6, 8, 10, 12, 16, 18, 24])(
+    'keeps the entire question card and status visible at height %s',
+    async (height) => {
+      const manager = new DecisionManager()
+      const pending = manager.simulateQuestion(questions)
+      const rejected = pending.catch(() => {})
+      manager.focusQuestion(1)
+      manager.confirmFocused()
+      const view = snapshot(manager, 60, darkTheme, height)
+      const renderer = new Renderer({ width: 60, height, write: () => {} })
+      try {
+        renderer.mount(createElement(App, { snapshot: view }))
+        renderer.flushFrame()
+        const screen = renderer.snapshotLines().join('\n')
+        expect(questionCardRows(view)).toBeLessThanOrEqual(questionCardCap(height))
+        expect(screen).toContain('等待你的选择')
+        if (questionCardCap(height) >= 4) {
+          expect(screen).toContain('请至少选择一项。')
+          expect(screen).toContain('> 1.')
+          expect(screen).toContain('Esc 取消')
+        } else expect(screen).toContain('终端过矮')
+      } finally {
+        manager.cancelQuestions()
+        await rejected
+        renderer.unmount()
+      }
+    },
+  )
+
+  it('keeps the empty custom placeholder when focused', async () => {
+    const manager = new DecisionManager()
+    const pending = manager.simulateQuestion(questions)
+    const rejected = pending.catch(() => {})
+    manager.focusCustom()
+    const prompt = manager.prompt
+    if (prompt?.kind !== 'question') throw new Error('missing question')
+    expect(buildQuestionCard(prompt, 56).body.map(rowText).join('\n')).toContain('其他：直接输入▏')
+    manager.cancelQuestions()
+    await rejected
+  })
+
   it('keeps four long tabs on one row at 60 columns and preserves the current tab', async () => {
     const manager = new DecisionManager()
     const pending = manager.simulateQuestion(
@@ -143,6 +213,40 @@ describe('question card rendered surface', () => {
       bold: true,
     })
     const rejected = pending.catch(() => {})
+    manager.cancelQuestions()
+    await rejected
+  })
+
+  it('reduces crowded tabs to the current heading first three characters', async () => {
+    const manager = new DecisionManager()
+    const pending = manager.simulateQuestion(
+      Array.from({ length: 8 }, (_, index) => ({
+        ...questions[0]!,
+        id: `q${index}`,
+        header: '当前标题要截短',
+      })),
+    )
+    const rejected = pending.catch(() => {})
+    manager.focusQuestion(3)
+    const prompt = manager.prompt
+    if (prompt?.kind !== 'question') throw new Error('missing question')
+    expect(buildQuestionCard(prompt, 56).tabs.map(rowText)).toEqual(['[ ] 当前标', '提交'])
+    manager.cancelQuestions()
+    await rejected
+  })
+
+  it('budgets the submit page and errors within the cap across short heights', async () => {
+    const manager = new DecisionManager()
+    const pending = manager.simulateQuestion(questions)
+    const rejected = pending.catch(() => {})
+    manager.focusQuestion(2)
+    const prompt = manager.prompt
+    if (prompt?.kind !== 'question') throw new Error('missing question')
+    for (let height = 6; height <= 40; height++) {
+      const cap = questionCardCap(height)
+      const parts = buildQuestionCard(prompt, 56, cap)
+      expect(questionCardWindow(parts, cap, 100, false).total).toBeLessThanOrEqual(cap)
+    }
     manager.cancelQuestions()
     await rejected
   })

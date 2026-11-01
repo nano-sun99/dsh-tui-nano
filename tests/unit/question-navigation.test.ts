@@ -102,6 +102,30 @@ describe('question navigation and validation', () => {
     await expect(pending).resolves.toHaveProperty('answers')
   })
 
+  it('settles an overwritten request when its own signal aborts without cancelling the active question', async () => {
+    const manager = new DecisionManager()
+    const controller = new AbortController()
+    const previous = manager
+      .askQuestions({ questions, signal: controller.signal })
+      .catch((error: unknown) => error)
+    const current = manager.simulateQuestion([questions[0]!])
+    controller.abort()
+    const error = await Promise.race([
+      previous,
+      new Promise((resolve) => setTimeout(() => resolve('HANG'), 40)),
+    ])
+    expect(error).toMatchObject({ name: 'UserQuestionError', code: 'ASK_ABORTED' })
+    expect(manager.prompt).toMatchObject({ kind: 'question', current: 0 })
+    manager.selectIndex(0)
+    await expect(current).resolves.toEqual({ answers: [{ id: 'q1', selected: ['A'] }] })
+  })
+
+  it('preserves explicit modifiers on CSI Z while recognizing bare reverse Tab', () => {
+    expect(new InputParser().feed('\x1b[1;5Z')).toMatchObject([
+      { type: 'key', key: { name: 'tab', ctrl: true, shift: false } },
+    ])
+  })
+
   it('rejects an already-aborted request without opening a card', async () => {
     const manager = new DecisionManager()
     const signal = AbortSignal.abort()

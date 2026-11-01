@@ -1,10 +1,4 @@
-PID 26199
+PID 47098
 TTY 36 100
-1793516257434 EVENTS [{"type":"focus","focused":true}]
-1793516258976 EVENTS [{"type":"focus","focused":false}]
-1793516259980 EVENTS [{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"请","text":"请"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"展","text":"展"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"示","text":"示"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"问","text":"问"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"卷","text":"卷"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"卡","text":"卡"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"片","text":"片"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"。","text":"。"}},{"type":"key","key":{"name":"enter","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"\r"}}]
-1793516259993 INPUT "请展示问卷卡片。\r"
-1793516261421 EVENTS [{"type":"focus","focused":true}]
-STATE current=0 focus=0 questions=2
-1793516264570 EVENTS [{"type":"focus","focused":false}]
-STATE current=0 focus=0 questions=2
+1793521347791 EVENTS [{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"请","text":"请"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"展","text":"展"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"示","text":"示"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"问","text":"问"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"卷","text":"卷"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"卡","text":"卡"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"片","text":"片"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"。","text":"。"}},{"type":"key","key":{"name":"enter","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"\r"}}]
+1793521347801 INPUT "请展示问卷卡片。\r"

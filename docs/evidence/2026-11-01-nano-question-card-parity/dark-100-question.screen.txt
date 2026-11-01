@@ -2,11 +2,11 @@
   nano  deepseek-official/deepseek-flash · 运行中
 
   已加载来源： profile
-  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghostty-visual-x_jqzzxu/dark-100-question/.n
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghostty-visual-egh23_ua/dark-100-question/.n
   ano/profile settings
-  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghostty-visual-x_jqzzxu/dark-100-question/.n
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghostty-visual-egh23_ua/dark-100-question/.n
   ano/profile/cordis.patch.yml 生效层 @deepseek-ai/dsh-base 凭据
-  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghostty-visual-x_jqzzxu/dark-100-question/.d
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghostty-visual-egh23_ua/dark-100-question/.d
   sh/.credentials.yaml（未找到） 全局指令 无
 
   › 请展示问卷卡片。

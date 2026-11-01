@@ -1,6 +1,7 @@
 /** Question-card layout shared by rendering, height budgeting and paging. */
 import type { QuestionPrompt } from '../decisions/manager.ts'
-import { displayWidth, truncateText } from '../render/text.ts'
+import { displayWidth, graphemes, truncateText } from '../render/text.ts'
+import { CHROME_GAP, INLINE, NESTED } from '../theme/spacing.ts'
 import { renderMarkdown } from '../transcript/markdown.ts'
 import { type Row, rowText, type Span, textSpan, wrapSpans } from '../transcript/spans.ts'
 
@@ -10,7 +11,14 @@ export interface QuestionCardParts {
   readonly body: readonly Row[]
   readonly footer: readonly Row[]
   readonly focusBodyRow: number
+  readonly ruleRows: number
+  readonly topGap: number
+  readonly tabGap: number
 }
+
+const DESCRIPTION_INDENT = NESTED + INLINE
+const spaces = (width: number) => ' '.repeat(width)
+const gaps = () => Array.from({ length: CHROME_GAP }, blank)
 
 const blank = (): Row => ({ spans: [textSpan(' ')] })
 const line = (text: string, tone: Span['tone'] = 'normal', bold = false): Row => ({
@@ -53,7 +61,10 @@ function tabs(prompt: QuestionPrompt, width: number): Row[] {
     const draft = prompt.drafts.get(question.id)
     const done = Boolean(draft && (draft.skipped || draft.selected.size || draft.custom.trim()))
     const active = prompt.current === index
-    const label = truncateText(labels[index]!, budgets[index]!)
+    const label =
+      indexes.length < labels.length
+        ? truncateText(graphemes(labels[index]!).slice(0, 3).join(''), budgets[index]!)
+        : truncateText(labels[index]!, budgets[index]!)
     return {
       spans: [
         textSpan(`${done ? '[x]' : '[ ]'} ${label}`, active ? 'accent' : 'muted', { bold: active }),
@@ -135,9 +146,11 @@ function optionRows(prompt: QuestionPrompt, width: number): { rows: Row[]; focus
     )
     if (option.description?.trim()) {
       rows.push(
-        ...prefixed([textSpan('     ')], [textSpan(option.description, 'muted')], width).map(
-          (row) => ({ ...row, pressId: `decision:option:${index}` }),
-        ),
+        ...prefixed(
+          [textSpan(spaces(DESCRIPTION_INDENT))],
+          [textSpan(option.description, 'muted')],
+          width,
+        ).map((row) => ({ ...row, pressId: `decision:option:${index}` })),
       )
     }
   })
@@ -152,7 +165,7 @@ function optionRows(prompt: QuestionPrompt, width: number): { rows: Row[]; focus
   const customRows = prefixed(
     prefix,
     [
-      textSpan(custom || (focused ? '' : '直接输入'), tone, { bold: focused }),
+      textSpan(custom || '直接输入', tone, { bold: focused }),
       ...(focused ? [textSpan('▏', 'accent', { caret: true })] : []),
     ],
     width,
@@ -180,7 +193,7 @@ function reviewRows(prompt: QuestionPrompt, width: number): Row[] {
         width,
       ).map((row) => ({ ...row, pressId: `decision:tab:${index}` })),
       ...prefixed(
-        [textSpan('    ')],
+        [textSpan(spaces(NESTED))],
         [textSpan(done ? answer : '尚未回答', done ? 'muted' : 'danger')],
         width,
       ),
@@ -201,7 +214,18 @@ export function buildQuestionCard(
   width: number,
   cap = 20,
 ): QuestionCardParts {
-  const navigation = tabs(prompt, width)
+  if (cap < 4)
+    return {
+      tabs: [],
+      header: [],
+      body: [line(truncateText('终端过矮，请增高窗口 · Esc 取消', width), 'warning')],
+      footer: [],
+      focusBodyRow: -1,
+      ruleRows: 0,
+      topGap: 0,
+      tabGap: 0,
+    }
+  let navigation = tabs(prompt, width)
   const atSubmit = prompt.current >= prompt.questions.length
   const title = titleRows(prompt, width)
   const options = atSubmit
@@ -212,26 +236,46 @@ export function buildQuestionCard(
   if (atSubmit || prompt.questions[prompt.current]?.multiSelect) {
     footer.push({
       ...line(
-        `     ${atSubmit ? '提交答案' : prompt.questions.length === 1 ? '确认已选项' : '下一题'}`,
+        `${spaces(DESCRIPTION_INDENT)}${atSubmit ? '提交答案' : prompt.questions.length === 1 ? '确认已选项' : '下一题'}`,
         'accent',
       ),
       pressId: 'decision:confirm',
     })
   }
-  footer.push(blank())
+  const footerGap = footer.length
+  footer.push(...gaps())
   if (prompt.error) footer.push(line(truncateText(prompt.error, width), 'danger'))
   footer.push(line(truncateText(footerText(prompt), width), 'muted'))
-  const titleBudget = Math.max(1, cap - 2 - (navigation.length ? 2 : 0) - footer.length - 1)
+  let ruleRows = 1
+  let topGap = CHROME_GAP
+  let tabGap = navigation.length ? CHROME_GAP : 0
+  const fixed = () => ruleRows + topGap + (navigation.length ? 1 + tabGap : 0) + footer.length
+  // Preserve the answer target, validation feedback and hint before decorative chrome.
+  if (fixed() + 2 > cap) footer.splice(footerGap, CHROME_GAP)
+  if (fixed() + 2 > cap) topGap = 0
+  if (fixed() + 2 > cap) tabGap = 0
+  if (fixed() + 2 > cap) navigation = []
+  if (fixed() + 1 > cap) ruleRows = 0
+  const titleBudget = Math.max(0, cap - fixed() - 1)
   const header =
     title.length <= titleBudget
       ? title
-      : titleBudget === 1
-        ? title.slice(0, 1)
+      : titleBudget <= 1
+        ? title.slice(0, titleBudget)
         : [
             ...title.slice(0, titleBudget - 1),
             line(`还有 ${title.length - titleBudget + 1} 行`, 'muted'),
           ]
-  return { tabs: navigation, header, body, footer, focusBodyRow: options.focus }
+  return {
+    tabs: navigation,
+    header,
+    body,
+    footer,
+    focusBodyRow: options.focus,
+    ruleRows,
+    topGap,
+    tabGap,
+  }
 }
 
 export function questionCardCap(height: number): number {
@@ -245,28 +289,26 @@ export function questionCardWindow(
   offset: number,
   followFocus = true,
 ) {
-  const fixed = 2 + (parts.tabs.length ? 2 : 0) + parts.header.length + parts.footer.length
-  const room = Math.max(1, cap - fixed)
-  const maxStart = Math.max(0, parts.body.length - room)
+  const fixed =
+    parts.ruleRows +
+    parts.topGap +
+    (parts.tabs.length ? 1 + parts.tabGap : 0) +
+    parts.header.length +
+    parts.footer.length
+  const room = Math.max(0, cap - fixed)
+  const focus = parts.focusBodyRow
+  const pinFocus = !followFocus && focus >= 0 && room > 1
+  const bodyRoom = pinFocus ? room - 1 : room
+  const maxStart = Math.max(0, parts.body.length - bodyRoom)
   let start = Math.max(0, Math.min(offset, maxStart))
-  if (followFocus && parts.focusBodyRow >= 0) {
-    if (parts.focusBodyRow < start) start = parts.focusBodyRow
-    else if (parts.focusBodyRow >= start + room)
-      start = Math.min(parts.focusBodyRow - room + 1, maxStart)
+  if ((followFocus || room <= 1) && focus >= 0 && room > 0) {
+    if (focus < start) start = focus
+    else if (focus >= start + room) start = Math.min(focus - room + 1, maxStart)
   }
-  return {
-    start,
-    room,
-    maxStart,
-    body: parts.body.slice(start, start + room),
-    total: fixed + Math.min(parts.body.length, room),
-  }
-}
-
-export function cardRowTotal(parts: QuestionCardParts): number {
-  return (
-    2 + (parts.tabs.length ? 2 : 0) + parts.header.length + parts.body.length + parts.footer.length
-  )
+  const body = parts.body.slice(start, start + bodyRoom)
+  // Manual paging never changes the answer target. Keep its row visibly pinned.
+  if (pinFocus && !(focus >= start && focus < start + bodyRoom)) body.unshift(parts.body[focus]!)
+  return { start, room, maxStart, body, total: fixed + body.length }
 }
 
 export function questionTabWidth(row: Row): number {

@@ -8,7 +8,7 @@ import { Fragment, type ReactNode } from 'react'
 import { APPROVAL_OPTIONS, type DecisionManager } from '../decisions/manager.ts'
 import { Box, Overlay, Text } from '../render/components.ts'
 import { displayWidth, graphemes, truncateText } from '../render/text.ts'
-import { EDGE, INLINE } from '../theme/spacing.ts'
+import { CHROME_GAP, EDGE, INLINE } from '../theme/spacing.ts'
 import type { Theme } from '../theme/theme.ts'
 import type { TranscriptModel } from '../transcript/model.ts'
 import { type Row, type Span, type Tone, wrapSpans } from '../transcript/spans.ts'
@@ -50,6 +50,8 @@ export interface AppSnapshot {
   readonly inputDisabled?: boolean
   /** 一次性 / 未知模式只读详情：不画输入框。 */
   readonly inputHidden?: boolean
+  /** Pending question owns this input-area slot before other bottom panels. */
+  readonly decisionBody?: ReactNode
   /** 补全弹层（正文与状态行之间）。 */
   readonly completionBody?: ReactNode
   readonly completionRows?: number
@@ -268,16 +270,17 @@ function inputLineCount(snapshot: AppSnapshot, width: number): number {
 /** 正文区可见高度；滚动上限与渲染共用这一份算法，别各算各的。 */
 export function transcriptBodyHeight(snapshot: AppSnapshot): number {
   const inputHeight = inputLineCount(snapshot, snapshot.width) + 2
-  const completionRows = snapshot.completionRows ?? 0
+  const asking = snapshot.decisions.prompt?.kind === 'question'
+  const completionRows = asking ? 0 : (snapshot.completionRows ?? 0)
   const modelRows = snapshot.modelPanelRows ?? 0
-  const dockRows = snapshot.dockRows ?? 0
-  const headerHeight = 3
+  const dockRows = asking ? 0 : (snapshot.dockRows ?? 0)
+  const headerHeight = 1 + 2 * CHROME_GAP
   const decisionRows = questionCardRows(snapshot)
   const bottomRows =
-    modelRows > 0
-      ? modelRows
-      : decisionRows > 0
-        ? decisionRows + 1 + dockRows
+    decisionRows > 0
+      ? decisionRows + 1 + dockRows
+      : modelRows > 0
+        ? modelRows
         : inputHeight + 1 + dockRows
   return Math.max(1, snapshot.height - bottomRows - completionRows - headerHeight)
 }
@@ -426,11 +429,18 @@ function questionCardParts(snapshot: AppSnapshot): QuestionCardParts | undefined
 export function questionCardRows(snapshot: AppSnapshot): number {
   const parts = questionCardParts(snapshot)
   if (!parts) return 0
-  return questionCardWindow(parts, questionCardCap(snapshot.height), 0).total
+  const prompt = snapshot.decisions.prompt
+  if (prompt?.kind !== 'question') return 0
+  return questionCardWindow(
+    parts,
+    questionCardCap(snapshot.height),
+    prompt.scrollOffset,
+    !prompt.manualScroll,
+  ).total
 }
 
 /** 问卷卡（spec §3）：占输入位、顶部 accent 线、无外框；body 超出时按焦点滚动。 */
-function QuestionCard(props: { snapshot: AppSnapshot; width: number }) {
+export function QuestionCard(props: { snapshot: AppSnapshot; width: number }) {
   const { snapshot } = props
   const prompt = snapshot.decisions.prompt
   const parts = questionCardParts(snapshot)
@@ -439,31 +449,40 @@ function QuestionCard(props: { snapshot: AppSnapshot; width: number }) {
     parts,
     questionCardCap(snapshot.height),
     prompt.scrollOffset,
+    !prompt.manualScroll,
   )
   const innerWidth = questionCardWidth(snapshot)
   const rule = '─'.repeat(Math.max(1, props.width - EDGE * 2))
   return (
     <Box flexDirection="column" width={props.width} flexShrink={0}>
-      <Box flexDirection="row" paddingX={EDGE} width={props.width} height={1} flexShrink={0}>
-        <RowView
-          row={{ spans: [{ text: rule, tone: 'accent' }] }}
-          theme={snapshot.theme}
-          width={innerWidth}
-        />
-      </Box>
-      <Box height={1} flexShrink={0} />
+      {parts.ruleRows > 0 ? (
+        <Box
+          flexDirection="row"
+          paddingX={EDGE}
+          width={props.width}
+          height={parts.ruleRows}
+          flexShrink={0}
+        >
+          <RowView
+            row={{ spans: [{ text: rule, tone: 'accent' }] }}
+            theme={snapshot.theme}
+            width={innerWidth}
+          />
+        </Box>
+      ) : null}
+      {parts.topGap > 0 ? <Box height={parts.topGap} flexShrink={0} /> : null}
       <Box flexDirection="column" paddingX={EDGE} width={props.width} flexShrink={0}>
         {parts.tabs.length > 0 ? (
           <>
             <Box flexDirection="row" width={innerWidth} height={1} flexShrink={0}>
               {parts.tabs.map((tab, index) => (
                 <Fragment key={tab.pressId}>
-                  {index > 0 ? <Box width={2} /> : null}
+                  {index > 0 ? <Box width={EDGE} /> : null}
                   <RowView row={tab} theme={snapshot.theme} width={questionTabWidth(tab)} />
                 </Fragment>
               ))}
             </Box>
-            <Box height={1} flexShrink={0} />
+            {parts.tabGap > 0 ? <Box height={parts.tabGap} flexShrink={0} /> : null}
           </>
         ) : null}
         {parts.header.map((row, index) => (
@@ -492,11 +511,12 @@ export function App(props: { snapshot: AppSnapshot }) {
   // 跟 Claude Code 的输入区高度：上方一行留白 + 输入行 + 一条下边框。
   const bodyHeight = transcriptBodyHeight(snapshot)
   const modelRows = snapshot.modelPanelRows ?? 0
+  const asking = snapshot.decisions.prompt?.kind === 'question'
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box height={1} />
+      <Box height={CHROME_GAP} />
       <Header snapshot={snapshot} width={width} />
-      <Box height={1} />
+      <Box height={CHROME_GAP} />
       <Box flexDirection="column" flexGrow={0} height={bodyHeight} width={width}>
         {snapshot.featureFullBody === true ? (
           snapshot.featureBody
@@ -507,18 +527,18 @@ export function App(props: { snapshot: AppSnapshot }) {
           </>
         )}
       </Box>
-      {snapshot.completionBody}
-      {modelRows > 0 ? (
+      {!asking ? snapshot.completionBody : null}
+      {modelRows > 0 && !asking ? (
         snapshot.modelPanelBody
       ) : (
         <>
-          {questionCardRows(snapshot) > 0 ? (
-            <QuestionCard snapshot={snapshot} width={width} />
+          {asking ? (
+            (snapshot.decisionBody ?? <QuestionCard snapshot={snapshot} width={width} />)
           ) : snapshot.inputHidden === true ? null : (
             <InputLine snapshot={snapshot} width={width} />
           )}
           <StatusLine snapshot={snapshot} width={width} />
-          {snapshot.dockBody ? (
+          {!asking && snapshot.dockBody ? (
             <Box paddingX={EDGE} width={width} flexShrink={0}>
               {snapshot.dockBody}
             </Box>

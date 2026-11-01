@@ -1,20 +1,13 @@
-PID 26021
+PID 46952
 TTY 36 100
-1793516226375 EVENTS [{"type":"focus","focused":false}]
-1793516226462 EVENTS [{"type":"focus","focused":true}]
-1793516226834 EVENTS [{"type":"focus","focused":false}]
-1793516228623 EVENTS [{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"请","text":"请"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"展","text":"展"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"示","text":"示"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"问","text":"问"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"卷","text":"卷"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"卡","text":"卡"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"片","text":"片"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"。","text":"。"}},{"type":"key","key":{"name":"enter","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"\r"}}]
-1793516228634 INPUT "请展示问卷卡片。\r"
-1793516230850 EVENTS [{"type":"focus","focused":true}]
-STATE current=0 focus=0 questions=2
-1793516233027 EVENTS [{"type":"focus","focused":false}]
-STATE current=0 focus=0 questions=2
-1793516238718 EVENTS [{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"1","text":"1"}}]
+1793521316528 EVENTS [{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"请","text":"请"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"展","text":"展"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"示","text":"示"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"问","text":"问"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"卷","text":"卷"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"卡","text":"卡"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"片","text":"片"}},{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"。","text":"。"}},{"type":"key","key":{"name":"enter","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"\r"}}]
+1793521316539 INPUT "请展示问卷卡片。\r"
+1793521326532 EVENTS [{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"1","text":"1"}}]
 STATE current=1 focus=0 questions=2
-1793516238719 INPUT "1"
-1793516239223 EVENTS [{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":" ","text":" "}}]
+1793521326534 INPUT "1"
+1793521327043 EVENTS [{"type":"key","key":{"name":"char","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":" ","text":" "}}]
 STATE current=1 focus=0 questions=2
-1793516239224 INPUT " "
-1793516239426 EVENTS [{"type":"key","key":{"name":"enter","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"\r"}}]
+1793521327043 INPUT " "
+1793521327244 EVENTS [{"type":"key","key":{"name":"enter","ctrl":false,"alt":false,"shift":false,"meta":false,"sequence":"\r"}}]
 STATE current=2 focus=0 questions=2
-1793516239427 INPUT "\r"
+1793521327245 INPUT "\r"

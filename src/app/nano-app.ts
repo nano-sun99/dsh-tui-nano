@@ -24,7 +24,7 @@ import { writeHandoff } from '../runtime/handoff.ts'
 import { formatShutdownReport, Lifecycle } from '../runtime/lifecycle.ts'
 import type { Terminal } from '../runtime/terminal.ts'
 import { activeTheme } from '../theme/theme.ts'
-import { App, type AppSnapshot, transcriptBodyHeight } from './App.tsx'
+import { App, type AppSnapshot, QuestionCard, transcriptBodyHeight } from './App.tsx'
 import { InputModel } from './input-model.ts'
 import { NoticeState, type NoticeTone } from './notice.ts'
 import { buildQuestionCard, questionCardCap, questionCardWindow } from './question-card.ts'
@@ -476,6 +476,8 @@ export class NanoApp {
       this.notices.set('已取消，未提交答案')
       return
     }
+    // Never accept an answer while the compact screen cannot show the choices.
+    if (questionCardCap(this.options.terminal.height) < 4) return
     if (key.alt && key.name === 'char' && key.text === 'n') {
       this.finishQuestionAction(() => this.decisions.skipQuestion())
       return
@@ -489,7 +491,8 @@ export class NanoApp {
       return
     }
     if (key.name === 'tab') {
-      this.decisions.navigateQuestions(key.shift ? -1 : 1)
+      if (key.shift) this.decisions.prevQuestion()
+      else this.decisions.nextQuestion()
       return
     }
     if (draft?.customMode === true) {
@@ -507,17 +510,17 @@ export class NanoApp {
     }
     if (atSubmit) {
       if (key.name === 'enter') this.confirmDecision()
-      else if (key.name === 'left') this.decisions.navigateQuestions(-1)
-      else if (key.name === 'right') this.decisions.navigateQuestions(1)
+      else if (key.name === 'left') this.decisions.prevQuestion()
+      else if (key.name === 'right') this.decisions.nextQuestion()
       return
     }
     if (key.name === 'up') this.decisions.move(-1)
     else if (key.name === 'down') this.decisions.move(1)
     else if (key.name === 'enter') this.confirmDecision()
-    else if (key.name === 'left') this.decisions.navigateQuestions(-1)
-    else if (key.name === 'right') this.decisions.navigateQuestions(1)
+    else if (key.name === 'left') this.decisions.prevQuestion()
+    else if (key.name === 'right') this.decisions.nextQuestion()
     else if (key.name === 'char' && key.text === ' ' && !key.ctrl && !key.alt && !key.meta)
-      this.finishQuestionAction(() => this.decisions.selectIndex(prompt.focusedOption))
+      this.finishQuestionAction(() => this.decisions.selectOption(prompt.focusedOption))
     else if (
       key.name === 'char' &&
       !key.ctrl &&
@@ -526,7 +529,7 @@ export class NanoApp {
       /^[1-9]$/u.test(key.text ?? '')
     ) {
       const index = Number(key.text) - 1
-      if (index <= optionCount) this.finishQuestionAction(() => this.decisions.selectIndex(index))
+      if (index <= optionCount) this.finishQuestionAction(() => this.decisions.selectOption(index))
     }
   }
 
@@ -535,27 +538,10 @@ export class NanoApp {
     if (prompt?.kind !== 'question') return
     const cap = questionCardCap(this.options.terminal.height)
     const parts = buildQuestionCard(prompt, Math.max(1, this.options.terminal.width - 4), cap)
-    const visible = questionCardWindow(parts, cap, prompt.scrollOffset)
-    const target = Math.max(0, Math.min(visible.maxStart, visible.start + delta))
-    if (
-      parts.focusBodyRow >= 0 &&
-      (parts.focusBodyRow < target || parts.focusBodyRow >= target + visible.room)
-    ) {
-      const candidates = parts.body
-        .map((row, index) => ({ row, index }))
-        .filter(
-          ({ row, index }) =>
-            index >= target &&
-            index < target + visible.room &&
-            /^ ?[> ]? ?[1-9][0-9]*\./u.test(row.spans.map((span) => span.text).join('')),
-        )
-      const candidate = delta > 0 ? candidates[0] : candidates.at(-1)
-      const id = candidate?.row.pressId
-      if (id?.startsWith('decision:option:'))
-        this.decisions.focusOption(Number(id.slice('decision:option:'.length)))
-      else if (id === 'decision:custom') this.decisions.focusCustom()
-    }
-    this.decisions.setScrollOffset(target)
+    const visible = questionCardWindow(parts, cap, prompt.scrollOffset, !prompt.manualScroll)
+    if (visible.room <= 1 && parts.focusBodyRow >= 0) return
+    const target = questionCardWindow(parts, cap, visible.start + delta, false).start
+    this.decisions.scrollCard(target - prompt.scrollOffset)
   }
 
   /** Enter on the card: confirm the row, or submit the batch. */
@@ -623,7 +609,12 @@ export class NanoApp {
   }
 
   private handlePress(id: string): void {
-    if (this.options.features?.handlePress?.(id) === true) {
+    if (
+      this.decisions.prompt?.kind === 'question' &&
+      (!id.startsWith('decision:') || questionCardCap(this.options.terminal.height) < 4)
+    )
+      return
+    if (!id.startsWith('decision:') && this.options.features?.handlePress?.(id) === true) {
       this.scheduleRender()
       return
     }
@@ -648,7 +639,7 @@ export class NanoApp {
     }
     if (id.startsWith('decision:option:')) {
       const index = Number(id.slice('decision:option:'.length))
-      this.finishQuestionAction(() => this.decisions.selectIndex(index))
+      this.finishQuestionAction(() => this.decisions.selectOption(index))
       return
     }
     if (id.startsWith('decision:tab:')) {
@@ -657,11 +648,7 @@ export class NanoApp {
       return
     }
     if (id === 'decision:custom') {
-      const prompt = this.decisions.prompt
-      if (prompt?.kind === 'question') {
-        const question = prompt.questions[prompt.current]
-        this.decisions.selectIndex(question?.options?.length ?? 0)
-      }
+      this.decisions.focusCustom()
       return
     }
     if (id === 'decision:confirm') {
@@ -745,6 +732,9 @@ export class NanoApp {
     const dockBody = this.options.features?.dockBody?.()
     const snapshot: AppSnapshot = {
       ...base,
+      ...(this.decisions.prompt?.kind === 'question'
+        ? { decisionBody: createElement(QuestionCard, { snapshot: base, width }) }
+        : {}),
       ...(dockBody !== undefined && dockBody !== null ? { dockBody } : {}),
       ...(this.options.features?.body ? { featureBody: this.options.features.body() } : {}),
       ...(this.options.features?.completionBody

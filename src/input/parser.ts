@@ -234,7 +234,11 @@ export class InputParser {
     if (name) {
       events.push({
         type: 'key',
-        key: { ...key(name, sequence), ...flags, ...(final === 'Z' ? { shift: true } : {}) },
+        key: {
+          ...key(name, sequence),
+          ...flags,
+          ...(final === 'Z' && body === '' ? { shift: true } : {}),
+        },
       })
       return index + 1
     }

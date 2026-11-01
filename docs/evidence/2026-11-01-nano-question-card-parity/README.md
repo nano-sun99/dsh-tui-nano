@@ -18,7 +18,7 @@
 | A14 | 计划审阅沿用同卡：header、Markdown detail、approve 标签；长 detail 保留行数提示。 |
 | A15 | `npm test`、`npm run typecheck`、`npm run lint`、`node scripts/keymap-docs.mjs --check`、`npm run build`。lint 的无关既有警告未扩范围修改。 |
 
-最终验证：同步 `origin/main` 的补全修复 #126 后，`npm test` 通过 **342 条单测 + 34 条 feature 测试**；类型检查、build、lint、keymap-docs 均退出 0。lint 仅有 5 条未触碰文件的存量警告，本次新增文件无警告。真实 PTY 的 submit / cancel 两条链路均通过。
+重审修订后验证：`npm test` 通过 **347 条单测 + 45 条 feature 测试**；类型检查、build、lint、keymap-docs 均退出 0。lint 仅有 5 条未触碰文件的存量警告，本次新增文件无警告。真实 PTY 的 submit / cancel 两条链路均通过。
 
 ## 真机视觉
 
@@ -48,9 +48,14 @@ node docs/evidence/2026-11-01-nano-question-card-parity/interaction.mjs
 python3 docs/evidence/2026-11-01-nano-question-card-parity/capture.py
 ```
 
+## 重审修订
+
+用户选择修订后，补齐模型面板优先级、手动滚动固定原焦点、矮屏防隐藏作答、旧请求 abort、Other 占位、间距 token 和末级题签退化。逐项状态与未改历史约束见 [重审修订记录](review-revisions.md)。
+
 ## 范围与限制
 
 - 不接倒计时/askTimed，不改审批视觉，不新增计划审阅专用版式，不重做只读回看或跨窗口回填。
 - `src/input/parser.ts` 的单处 Shift+Tab 适配是 A6 真实终端回看所必需：此前 CSI Z 丢失 Shift 标志。`tests/e2e/mock-model.mjs` 仅增加独立 question-parity 本地夹具，支撑真实工具链路与真机证据。
-- 本次没有发版、没有自动合并、没有关闭 issue；实施成果待用户选审核档并单独确认合并。
+- 已接收 PR #127 的重审结论并按用户授权修订；本次未另派复审。本次没有发版、没有自动合并、没有关闭 issue，合并须用户单独确认。
+- 历史单槽覆盖/完整跨地址路由未在本次重做，仅修复被替换请求自身 signal abort 挂起；不宣称已实现全部历史 S03 能力。
 - 仓库未声明且不存在 `scripts/check-docs.sh` / `scripts/check-doc-links.sh`：文档检查无入口；已执行键位文档检查及 diff 空白检查。

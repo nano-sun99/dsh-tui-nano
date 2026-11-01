@@ -1,6 +1,8 @@
+import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { NanoApp } from '../../src/app/nano-app.ts'
+import { type FeatureHost, NanoApp } from '../../src/app/nano-app.ts'
 import { ConversationController } from '../../src/conversation/controller.ts'
+import { Text } from '../../src/render/components.ts'
 import { Renderer } from '../../src/render/renderer.ts'
 import { darkTheme } from '../../src/theme/theme.ts'
 
@@ -35,7 +37,7 @@ afterEach(() => {
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-function makeHarness(width = 80, height = 24) {
+function makeHarness(width = 80, height = 24, features: FeatureHost = {}) {
   const renderer = new Renderer({
     write: () => {},
     width,
@@ -67,7 +69,7 @@ function makeHarness(width = 80, height = 24) {
     conversation,
     history: { entries: () => [] } as never,
     writeDiagnostic: () => {},
-    features: { start: () => {}, inputActive: () => true },
+    features: { start: () => {}, inputActive: () => true, ...features },
   })
   return { app, renderer, ctx }
 }
@@ -119,6 +121,40 @@ function lines(harness: ReturnType<typeof makeHarness>): string[] {
 }
 
 describe('question card layout (spec §3/§4)', () => {
+  it('routes keys and clicks to a visible question while the model panel is suspended', async () => {
+    const panelKey = vi.fn(() => true)
+    const panelPress = vi.fn(() => true)
+    const harness = makeHarness(80, 30, {
+      modelPanelRows: () => 15,
+      modelPanelBody: () => createElement(Text, {}, 'MODEL PANEL'),
+      handleKey: panelKey,
+      handlePress: panelPress,
+    })
+    const close = await openQuestion(harness, [
+      { id: 'a', question: '请明确作答', options: [{ label: 'A' }, { label: 'B' }] },
+      { id: 'b', question: '第二个问题', options: [{ label: 'C' }, { label: 'D' }] },
+    ])
+    try {
+      const screen = lines(harness)
+      expect(screen.join('\n')).toContain('请明确作答')
+      expect(screen.join('\n')).not.toContain('MODEL PANEL')
+      const row = screen.findIndex((text) => text.includes('> 1.'))
+      harness.app.handleInput([
+        { type: 'mouse', event: { kind: 'press', button: 'left', x: 4, y: row + 1 } },
+        { type: 'mouse', event: { kind: 'release', button: 'left', x: 4, y: row + 1 } },
+      ] as never)
+      expect(harness.app.decisionsManager.prompt).toMatchObject({ current: 1 })
+      expect(panelPress).not.toHaveBeenCalled()
+      expect(lines(harness).join('\n')).toContain('第二个问题')
+      harness.app.handleInput([key('escape')])
+      expect(panelKey).not.toHaveBeenCalled()
+      expect(lines(harness).join('\n')).toContain('MODEL PANEL')
+    } finally {
+      close()
+      await tick()
+      harness.renderer.unmount()
+    }
+  })
   it('renders numbered options, the focus pointer and a single description line', async () => {
     const harness = makeHarness()
     const close = await openQuestion(harness, [
@@ -308,6 +344,67 @@ describe('question card layout (spec §3/§4)', () => {
     close()
     await tick()
     harness.renderer.unmount()
+  })
+
+  it('pages through a long description without moving focus or changing the selected answer', async () => {
+    const harness = makeHarness(60, 24)
+    const close = await openQuestion(harness, [
+      {
+        id: 'q',
+        question: '长说明',
+        options: [
+          {
+            label: '保持这个选项',
+            description: Array.from({ length: 24 }, (_, index) => `描述第${index + 1}行`).join(
+              '\n',
+            ),
+          },
+          { label: '不能自动移到这里' },
+        ],
+      },
+    ])
+    try {
+      const before = lines(harness).join('\n')
+      harness.app.handleInput([key('pagedown')])
+      const after = lines(harness).join('\n')
+      expect(after).not.toBe(before)
+      expect(after).toContain('> 1. 保持这个选项')
+      expect(harness.app.decisionsManager.prompt).toMatchObject({ focusedOption: 0 })
+      for (let i = 0; i < 8; i++) harness.app.handleInput([key('pagedown')])
+      expect(lines(harness).join('\n')).toContain('描述第24行')
+      expect(harness.app.decisionsManager.prompt).toMatchObject({ focusedOption: 0 })
+      harness.app.handleInput([key('pageup')])
+      expect(lines(harness).join('\n')).not.toContain('描述第24行')
+      harness.app.handleInput([key('down')])
+      expect(lines(harness).join('\n')).toContain('> 2. 不能自动移到这里')
+    } finally {
+      close()
+      await tick()
+      harness.renderer.unmount()
+    }
+  })
+
+  it('refuses answer keys when the terminal only has room for a resize notice', async () => {
+    const harness = makeHarness(60, 8)
+    const close = await openQuestion(harness, [
+      { id: 'q', question: '不可隐藏作答', options: [{ label: 'A' }, { label: 'B' }] },
+    ])
+    try {
+      expect(lines(harness).join('\n')).toContain('终端过矮')
+      harness.app.handleInput([
+        key('enter'),
+        key('char', { text: '1' }),
+        key('char', { text: ' ' }),
+        key('char', { text: 'n', alt: true }),
+      ])
+      expect(harness.app.decisionsManager.prompt).toMatchObject({ kind: 'question', current: 0 })
+      harness.app.handleInput([key('escape')])
+      expect(harness.app.decisionsManager.hasDecision).toBe(false)
+    } finally {
+      close()
+      await tick()
+      harness.renderer.unmount()
+    }
   })
 
   it('keeps the card within the terminal and does not overflow 60 columns', async () => {

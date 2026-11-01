@@ -3,13 +3,13 @@
 
   已加载来源： profile
   /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghos
-  tty-visual-x_jqzzxu/dark-60-question/.nano/profile
+  tty-visual-egh23_ua/dark-60-question/.nano/profile
   settings
   /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghos
-  tty-visual-x_jqzzxu/dark-60-question/.nano/profile/cordis.
+  tty-visual-egh23_ua/dark-60-question/.nano/profile/cordis.
   patch.yml 生效层 @deepseek-ai/dsh-base 凭据
   /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-ghos
-  tty-visual-x_jqzzxu/dark-60-question/.dsh/.credentials.yam
+  tty-visual-egh23_ua/dark-60-question/.dsh/.credentials.yam
   l（未找到） 全局指令 无
 
   › 请展示问卷卡片。

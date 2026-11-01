@@ -148,6 +148,10 @@ export class DecisionManager {
       }
       const abort = () => {
         if (this.question?.waiter.resolve === resolve) this.cancelQuestions()
+        else {
+          signal?.removeEventListener('abort', abort)
+          reject(questionAbortedError())
+        }
       }
       signal?.addEventListener('abort', abort, { once: true })
       this.question = {
@@ -177,13 +181,6 @@ export class DecisionManager {
     const focusable = optionCount + 1
     const next = (prompt.focusedOption + delta + focusable) % focusable
     this.setFocus(next)
-  }
-
-  focusOption(index: number): void {
-    const found = this.currentQuestion()
-    if (!found || !Number.isInteger(index)) return
-    const count = found.question.options?.length ?? 0
-    if (index >= 0 && index <= count) this.setFocus(index)
   }
 
   focusCustom(): void {
@@ -424,7 +421,7 @@ export class DecisionManager {
   setScrollOffset(offset: number): void {
     const active = this.question
     if (!active) return
-    active.prompt = { ...active.prompt, scrollOffset: Math.max(0, offset) }
+    active.prompt = { ...active.prompt, scrollOffset: Math.max(0, offset), manualScroll: true }
     this.notify()
   }
 
@@ -483,7 +480,13 @@ export class DecisionManager {
     if (!active || !found) return
     found.draft.focusedOption = 0
     found.draft.customMode = false
-    active.prompt = { ...active.prompt, focusedOption: 0, scrollOffset: 0, error }
+    active.prompt = {
+      ...active.prompt,
+      focusedOption: 0,
+      scrollOffset: 0,
+      manualScroll: false,
+      error,
+    }
     this.notify()
   }
 
@@ -511,6 +514,7 @@ export class DecisionManager {
         current: missing,
         focusedOption: 0,
         scrollOffset: 0,
+        manualScroll: false,
         error: QUESTION_ERRORS.unanswered,
       }
       this.notify()
@@ -569,6 +573,6 @@ export class DecisionManager {
   }
 }
 
-function clearError(prompt: QuestionPrompt): { error?: string } {
-  return prompt.error === undefined ? {} : { error: undefined }
+function clearError(prompt: QuestionPrompt): { error?: string; manualScroll: false } {
+  return { ...(prompt.error === undefined ? {} : { error: undefined }), manualScroll: false }
 }

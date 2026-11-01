@@ -6,11 +6,11 @@ Input: [{"send":"显示问卷\r","until":"等待你的选择","timeout":15},{"se
   nano  deepseek-official/deepseek-flash · 空闲
 
   已加载来源： profile
-  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-question-125-QXIEBk/submit/.nano/profile
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-question-125-VMqnLf/submit/.nano/profile
   settings
-  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-question-125-QXIEBk/submit/.nano/profile/cor
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-question-125-VMqnLf/submit/.nano/profile/cor
   dis.patch.yml 生效层 @deepseek-ai/dsh-base 凭据
-  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-question-125-QXIEBk/submit/.dsh/.credentials
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-question-125-VMqnLf/submit/.dsh/.credentials
   .yaml（未找到） 全局指令 无
 
   › 显示问卷
