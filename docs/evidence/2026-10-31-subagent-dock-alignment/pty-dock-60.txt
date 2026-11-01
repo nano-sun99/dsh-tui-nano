@@ -1,0 +1,30 @@
+                                                                                                    
+  nano  deepseek-official/deepseek-flash · 空闲                                                     
+                                                                                                    
+  已加载来源： profile                                                                              
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-suba                                        
+  gent-r6Ezgr/.dsh-tui-nano/profile settings                                                        
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-suba                                        
+  gent-r6Ezgr/.dsh-tui-nano/profile/cordis.patch.yml 生效层                                         
+  @deepseek-ai/dsh-base 凭据                                                                        
+  /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-suba                                        
+  gent-r6Ezgr/.dsh/.credentials.yaml（未找到） 全局指令 无                                          
+                                                                                                    
+  › 跑个子代理                                                                                      
+                                                                                                    
+  ✓ subagent subagent · 点击展开                                                                    
+                                                                                                    
+  父任务完成：子任务已分派。                                                                        
+                                                                                                    
+  Background subagent 7494355b-66be-4c89-9d4a-fd357c6f63cd                                          
+  finished and will do no further work unless you send it                                           
+  more.                                                                                             
+                                                                                                    
+  父任务完成：子任务已分派。                                                                        
+                                                                                                    
+  ────────────────────────────────────────────────────────                                          
+  ›  输入消息…                                                                                      
+  ────────────────────────────────────────────────────────                                          
+  …/worktrees/issue-122           Enter 发送 · Ctrl+C 退出                                          
+  ────────────────────────────────────────────────────────                                          
+    ✓ 查找配置依赖                                    完成                                          

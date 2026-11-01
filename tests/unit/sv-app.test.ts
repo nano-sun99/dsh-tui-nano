@@ -1,5 +1,6 @@
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { type AppSnapshot, transcriptBodyHeight } from '../../src/app/App.tsx'
 import { NanoApp } from '../../src/app/nano-app.ts'
 import { ConversationController } from '../../src/conversation/controller.ts'
 import { Text } from '../../src/render/components.ts'
@@ -239,14 +240,71 @@ describe('详情 / 列表的正文与输入区切换', () => {
     ;(harness.app as never as { handlePress: (id: string) => void }).handlePress(
       'subagent:result:ext-1',
     )
-    expect(
-      (harness.app as never as { expanded: Set<string> }).expanded.has(unit?.id ?? ''),
-    ).toBe(true)
+    expect((harness.app as never as { expanded: Set<string> }).expanded.has(unit?.id ?? '')).toBe(
+      true,
+    )
     await settle()
     harness.renderer.unmount()
   })
 
-  it('主视图的 feature body（dock）追加在 transcript 之后', async () => {
+  it('dock 渲染在状态栏之后，输入与状态栏仍在它上方', async () => {
+    const harness = makeHarness({
+      start: () => {},
+      dockBody: () => createElement(Text, null, 'DOCK-ROW'),
+      dockRows: () => 2,
+      inputPlaceholder: () => 'INPUT-PLACEHOLDER',
+      inputActive: () => true,
+    })
+    harness.app.start().catch(() => {})
+    await tick()
+    harness.app.render()
+    harness.renderer.flushFrame()
+    const lines = harness.renderer.snapshotLines()
+    const dock = lines.findIndex((line) => line.includes('DOCK-ROW'))
+    const input = lines.findIndex((line) => line.includes('INPUT-PLACEHOLDER'))
+    const status = lines.findIndex((line) => line.includes('Enter 发送 · Ctrl+C 退出'))
+    expect(input).toBeGreaterThanOrEqual(0)
+    expect(status).toBeGreaterThan(input)
+    expect(dock).toBeGreaterThan(status)
+    harness.renderer.unmount()
+  })
+
+  it('transcriptBodyHeight 扣掉 dockRows', () => {
+    const base = {
+      width: 80,
+      height: 24,
+      text: '',
+      cursor: 0,
+      completionRows: 0,
+      modelPanelRows: 0,
+      inputHidden: false,
+      inputDisabled: false,
+      decisions: { hasDecision: false },
+      dockRows: 0,
+    } as unknown as AppSnapshot
+    expect(transcriptBodyHeight({ ...base, dockRows: 2 })).toBe(transcriptBodyHeight(base) - 2)
+  })
+
+  it('model 面板打开时不渲染 dock', async () => {
+    const harness = makeHarness({
+      start: () => {},
+      modelPanelRows: () => 2,
+      modelPanelBody: () => createElement(Text, null, 'MODEL-PANEL'),
+      dockBody: () => createElement(Text, null, 'DOCK-ROW'),
+      dockRows: () => 2,
+      inputActive: () => true,
+    })
+    harness.app.start().catch(() => {})
+    await tick()
+    harness.app.render()
+    harness.renderer.flushFrame()
+    const lines = harness.renderer.snapshotLines()
+    expect(lines).toContain('MODEL-PANEL')
+    expect(lines).not.toContain('DOCK-ROW')
+    harness.renderer.unmount()
+  })
+
+  it('主视图的 feature body（面板）追加在 transcript 之后', async () => {
     const harness = makeHarness({
       start: () => {},
       body: () => createElement(Text, null, '● 任务 A  执行中'),

@@ -2,13 +2,13 @@
 
 - 组标识：`2026-10-31-nano-subagent-dock-alignment`
 - 角色：单份 spec，总纲与执行规格合一
-- 状态：方案中（待确认）
+- 状态：实施中（issue #122）
 - 结构：不拆——1 份 spec + 1 张执行 issue
 - 机制范围：**2 个新增机制**——① 子会话 turn 级状态源，② dock 底部占位与正文高度预算
 - 上游：设计稿 [`preview/README.md` §子代理交互](../../design/2026-10-17-dsh-tui-ux-research/preview/README.md)、`preview/index.html`（dock 在 `footer.status` 之后）、`preview/subagents.js`、[ADR-20261022-subagent-dock-lifecycle](../../decisions/2026-10-22-subagent-dock-lifecycle.md)、已合并 spec [`2026-10-30-nano-subagent-navigation`](../2026-10-30-nano-subagent-navigation/README.md)
 - 替代关系：修正已合并 spec 的两处错误——dock 位置写成「输入框上方」、完成态只认 `subagent/end`；不重开旧 spec，新开本份
 - ADR：新增 [ADR-20261031-subagent-turn-settlement](../../decisions/2026-10-31-subagent-turn-settlement.md)，**取代** [ADR-20261022-subagent-dock-lifecycle](../../decisions/2026-10-22-subagent-dock-lifecycle.md) 的保留计时触发点；30 秒时长、状态词、行内容不变，旧 ADR 同变更标记「已被取代」
-- 下游：spec 合并后开执行 issue
+- 下游：执行 issue [#122](https://github.com/nano-sun99/dsh-tui-nano/issues/122)
 - 合入前提：spec 合并后开执行 issue；实施需单测 / feature / PTY 证据齐全
 
 ## 1. 目标
@@ -32,7 +32,7 @@
 | 当前高度预算没有给 dock 留行 | `src/app/App.tsx:263-270` 的 `transcriptBodyHeight` 扣输入、状态、补全、header 与 `modelPanelRows`，但没有 dock；dock 现在挤在正文高度里 |
 | 设计稿详情头部是「← 子代理 名字 + 右侧状态」 | `preview/index.html:316-319` 的 DOM：`#subagent-back`、`子代理`、`#subagent-title`、`#subagent-view-status`；`#subagent-title { flex:1 }` 在 `index.html:118`，把状态推到右侧 |
 | 当前详情头部是左侧一整行 | `src/subagents/view.ts:920-932`：`‹ 返回 ` + `detailTitle()`；`detailTitle()` 为 `子代理 · 名字 · 状态词`（`src/subagents/detail.ts:23-25`） |
-| 设计稿要求一轮结束即完成；当前只认 activation 结束 | 官方 `subagent/end` 的实际 emit 在 `dsh-subagent/lib/index.js:200-204`（`createActivationObserver.settle`）；`settle()` 由 activation teardown 调用（`:2040-2042`，`notifySettlement` 后 `observer.settle`）。可续聊子代理一轮结束仍驻留，activate 结束前不发 `subagent/end` |
+| 设计稿要求一轮结束即完成；当前只认 activation 结束 | 官方 `subagent/end` 的实际 emit 在 `dsh-subagent/lib/index.js:200-204`（`createActivationObserver.settle`）；`settle()` 由 activation teardown 调用（`:2040-2042`）。库在 agent idle、inbox 无待办、无 owned children 时自然 settle，`subagent/end` 通常紧随回合结束；但 teardown 可能晚于 `turn/end`，事件未达或驻留时 dock 仍等不到完成态。当前 dock 没有 turn 级信号 |
 | 子会话有独立的 turn 级终态 | 事件在 `dsh-session/lib/types/types.d.ts:256-277`（`turn/start` 263、`turn/end` 274）；`turn/end.reason.kind` 的类型在 `:166-211`，有 `completed / aborted / blocked / error / max-tokens / interrupted / forked` |
 | 用户现场症状 | 子代理 `4e6a5ff2`（label `Analyze repo structure`）在 18:05:55 已有 `turn/end completed`，用户截图里 dock 仍显示「执行中」；代码路径也可能落到「未运行」，两者都等不到设计稿的完成态 |
 
@@ -122,9 +122,9 @@ type DockRow = {
 |---|---|
 | `src/app/App.tsx` | 新增独立 `dockBody` 节点：主视图顺序为正文 → 输入 → 状态栏 → dock；`transcriptBodyHeight` 扣 `dockRows`；dock 容器加左右 2ch；`modelPanelRows > 0` 时 dock 隐藏 |
 | `src/app/nano-app.ts` | snapshot 暴露 `dockBody` / `dockRows`；`currentBodyHeight` 与高度计算同步 |
-| `src/controls/feature-host.ts` | 把 dock 从 `body()` 的全文面板栈中拆出，单独提供 `dock()` / `dockRows()`；terminal/info/sessions/jobs 仍走 `body()` |
-| `src/subagents/view.ts` | dock 高度、详情头部布局；dock 订阅与 turn 状态委托给 `dock.ts` |
-| `src/subagents/detail.ts` | 详情头部拆成名字与状态两段 |
+| `src/controls/feature-host.ts` | 把 dock 从 `body()` 的全文面板栈中拆出，单独提供 `dockBody()` / `dockRows()`；terminal/info/sessions/jobs 仍走 `body()` |
+| `src/subagents/view.ts` | dock 高度、详情头部两段布局（左名字 / 右状态）；dock 订阅与 turn 状态委托给 `dock.ts` |
+| `src/subagents/detail.ts` | 删除旧 `detailTitle()`；头部渲染移到 `view.ts` |
 | `src/subagents/dock.ts` | live child 的 `turn/start` / `turn/end` 订阅与过滤、turn 状态应用、activation 兜底去重、`rows()` 高度 |
 | `tests/unit/` | turn/end 映射、turn/start 复位、高度预算、头部布局 |
 | `tests/e2e/` | PTY 截图：dock 在状态栏之后、100/60 列不压输入、完成态出现 |
@@ -156,6 +156,8 @@ type DockRow = {
 - 子会话事件订阅在子代理 live 时建立，跟随 agent live 生命周期；行出列、`x` 隐藏、30 秒出列都不释放，agent 释放或进程退出才释放；不订阅历史会话。
 - 订阅回调过滤 `session === child.session` 且 `event.type` 属于 `turn/start` / `turn/end`；agent scoped context 会收到后代事件，不过滤会串行。
 - 详情头部 `←` 的可点击区域与现有 `subagent:back` 一致。
+- `/model` 面板与 dock：`dockBody()` / `dockRows()` 共用 `modelPanel.open` 判断；App 的 `modelRows` 分支只决定渲染分支，两处需同步，避免高度预算与渲染短暂错开。
+- 详情头部宽度预算：`← `（2 列）+ `子代理 `（7 列）+ 名字 + 状态词必须落在 `width` 内；名字先截断，`←` 与状态词不截断。
 
 ## 9. 机制清单
 
@@ -183,3 +185,15 @@ type DockRow = {
 | R9 | 事实澄清 | 当前症状可能是「未运行」而非一直「执行中」 | 已修：§2/§9 改为「执行中或未运行」，根因不变 |
 | R10 | 事实澄清 | 证据目录截图不存在 | 已修：改为「用户现场症状」，不引用未落盘证据 |
 | R11 | 事实澄清 | 多处 file:line 引用不准 | 已修：turn 事件、flex、subagent emit、modelPanelRows、旧 ADR 出处、view/dock 归属全部改正 |
+
+2026-11-01 实施重审（用户点「重审」；2 个只读 agent：规格符合性 + 对抗找 bug）。原始结论见 [PR #123 评论](https://github.com/nano-sun99/dsh-tui-nano/pull/123#issuecomment-6553031421)。
+
+| # | 严重度 | 发现 | 处置 |
+|---|---|---|---|
+| I1 | 建议 | 详情头部宽度预算少扣 3 列，长名字会把 `←` 挤没、状态词被裁 | 已修：按 `← ` 2 + `子代理 ` 7 扣；补 60 列长名字用例 |
+| I2 | 建议 | PTY「完成」断言可能由 activation end 满足，测不出 turn/end 路径 | 已修：turn 路径以单测为主证据；e2e 增加状态栏/dock 存在与「dock 是最后一块」断言；证据文案不再把 PTY 当 turn 路径唯一证据 |
+| I3 | 建议 | label 含换行时 dockRows 少算 1 行 | 已修：label 折叠空白后再截断；补单行用例 |
+| I4 | 建议 | A5 第二次 turn/end、A6 turn 层 aborted/error/max-tokens/未知 30 秒、A12 面板关闭恢复无测试 | 已修：补对应单测与 Features 门控用例 |
+| I5 | 事实澄清 | issue / spec §6 / 证据文案不同步 | 已修：issue 改 `dockBody()`；spec §6 标明头部渲染在 `view.ts`；证据 A2/A10 改落点 |
+| I6 | 事实澄清 | ADR/spec 的「activation 结束前不发 subagent/end」与官方自然 settle 行为不符 | 已修：改写为「通常紧随回合结束，但可能晚于 turn/end / 未达 / 驻留」 |
+| I7 | 事实澄清 | dock 出现/消失会让非贴底阅读整体位移；model 面板互斥是两处判断 | 已记录：证据目录已知限制；当前行为符合 spec，不在本次补偿 |

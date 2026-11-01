@@ -53,6 +53,10 @@ export interface AppSnapshot {
   readonly completionRows?: number
   readonly modelPanelBody?: ReactNode
   readonly modelPanelRows?: number
+  /** 状态栏之后、终端最底部的 dock；与全文面板分开。 */
+  readonly dockBody?: ReactNode
+  /** dock 占用的终端行数；从正文高度扣除。 */
+  readonly dockRows?: number
 }
 
 export function toneColor(tone: Tone, theme: Theme): [number, number, number] {
@@ -264,8 +268,10 @@ export function transcriptBodyHeight(snapshot: AppSnapshot): number {
   const inputHeight = inputLineCount(snapshot, snapshot.width) + 2
   const completionRows = snapshot.completionRows ?? 0
   const modelRows = snapshot.modelPanelRows ?? 0
+  const dockRows = snapshot.dockRows ?? 0
   const headerHeight = 3
-  const bottomRows = modelRows > 0 ? modelRows : snapshot.inputHidden === true ? 1 : inputHeight + 1
+  const bottomRows =
+    modelRows > 0 ? modelRows : snapshot.inputHidden === true ? 1 : inputHeight + 1 + dockRows
   return Math.max(1, snapshot.height - bottomRows - completionRows - headerHeight)
 }
 
@@ -529,6 +535,11 @@ export function App(props: { snapshot: AppSnapshot }) {
         <>
           {snapshot.inputHidden === true ? null : <InputLine snapshot={snapshot} width={width} />}
           <StatusLine snapshot={snapshot} width={width} />
+          {snapshot.dockBody ? (
+            <Box paddingX={EDGE} width={width} flexShrink={0}>
+              {snapshot.dockBody}
+            </Box>
+          ) : null}
         </>
       )}
       <DecisionOverlay snapshot={snapshot} width={width} height={height} />

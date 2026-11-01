@@ -1,18 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   composerState,
-  detailTitle,
   foldSessionEvent,
   modeAllowsDetail,
   replaySessionMessages,
 } from '../../src/subagents/detail.ts'
 import { TranscriptModel } from '../../src/transcript/model.ts'
-
-describe('detailTitle', () => {
-  it('顶部标识是「子代理 · 名字 · 状态词」', () => {
-    expect(detailTitle('核对样式回归', 'done')).toBe('子代理 · 核对样式回归 · 完成')
-  })
-})
 
 describe('composerState', () => {
   it('可续聊 + parent live：输入可用，child 运行时 Stop 可用', () => {

@@ -35,13 +35,13 @@
 ## 依据
 
 - 设计稿 DOM：`preview/index.html:328-339` 的 `.composer` → `footer.status` → `.subagent-dock`；dock 是终端最后一个块。
-- 官方 `subagent/end` 的实际 emit 在 `dsh-subagent/lib/index.js:200-204`（`createActivationObserver.settle`），`settle()` 由 activation teardown 调用（`:2040-2042`），不是每轮结束；可续聊子代理一轮结束仍驻留，不能拿它当轮级完成态。
+- 官方 `subagent/end` 的实际 emit 在 `dsh-subagent/lib/index.js:200-204`（`createActivationObserver.settle`），`settle()` 由 activation teardown 调用（`:2040-2042`）。库在 agent idle、inbox 无待办、无 owned children 时自然 settle，`subagent/end` 通常紧随回合结束；但它可能晚于 `turn/end`，事件未达或驻留时 dock 等不到完成态。`turn/end` 是更早、更直接的轮级信号。
 - 子会话 `turn/end` 带 `reason.kind`（`dsh-session/lib/types/types.d.ts:166-211`），事件本身在 `SessionEventMap`（`:256-277`），是设计稿「一轮结束」的直接信号。
 - 用户现场观察（2026-10-31）：子代理 `4e6a5ff2` 在 18:05:55 已有 `turn/end completed`，dock 仍显示「执行中」；代码路径也可能落到「未运行」。两者都等不到设计稿的完成态。
 
 ## 否决了什么
 
-- 继续只监听 `subagent/end`：可续聊子代理在 activation 结束前可能停在「执行中」或「未运行」，永远等不到设计稿的完成态。
+- 继续只监听 `subagent/end`：它可能晚于 `turn/end`，事件未达或 activation 驻留时 dock 会停在「执行中」或「未运行」，等不到设计稿要求的轮级完成态。
 - 把 dock 留在输入框上方：与设计稿的 DOM 顺序相反。
 - 改 30 秒为设计稿样稿的 1.5 秒：ADR-20261022 的 30 秒是用户已拍板的决定，不在本次重开。
 

@@ -563,11 +563,23 @@ export class Features implements FeatureHost {
     const jobs = this.jobs?.visible
       ? this.jobs.render(width, this.innerHeight(), this.monitor?.watching)
       : null
-    const dock = this.navigation?.body(width) ?? null
-    const stack = [pane, info, sessions, jobs, dock].filter(Boolean)
+    // 主视图的 dock 由 dockBody() 单独提供；这里只保留详情 / 列表的全文视图。
+    const navigationBody = this.navigation?.body(width) ?? null
+    const stack = [pane, info, sessions, jobs, navigationBody].filter(Boolean)
     if (stack.length === 0) return null
     if (stack.length === 1) return stack[0]
     return createElement(Box, { flexDirection: 'column', width }, ...stack)
+  }
+
+  /** dock 独立于正文面板，由 App 放在状态栏之后。 */
+  dockBody(): ReactNode {
+    if (this.modelPanel?.open) return null
+    return this.navigation?.dock(this.innerWidth() - 2) ?? null
+  }
+
+  dockRows(): number {
+    if (this.modelPanel?.open) return 0
+    return this.navigation?.dockRows() ?? 0
   }
 
   /** `/model` 面板占底部输入区；打开时替换输入行与状态行。 */

@@ -3,7 +3,6 @@
  * 把官方 child session 的消息投影折回 transcript。渲染复用主对话模型。
  */
 import type { Block, TranscriptModel } from '../transcript/model.ts'
-import { type DockStatus, statusWord } from './dock.ts'
 
 export type SubagentMode = 'one-shot' | 'continuable' | 'external' | 'unknown'
 
@@ -17,11 +16,6 @@ export interface ComposerState {
   readonly showInput: boolean
   readonly editable: boolean
   readonly showStop: boolean
-}
-
-/** 顶部标识：`子代理 · 名字 · 状态词`。 */
-export function detailTitle(name: string, status: DockStatus): string {
-  return `子代理 · ${name} · ${statusWord(status)}`
 }
 
 export function modeAllowsDetail(mode: SubagentMode): boolean {
