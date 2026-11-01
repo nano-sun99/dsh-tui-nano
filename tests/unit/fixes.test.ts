@@ -33,7 +33,7 @@ describe('streaming preview', () => {
     const internals = controller as unknown as {
       handleStreamFrame: (frame: unknown) => void
     }
-    internals.handleStreamFrame({ type: 'start', attemptId: 'a', revision: 1 })
+    internals.handleStreamFrame({ type: 'start', attemptId: 'a', revision: 1, turn: 1 })
     internals.handleStreamFrame({
       type: 'chunk',
       attemptId: 'a',
@@ -53,7 +53,7 @@ describe('streaming preview', () => {
   it('ignores frames from another attempt', () => {
     const controller = fakeController()
     const internals = controller as unknown as { handleStreamFrame: (frame: unknown) => void }
-    internals.handleStreamFrame({ type: 'start', attemptId: 'a', revision: 1 })
+    internals.handleStreamFrame({ type: 'start', attemptId: 'a', revision: 1, turn: 1 })
     internals.handleStreamFrame({
       type: 'chunk',
       attemptId: 'b',
@@ -77,7 +77,7 @@ describe('question custom input', () => {
       core: { ctx: {}, dispose: async () => {} } as never,
       official: {} as never,
       terminal: { width: 80, height: 24, copyToClipboard: () => {} } as never,
-      renderer: { update: () => {}, resize: () => {} } as never,
+      renderer: { update: () => {}, resize: () => {}, configureActivity: () => {} } as never,
       claim: { rootId: 'r', path: '/tmp/x', recovered: false },
       dataRoot: '/tmp',
       cwd: '/tmp',

@@ -52,6 +52,7 @@ export type InputEvent =
   | { readonly type: 'paste'; readonly text: string }
   | { readonly type: 'mouse'; readonly event: MouseEvent }
   | { readonly type: 'focus'; readonly focused: boolean }
+  | { readonly type: 'terminal-response'; readonly sequence: string }
 
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
@@ -77,11 +78,17 @@ export class InputParser {
   }
 
   /** Resolve an ambiguous lone ESC after the escape timeout. */
-  flushPending(): InputEvent[] {
+  flushPending(preserveQueryEscape = false): InputEvent[] {
+    if (preserveQueryEscape && this.pending.startsWith(String.fromCharCode(27))) return []
     if (this.pending === '\x1b') {
       this.pending = ''
       return [{ type: 'key', key: key('escape', '\x1b') }]
     }
+    if (
+      preserveQueryEscape &&
+      ['\x1b_', '\x1bP', '\x1b^', '\x1b]'].some((prefix) => this.pending.startsWith(prefix))
+    )
+      return []
     if (this.pending.startsWith('\x1b') && this.pending.length === 2) {
       const sequence = this.pending
       const ch = [...sequence][1] as string
@@ -154,6 +161,14 @@ export class InputParser {
     const second = text[1] as string
     if (second === '[') return this.consumeCsi(events)
     if (second === 'O') return this.consumeSs3(events)
+    if (second === '_' || second === 'P' || second === '^') {
+      const end = text.indexOf('\x1b\\', 2)
+      if (end < 0) return 0
+      if (second === '_' && text[2] === 'G') {
+        events.push({ type: 'terminal-response', sequence: text.slice(0, end + 2) })
+      }
+      return end + 2
+    }
     if (second === ']') {
       // OSC response from the terminal (e.g. clipboard or title); ignore.
       const bel = text.indexOf('\x07')
@@ -194,6 +209,10 @@ export class InputParser {
     const body = text.slice(2, index)
     const sequence = text.slice(0, index + 1)
 
+    if (final === 't' && /^(4|6);[0-9]+;[0-9]+$/u.test(body)) {
+      events.push({ type: 'terminal-response', sequence })
+      return index + 1
+    }
     if (final === 'M' || final === 'm') {
       if (body.startsWith('<')) {
         const mouse = parseSgrMouse(body.slice(1), final === 'M')

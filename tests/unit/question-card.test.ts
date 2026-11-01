@@ -203,7 +203,8 @@ describe('question card layout (spec §3/§4)', () => {
   })
 
   it('renders tabs, review rows and the submit page for a batch', async () => {
-    const harness = makeHarness()
+    // 活动栏固定占 1 行；本用例验证提交页内容，给它补回这一行预算。
+    const harness = makeHarness(80, 25)
     const close = await openQuestion(harness, [
       {
         id: 'q1',

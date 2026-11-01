@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   App,
   type AppSnapshot,
+  questionActivityCap,
   questionCardRows,
   transcriptBodyHeight,
 } from '../../src/app/App.tsx'
@@ -133,7 +134,7 @@ describe('question card rendered surface', () => {
           expect(lines[rule]?.trim()).toHaveLength(width - 4)
           expect(lines[rule + 1]?.trim()).toBe('')
           for (const text of lines) expect(displayWidth(text)).toBeLessThanOrEqual(width)
-          expect(questionCardRows(view)).toBeLessThanOrEqual(questionCardCap(view.height))
+          expect(questionCardRows(view)).toBeLessThanOrEqual(questionActivityCap(view))
           expect(transcriptBodyHeight(view)).toBeGreaterThanOrEqual(8)
           expect(output).toContain(
             `\x1b[0;1;38;2;${theme.success.join(';')}m  1. 聚焦回归（推荐） ✓`,
@@ -165,9 +166,9 @@ describe('question card rendered surface', () => {
         renderer.mount(createElement(App, { snapshot: view }))
         renderer.flushFrame()
         const screen = renderer.snapshotLines().join('\n')
-        expect(questionCardRows(view)).toBeLessThanOrEqual(questionCardCap(height))
+        expect(questionCardRows(view)).toBeLessThanOrEqual(questionActivityCap(view))
         expect(screen).toContain('等待你的选择')
-        if (questionCardCap(height) >= 4) {
+        if (questionActivityCap(view) >= 4) {
           expect(screen).toContain('请至少选择一项。')
           expect(screen).toContain('> 1.')
           expect(screen).toContain('Esc 取消')

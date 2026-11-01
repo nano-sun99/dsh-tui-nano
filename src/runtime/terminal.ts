@@ -9,6 +9,12 @@ import { execFileSync } from 'node:child_process'
 import { closeSync, openSync, writeSync } from 'node:fs'
 import { StringDecoder } from 'node:string_decoder'
 import { type InputEvent, InputParser } from '../input/parser.ts'
+import {
+  ACTIVITY_QUERY_ID,
+  type ActivityGraphics,
+  activityQuery,
+  deleteActivityImage,
+} from '../render/activity-image.ts'
 import { CONTROL, osc52 } from '../render/ansi.ts'
 
 export interface TerminalOptions {
@@ -26,6 +32,11 @@ export class Terminal {
   private readonly options: TerminalOptions
   private inputHandler: ((chunk: Buffer) => void) | undefined
   private resizeHandler: (() => void) | undefined
+  private graphicsTimer: NodeJS.Timeout | undefined
+  private graphicsConfirmed = false
+  private graphicsPending = false
+  private pendingCell: ActivityGraphics | undefined
+  activityGraphics: ActivityGraphics | undefined
   width = 80
   height = 24
 
@@ -47,7 +58,9 @@ export class Terminal {
     this.inputHandler = (chunk: Buffer) => this.handleChunk(this.decoder.write(chunk))
     process.stdin.on('data', this.inputHandler)
     this.resizeHandler = () => {
+      this.activityGraphics = undefined
       this.refreshSize()
+      this.probeGraphics()
       this.options.onResize(this.width, this.height)
     }
     process.on('SIGWINCH', this.resizeHandler)
@@ -61,15 +74,21 @@ export class Terminal {
         CONTROL.clear,
     )
     this.active = true
+    this.probeGraphics()
   }
 
   /** Idempotent recovery; safe to call from a signal handler or finally block. */
   restore(): void {
     if (!this.active) return
     this.active = false
+    if (this.graphicsTimer) clearTimeout(this.graphicsTimer)
+    this.graphicsTimer = undefined
+    this.graphicsPending = false
+    this.activityGraphics = undefined
     try {
       this.write(
-        CONTROL.disableKittyKeyboard +
+        (this.graphicsConfirmed ? deleteActivityImage() : '') +
+          CONTROL.disableKittyKeyboard +
           CONTROL.disableFocusReporting +
           CONTROL.disableBracketedPaste +
           CONTROL.disableMouse +
@@ -138,6 +157,51 @@ export class Terminal {
     }
   }
 
+  private probeGraphics(): void {
+    if (
+      !this.active ||
+      !this.isTTY ||
+      process.env.TERM_PROGRAM !== 'ghostty' ||
+      process.env.TMUX ||
+      process.env.STY ||
+      process.env.SSH_TTY ||
+      process.env.SSH_CONNECTION
+    )
+      return
+    this.pendingCell = undefined
+    this.graphicsPending = true
+    this.graphicsConfirmed = false
+    if (this.graphicsTimer) clearTimeout(this.graphicsTimer)
+    this.graphicsTimer = setTimeout(() => {
+      this.graphicsPending = false
+      this.graphicsTimer = undefined
+      if (this.parser.hasPending()) this.handleChunk('')
+    }, 750)
+    this.write(activityQuery())
+  }
+
+  private graphicsResponse(sequence: string): void {
+    if (!this.graphicsPending) return
+    if (sequence.startsWith(`${String.fromCharCode(27)}_Gi=${ACTIVITY_QUERY_ID};OK`))
+      this.graphicsConfirmed = true
+    const cell = /^6;(\d+);(\d+)t$/u.exec(sequence.startsWith('\x1b[') ? sequence.slice(2) : '')
+    if (cell) {
+      const cellHeight = Number(cell[1])
+      const cellWidth = Number(cell[2])
+      if (cellHeight > 0 && cellHeight <= 512 && cellWidth > 0 && cellWidth <= 256) {
+        this.pendingCell = { cellWidth, cellHeight }
+      }
+    }
+    if (this.graphicsConfirmed && this.pendingCell) {
+      this.activityGraphics = this.pendingCell
+      this.pendingCell = undefined
+      this.graphicsPending = false
+      if (this.graphicsTimer) clearTimeout(this.graphicsTimer)
+      this.graphicsTimer = undefined
+      this.options.onResize(this.width, this.height)
+    }
+  }
+
   private handleChunk(text: string): void {
     let events: InputEvent[] = []
     try {
@@ -146,12 +210,17 @@ export class Terminal {
       this.options.onError(error)
       return
     }
-    if (events.length > 0) this.options.onInput(events)
+    const input = events.filter((event) => {
+      if (event.type !== 'terminal-response') return true
+      this.graphicsResponse(event.sequence)
+      return false
+    })
+    if (input.length > 0) this.options.onInput(input)
     if (this.parser.hasPending()) {
       if (this.escapeTimer) clearTimeout(this.escapeTimer)
       this.escapeTimer = setTimeout(() => {
         this.escapeTimer = undefined
-        const flushed = this.parser.flushPending()
+        const flushed = this.parser.flushPending(this.graphicsPending)
         if (flushed.length > 0) this.options.onInput(flushed)
       }, 30)
     }

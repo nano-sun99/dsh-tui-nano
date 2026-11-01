@@ -8,6 +8,7 @@ import { createElement, type ReactNode } from 'react'
 import Reconciler from 'react-reconciler'
 import Yoga, { Direction, FlexDirection, type Node as YogaNode } from 'yoga-layout'
 import type { Rgb } from '../theme/theme.ts'
+import { type ActivityGraphics, type ActivityImage, ActivityImagePlayer } from './activity-image.ts'
 import { BLANK, createScreen, encodeDiff, type Screen, type Style, styleEquals } from './ansi.ts'
 import {
   type AnyProps,
@@ -93,6 +94,11 @@ export class Renderer {
   private attached: HostNode[] = []
   hitRegions: HitRegion[] = []
   selection: SelectionRange | undefined
+  private readonly activityPlayer = new ActivityImagePlayer()
+  private activityImage: ActivityImage | undefined
+  private activityTimer: NodeJS.Timeout | undefined
+  private graphics: () => ActivityGraphics | undefined = () => undefined
+  private activityStopped = false
   private cursorCell: { row: number; col: number } | undefined
   private lastCursorCell: { row: number; col: number } | undefined
 
@@ -140,6 +146,7 @@ export class Renderer {
   unmount(): void {
     if (!this.mounted) return
     this.mounted = false
+    this.stopActivity()
     this.reconciler.updateContainerSync(null, this.root, null, null)
     this.flushFrame()
     // Detach still-attached roots before any node is freed.
@@ -164,6 +171,8 @@ export class Renderer {
     const nextWidth = Math.max(1, width)
     const nextHeight = Math.max(1, height)
     if (nextWidth === this.width && nextHeight === this.height) return
+    const clear = this.activityPlayer.clear()
+    if (clear) this.write(clear)
     this.width = nextWidth
     this.height = nextHeight
     this.container.width = nextWidth
@@ -207,6 +216,24 @@ export class Renderer {
     else process.stderr.write(`nano render error: ${String(error)}\n`)
   }
 
+  configureActivity(graphics: () => ActivityGraphics | undefined): void {
+    this.graphics = graphics
+  }
+
+  stopActivity(): void {
+    this.activityStopped = true
+    if (this.activityTimer) clearTimeout(this.activityTimer)
+    this.activityTimer = undefined
+    const bytes = this.activityPlayer.clear()
+    if (bytes) {
+      try {
+        this.write(bytes)
+      } catch {
+        /* Terminal may already be gone. */
+      }
+    }
+  }
+
   private frame(): void {
     if (!this.mounted) return
     this.syncRootChildren()
@@ -215,6 +242,7 @@ export class Renderer {
     this.rootYoga.calculateLayout(this.width, this.height, Direction.LTR)
     this.hitRegions = []
     this.cursorCell = undefined
+    this.activityImage = undefined
     const screen = createScreen(this.width, this.height)
     const clip: Rect = { x0: 0, y0: 0, x1: this.width, y1: this.height }
     for (const child of this.container.children) {
@@ -227,17 +255,57 @@ export class Renderer {
     this.applySelection(screen)
     const bytes = encodeDiff(this.previous, screen)
     this.previous = screen
+    let imageBytes = ''
+    if (!this.activityStopped) {
+      try {
+        imageBytes = this.activityPlayer.paint(
+          this.activityImage,
+          this.graphics(),
+          /^(1|true)$/iu.test(process.env.NANO_REDUCED_MOTION ?? ''),
+          Date.now(),
+        )
+      } catch {
+        imageBytes = this.activityPlayer.disable()
+      }
+    }
     if (bytes !== '') this.write(bytes)
+    if (imageBytes !== '') {
+      try {
+        this.write(imageBytes)
+      } catch {
+        const clear = this.activityPlayer.disable()
+        try {
+          if (clear) this.write(clear)
+        } catch {
+          /* Best effort; the agent keeps running. */
+        }
+      }
+    }
+    if (this.activityTimer) clearTimeout(this.activityTimer)
+    this.activityTimer = undefined
+    if (
+      !this.activityStopped &&
+      this.activityImage &&
+      this.graphics() &&
+      !this.activityPlayer.disabled &&
+      !/^(1|true)$/iu.test(process.env.NANO_REDUCED_MOTION ?? '')
+    ) {
+      this.activityTimer = setTimeout(() => {
+        this.activityTimer = undefined
+        this.scheduleFrame()
+      }, 26)
+      this.activityTimer.unref()
+    }
     const cell = this.cursorCell as { row: number; col: number } | undefined
     if (cell) {
       const row = Math.min(Math.max(0, Math.floor(cell.row)), this.height - 1)
       const col = Math.min(Math.max(0, Math.floor(cell.col)), this.width - 1)
       const parked = this.lastCursorCell
-      if (bytes !== '' || parked?.row !== row || parked?.col !== col) {
+      if (bytes !== '' || imageBytes !== '' || parked?.row !== row || parked?.col !== col) {
         this.write(`\x1b[${row + 1};${col + 1}H`)
       }
       this.lastCursorCell = { row, col }
-    } else if (bytes !== '') {
+    } else if (bytes !== '' || imageBytes !== '') {
       // Writes without a marker move the physical cursor; force a re-park next time.
       this.lastCursorCell = undefined
     }
@@ -300,6 +368,19 @@ export class Renderer {
           })
         : clip
     if (node.kind === 'box') {
+      if (
+        node.props.activityImage &&
+        node.top >= clip.y0 &&
+        node.top < clip.y1 &&
+        node.left >= clip.x0 &&
+        node.left + 3 <= clip.x1
+      ) {
+        this.activityImage = {
+          ...node.props.activityImage,
+          row: Math.floor(node.top),
+          col: Math.floor(node.left),
+        }
+      }
       if (node.props.cursor === true) {
         this.cursorCell = { row: node.top, col: node.left }
       }

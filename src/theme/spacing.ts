@@ -9,6 +9,9 @@ export const INDENT = 2
 export const NESTED = 4
 export const INLINE = 1
 export const CHROME_GAP = 1
+/** Root activity footprint, including its image/text slot. */
+export const ACTIVITY_ROWS = 1
+export const ACTIVITY_SLOT = 3
 
 /** Vertical gap roles between transcript units. */
 export const GapRole = {
