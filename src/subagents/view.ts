@@ -948,7 +948,7 @@ export class SubagentNavigation {
       createElement(
         Text,
         { color: [...theme.fg] as [number, number, number], bold: true, wrap: false },
-        truncateText(child.name, Math.max(1, width - 6 - displayWidth(statusText))),
+        truncateText(child.name, Math.max(1, width - 9 - displayWidth(statusText))),
       ),
       createElement(Box, { flexGrow: 1 }),
       createElement(

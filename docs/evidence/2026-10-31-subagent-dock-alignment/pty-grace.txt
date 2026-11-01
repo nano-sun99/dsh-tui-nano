@@ -15,7 +15,7 @@
                                                                                                     
   父任务完成：子任务已分派。                                                                        
                                                                                                     
-  Background subagent c1d18328-fb3e-4268-bc29-05bea5a5763a finished and will do no further work     
+  Background subagent 050c147a-5b7a-4366-9f4a-5f8dfac1d124 finished and will do no further work     
   unless you send it more.                                                                          
                                                                                                     
   父任务完成：子任务已分派。                                                                        

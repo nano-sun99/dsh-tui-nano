@@ -217,6 +217,20 @@ describe('SubagentNavigation：dock 焦点与进入', () => {
     expect(flat).not.toContain('‹ 返回')
   })
 
+  it('长名字截断时 ← 与状态词仍完整', async () => {
+    const { dock, nav, emit } = setup({
+      entries: [{ kind: 'child', id: 'a', mode: 'continuable', label: 'x'.repeat(50) }],
+    })
+    emit('subagent/start', { id: 'a' })
+    await dock.refresh()
+    nav.handlePress('subagent:row:a')
+    await flush()
+    const header = renderNode(nav.body(58), 58, 10).split('\n')[0] ?? ''
+    expect(header).toContain('← 子代理')
+    expect(header).toContain('执行中')
+    expect(header).not.toContain('x'.repeat(44))
+  })
+
   it('终态行也能用 ↓ 聚焦并用 Enter 进入', async () => {
     const { dock, nav, emit } = setup({
       entries: [{ kind: 'child', id: 'a', mode: 'continuable', label: '任务 A' }],

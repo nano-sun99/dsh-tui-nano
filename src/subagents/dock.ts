@@ -344,7 +344,10 @@ export class SubagentDock {
         this.statuses.set(id, status)
         next.push({
           id,
-          name: String(entry.label ?? old?.name ?? id).slice(0, 80),
+          name: String(entry.label ?? old?.name ?? id)
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 80),
           mode: String(entry.mode),
           local: true,
           status,

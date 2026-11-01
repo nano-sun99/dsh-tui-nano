@@ -3,12 +3,12 @@
                                                                                                     
   已加载来源： profile                                                                              
   /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-suba                                        
-  gent-jEI30D/.dsh-tui-nano/profile settings                                                        
+  gent-r6Ezgr/.dsh-tui-nano/profile settings                                                        
   /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-suba                                        
-  gent-jEI30D/.dsh-tui-nano/profile/cordis.patch.yml 生效层                                         
+  gent-r6Ezgr/.dsh-tui-nano/profile/cordis.patch.yml 生效层                                         
   @deepseek-ai/dsh-base 凭据                                                                        
   /var/folders/p5/7655pl_j5kdg9xjfbypfg8h80000gn/T/nano-suba                                        
-  gent-jEI30D/.dsh/.credentials.yaml（未找到） 全局指令 无                                          
+  gent-r6Ezgr/.dsh/.credentials.yaml（未找到） 全局指令 无                                          
                                                                                                     
   › 跑个子代理                                                                                      
                                                                                                     
@@ -16,7 +16,7 @@
                                                                                                     
   父任务完成：子任务已分派。                                                                        
                                                                                                     
-  Background subagent d8027134-1fb6-4a31-9d09-5c50f8559f7c                                          
+  Background subagent 7494355b-66be-4c89-9d4a-fd357c6f63cd                                          
   finished and will do no further work unless you send it                                           
   more.                                                                                             
                                                                                                     

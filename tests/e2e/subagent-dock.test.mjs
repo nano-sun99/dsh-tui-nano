@@ -118,8 +118,14 @@ test('真实 PTY：subagent 工具启动子代理后 dock 入列并显示状态'
     const lines = final.lines()
     const dockIndex = lines.findLastIndex((line) => line.includes('查找配置依赖'))
     const statusIndex = lines.findLastIndex((line) => line.includes('Enter 发送 · Ctrl+C 退出'))
+    assert.ok(statusIndex >= 0, '状态栏应可见')
+    assert.ok(dockIndex >= 0, 'dock 应可见')
     assert.ok(dockIndex > statusIndex, 'dock 应在状态栏之后')
-    assert.match(lines[dockIndex] ?? '', /完成/, 'turn/end 后 dock 应显示完成')
+    assert.ok(
+      lines.slice(dockIndex + 1).every((line) => line.trim() === ''),
+      'dock 应是终端最后一块',
+    )
+    assert.match(lines[dockIndex] ?? '', /完成/, 'dock 应显示完成态的视觉结果')
     saveEvidence('pty-dock', screen)
   } finally {
     if (mock) mock.child.kill('SIGKILL')
@@ -202,8 +208,14 @@ test('真实 PTY：60 列下 dock 仍在状态栏之后，不压输入', async (
     const statusIndex = lines.findLastIndex((line) => line.includes('Enter 发送'))
     const dockIndex = lines.findLastIndex((line) => line.includes('查找配置依赖'))
     assert.ok(inputIndex >= 0, '输入框应可见')
+    assert.ok(statusIndex >= 0, '状态栏应可见')
+    assert.ok(dockIndex >= 0, 'dock 应可见')
     assert.ok(statusIndex > inputIndex, '状态栏应在输入框之后')
     assert.ok(dockIndex > statusIndex, 'dock 应在状态栏之后')
+    assert.ok(
+      lines.slice(dockIndex + 1).every((line) => line.trim() === ''),
+      'dock 应是终端最后一块',
+    )
     saveEvidence('pty-dock-60', screen)
   } finally {
     if (mock) mock.child.kill('SIGKILL')

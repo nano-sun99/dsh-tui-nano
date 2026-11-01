@@ -335,6 +335,14 @@ describe('SubagentDock 展示窗口', () => {
     expect(dock.terminalAtOf('a')).toBeUndefined()
     expect(dock.entryIds()).toEqual(['a'])
     expect(dock.dismissedIds().has('a')).toBe(false)
+    // 第二轮 turn/end 重新起算，不从旧终态时间继续。
+    now += 10
+    child.emit({ type: 'turn/end', data: { reason: { kind: 'completed' } } })
+    expect(dock.statusOf('a')).toBe('done')
+    expect(dock.terminalAtOf('a')).toBe(now)
+    now += DOCK_GRACE_MS
+    await dock.refresh()
+    expect(dock.entryIds()).toEqual([])
   })
 
   it('activation end 先到、turn/end 后到：状态以 turn 为准，terminalAt 不变', async () => {
@@ -372,20 +380,48 @@ describe('SubagentDock 展示窗口', () => {
     expect(dock.statusOf('o')).toBe('done')
   })
 
-  it('turn/end 的 blocked/interrupted/forked/未知映射未运行；别的 session 事件不生效', async () => {
+  it('turn/end 的 aborted/error/max-tokens/blocked/未知映射；未知保留 30 秒', async () => {
+    let now = 1_000_000
     const child = childAgent()
     const fake = fakeCtx({
       entries: [{ id: 'a', mode: 'continuable' }],
       liveAgents: new Map([['a', child.agent]]),
     })
-    const dock = startDock({ ctx: fake.ctx, rootId: 'root', onChange: () => {} })
+    const dock = startDock({
+      ctx: fake.ctx,
+      rootId: 'root',
+      onChange: () => {},
+      now: () => now,
+    })
     await dock.refresh()
     child.emitForeign({ type: 'turn/end', data: { reason: { kind: 'completed' } } })
     expect(dock.statusOf('a')).toBe('running')
-    for (const kind of ['blocked', 'interrupted', 'forked', 'future-variant']) {
+    for (const [kind, status] of [
+      ['aborted', 'killed'],
+      ['error', 'error'],
+      ['max-tokens', 'killed'],
+      ['blocked', 'idle'],
+      ['interrupted', 'idle'],
+      ['forked', 'idle'],
+      ['future-variant', 'idle'],
+    ] as const) {
       child.emit({ type: 'turn/end', data: { reason: { kind } } })
-      expect(dock.statusOf('a')).toBe('idle')
+      expect(dock.statusOf('a')).toBe(status)
     }
+    now += DOCK_GRACE_MS
+    await dock.refresh()
+    expect(dock.entryIds()).toEqual([])
+  })
+
+  it('label 含换行/空白时折叠成单行，dock 高度不会多算', async () => {
+    const fake = fakeCtx({
+      entries: [{ id: 'a', mode: 'continuable', label: 'first\nsecond\tthird' }],
+    })
+    const dock = startDock({ ctx: fake.ctx, rootId: 'root', onChange: () => {} })
+    fake.emit('subagent/start', { id: 'a' })
+    await dock.refresh()
+    expect(dock.nameOf('a')).toBe('first second third')
+    expect(dock.window().visible).toHaveLength(1)
   })
 
   it('external 的 start 不进 dock', async () => {

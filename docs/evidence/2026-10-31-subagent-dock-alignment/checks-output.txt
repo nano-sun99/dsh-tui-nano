@@ -118,7 +118,7 @@ tests/unit/model-panel.test.ts:372:29 lint/correctness/noUnusedFunctionParameter
     374 374 │     })
   
 
-Checked 113 files in 54ms. No fixes applied.
+Checked 113 files in 56ms. No fixes applied.
 Found 5 warnings.
 
 
