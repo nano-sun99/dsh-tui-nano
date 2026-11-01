@@ -299,6 +299,33 @@ describe('core activity layout and actual renderer', () => {
     expect(writes.length).toBe(staticCount)
     r.unmount()
   })
+  it('waiting approval renders one static line while the overlay keeps the status area visible', async () => {
+    const writes: string[] = []
+    const d = new DecisionManager()
+    const pending = d.simulateApproval('Bash')
+    const r = new Renderer({
+      write: (b) => writes.push(b),
+      width: 60,
+      height: 32,
+      defaultFg: darkTheme.fg,
+    })
+    r.configureActivity(() => ({ cellWidth: 17, cellHeight: 37 }))
+    try {
+      r.update(
+        createElement(App, {
+          snapshot: view({ width: 60, decisions: d, activity: { text: '等待你的授权' } }),
+        }),
+      )
+      r.flushFrame()
+      const lines = r.snapshotLines()
+      expect(lines.filter((l) => l.includes('等待你的授权'))).toHaveLength(1)
+      expect(writes.join('')).not.toContain('a=T')
+    } finally {
+      d.resolveApproval('cancelled')
+      await pending
+      r.unmount()
+    }
+  })
   it('question supersedes model panel, occupies its own line above footer, and retains dock/hits', async () => {
     const d = new DecisionManager()
     const pending = d.simulateQuestion([{ id: 'q', question: 'pick', options: [{ label: 'A' }] }])
