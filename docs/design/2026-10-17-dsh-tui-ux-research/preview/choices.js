@@ -206,10 +206,10 @@
     receipt() {
       if(this.result.kind==='permission') {
         const text={
-          allow:'已演示“允许一次”。样稿不会执行命令。',
-          deny:'已演示“拒绝”。命令未执行。',
-          cancel:'已演示“取消请求”。命令未执行。',
-          unavailable:'已演示“无法回答”。按失败关闭处理。',
+          allow:'已允许一次 · 命令已执行',
+          deny:'已拒绝 · 未执行',
+          cancel:'已取消 · 未执行',
+          unavailable:'无法回答 · 按失败关闭处理',
         }[this.result.decision]??''
         return `<div class="approval-result muted">${this.cells(text)}</div>`
       }

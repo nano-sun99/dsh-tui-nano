@@ -203,7 +203,7 @@ with tempfile.TemporaryDirectory(prefix='dsh-ui-browser-') as browser_dir:
             check('approval defaults focus to reject', devtools.js('document.querySelector(".transcript-approval .choice-row[data-focused=\\"true\\"]").textContent.includes("拒绝")'))
             devtools.capture('approval-100-dark.png')
             devtools.click('[data-decision="deny"]')
-            check('refusal is explicit and does not run a command', devtools.js('document.querySelector(".approval-result").textContent.includes("命令未执行")'))
+            check('refusal is explicit and does not run a command', devtools.js('document.querySelector(".approval-result").textContent.includes("未执行")'))
 
             devtools.click('[data-scene="done"]')
             check('completed thinking row is gone', devtools.js('!document.querySelector("[data-detail=thinking]") && !document.querySelector("[data-detail=thinking-live]")'))
