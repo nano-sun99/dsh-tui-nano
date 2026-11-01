@@ -26,7 +26,13 @@
 
 官方类型存在不代表 start 的发射时点与所有重试分支已完整验证；实施必须核发射点、身份、过期事件和回合结束的对应关系，不靠类型名推断。
 
-2026-11-01 创建本规格前已 fetch 主仓。问卷实施 PR #127 当时仍 OPEN，修改 App、nano-app 和 decisions。问卷规格已合入，但实现未在当前主干；本规格明确了活动栏实现后的等待文案单一落点，不静默改问卷业务。
+2026-11-01 修订时再次核对问卷实施 PR #127：OPEN，HEAD `7d0031eb5fa0938d056d0bfdb47d0bdd93002291`。与本任务允许改动面直接重叠的文件是 `src/app/App.tsx`、`src/app/nano-app.ts`、`src/decisions/manager.ts`、`src/input/parser.ts`；另有 `src/decisions/types.ts` 类型修改、新增 `src/app/question-card.ts`、相关单测/feature/e2e 与文档。此清单记录当时实际 diff，不预测最终合并内容；实施前需重新取远端核对。
+
+问卷规格已合入、实现当时未在主干。其 §3.1 与 §7 都约定等待文案复用 notice、不新开活动行；本规格明确局部取代这两处，增加页面一行，但不迁走问卷 §3.9 的取消结果和 §8 的回答回执。卡片内部结构及答案/取消契约不变，不能把新增一行说成全局布局完全不变。
+
+取代对象也需分清：visual-v1 和设计稿包含活动栏高度/图标预算；design-contract §5 只有主忙碌指示约 500ms，§4 的 2ch 是 diff 标记槽，不属于本次图标改动。
+
+现行职责依据：[S01/S02 接缝](../../decisions/2026-10-29-s02-s01-seams.md) 保留 S01 核心行为 owner；[单一终端写入者](../../decisions/2026-10-29-single-process-fd-guard.md) 要求 runtime 经 `/dev/tty` 输出；[根会话恢复](../../decisions/2026-10-29-root-session-resume-first.md) 沿用官方历史。本任务为 S01 后续能力，不通过 S02 feature/dock 钩子替换核心渲染、不建第二份历史；现有接缝形状及其回归责任仍有效。
 
 ## 3. Claude Code 2.1.88 显隐
 
@@ -76,22 +82,26 @@ Nano 采用原则而非复制全部行为：固定一行来自用户要求；按
 
 源参考 GIF `assets/references/official-tail.gif` SHA-256：`4a97c91a602c5d2c420b44bd89d031d38f33ef01862c33d8b649ef085d5edf02`。该源官方款是描摹的 150 帧版本，与初次调查本机 Harness 提取的 28×28、60 帧、3 秒 APNG 不同；后者未作为最终四款的官方素材。
 
+[早期动画来源摘要](initial-animation-evidence.json) 记录本机包版本、源码与图片 SHA-256、IHDR/acTL/fcTL 解析结果；本次重新解码本地源码内嵌 mask，与早期提取图片逐字节一致，仅核元数据、未重跑动效。未提交整个本地安装包或 APNG，复现其字节仍需取得摘要所指的本地源。原始单行字符转绘对照已保存为[历史截图](archive/initial-original-vs-character.png)：它支持作者的视觉取舍，不是终端验收或量化保真率；不将“明显失真”伪装成用户原话。[MIT 许可原文](archive/status-rotator-LICENSE.txt) 随上游衍生证据保留。
+
 ## 5. 已有预览验证与限度
 
 临时工作目录：`/tmp/nano-whale-loading.eI7FkZ/`。不把临时 HTTP 会话密钥、浏览器 profile 或调试进程配置提交仓库。临时目录只供本机复核，正式实施不能依赖其长期存在。
 
-已归档检查结果：[显隐预览检查](verification-dock-visibility.json)。它来自临时 `verify-dock-visibility.mjs` 对 Chrome DevTools Protocol 的自动检查，不是产品测试入口。
+已归档[显隐预览检查](verification-dock-visibility.json)；本次只补充上下文与来源，**没有重跑浏览器或产品测试**。原执行输出保存在[raw JSON](archive/verification-dock-visibility.raw.json)，当时 verifier 原文以[只读文本](archive/verify-dock-visibility.mjs.txt) 归档，二者 SHA-256 在注释版 JSON 中。脚本保留原临时路径假设，未配置为仓库执行入口；没有复制页面/服务密钥/浏览器 profile，故此档案是可审阅的断言及结果，不宣称独立可重放的完整夹具。
 
-- 3 种浏览器视图（100 列深色、60 列浅色、手机宽）× 11 测试场景 = 33 个布局场景；固定 22px 是预览的一行，不是终端硬编码行高。
+- 视图参数：1440×1300px / 配置 100 列 / dark；1100×1300px / 60 列 / light；390×1400px / 60 列 / dark。三者 deviceScaleFactor=1、mobileEmulation=false；第三种仅手机尺寸浏览器窗口，不是移动设备或终端仿真。
+- 每种视图检查同一组 11 个场景：`thinking`、`requesting`、`toolInput`、`tool`、`respondingPending`、`responding`、`approval`、`question`、`idle`、`stopping`、`error`，含义与列表均写入 JSON。3×11=33；固定 22px 是预览的一行，不是终端硬编码行高。
+- 本组没有“提交已接纳但请求未开始”或“仅子代理工作”，也没有多个条件同时成立的优先级用例。规格修订新增明确的 C01、C13、P01–P08 仍全部待实施，不从已有 33 场景推导覆盖。
 - 当前正文显示时活动图文为空、动画时钟暂停；文字尚未显示时仍有活动反馈。
 - 同一请求多次重放和状态切换不重抽，下一个请求只增加一次抽取；键盘焦点和草稿不被重新渲染丢弃。
 - 四种动作均实际推进；减少动态效果能冻结；无页面横向溢出。
-- Twist 与上游原生组件在相同 180×180 容器、相同相位下对照 36 帧，36/36 计算后的轮廓一致。旧版自行刷新方式被替换为源同类 CSS 逐帧播放，修复了隐藏/恢复后的残留动画实例。用户随后确认「现在ok了」。
+- Twist 与上游原生组件在相同 180×180 容器、相同相位下逐一比较索引 0–35 的计算后 SVG 轮廓，共 36/36 一致；不是截图像素 diff。原 verifier 循环检查 36 次但仅持久化匹配数，因此注释版 JSON 的空 mismatches 是由全数匹配推导并明确标注，不伪造未保存的逐帧日志。[较早的另一次源帧核对 raw JSON](archive/twist-source-comparison.raw.json) 也明确记录 frameCount=36、mismatches=[]。旧版自行刷新方式被替换为源同类 CSS 逐帧播放，修复隐藏/恢复后的残留动画实例；用户随后确认「现在ok了」。
 
-这些结果没有证明：真实终端图片保真、协议兼容、终端图片清理、IME 不受影响、生产事件映射、真实请求重试/取消竞态。以上仍是规格的未勾选实施验收。无需为本次纯文档 PR 复制完整插件包、临时页面或启动脚本；实施素材与可复现验收工具随实施 PR 交付。
+这些结果没有证明：真实终端图片保真、协议兼容、终端图片清理、IME 不受影响、生产事件映射、真实请求重试/取消竞态、完整 13 场景或组合优先级。以上仍是规格的未勾选实施验收。本次补录仅归档已有 raw 输出、verifier 文本、历史截图及来源摘要，不复制完整插件包/页面/启动脚本，不新增检查机制；实施素材与可复现终端验收工具随实施 PR 交付。
 
 ## 6. 本次约定与流程事实
 
 用户已明确：四款均采用、真实图片支持纳入、Twist 观感认可、正文显示后收起、每次模型请求抽取、四项机制全要、一份规格不拆，并要求创建 PR。完整业务决定记录于关联 ADR。
 
-本次只提交规格/决定/调查证据；不授权实现，不授权合并，不提前创建执行 issue。审核档位由用户选择，规格 PR 经明确合并同意后，才创建一张执行 issue 与交接。
+本次只提交规格/决定/调查证据；不授权实现，不授权合并，不提前创建执行 issue。2026-11-01 收到 #128 的轻审评论（[原文](https://github.com/nano-sun99/dsh-tui-nano/pull/128#issuecomment-6555498148)，审核基线 `f32f5f4`），用户选择「修改（推荐）」。修订自查不等于重新派审或审核放行；逐条处置记在规格 §10。规格 PR 经明确合并同意后，才创建一张执行 issue 与交接。

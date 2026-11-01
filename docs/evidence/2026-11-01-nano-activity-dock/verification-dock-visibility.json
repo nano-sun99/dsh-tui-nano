@@ -1,5 +1,37 @@
 {
+  "provenance": {
+    "originalRunDate": "2026-11-01",
+    "annotationDate": "2026-11-01",
+    "annotationOnlyNoBrowserRerun": true,
+    "evidenceLevel": "browser prototype, not Nano production or terminal acceptance",
+    "originalResult": "archive/verification-dock-visibility.raw.json",
+    "originalResultSha256": "67e8cda9e2abb0f548b72e08113796cb2d97fdcfbb70407829502865ff130d3d",
+    "verifierText": "archive/verify-dock-visibility.mjs.txt",
+    "verifierTextSha256": "44b7a9e8ae5d3906541ec12560483a99b31eca0fad3af4f1c77e3023faa5d5b5",
+    "upstreamCommit": "0d486a80c55dabee9e62ce8d87612dc15792c805",
+    "coverageLimit": "33 single-state viewport cases only; excludes accepted-before-request, root-idle-with-only-subagents, C01/C13 and priority combinations P01-P08. No production event mapping or terminal rendering verified.",
+    "reproductionLimit": "Original verifier text retains temporary-path assumptions; this archive is not a self-contained executable fixture or a new project check entry."
+  },
+  "stateDefinitions": {
+    "thinking": "思考中",
+    "requesting": "模型请求已开始",
+    "toolInput": "准备工具参数",
+    "tool": "工具正在执行",
+    "respondingPending": "已收到文字但尚未显示",
+    "responding": "当前流式正文已显示",
+    "approval": "等待授权",
+    "question": "等待问卷选择",
+    "idle": "回合结束或空闲",
+    "stopping": "停止请求待确认",
+    "error": "失败已结束"
+  },
   "parity": {
+    "motion": "twist",
+    "frameCount": 36,
+    "frameIndexRangeInclusive": [0, 35],
+    "comparisonMethod": "Source native component versus preview computed SVG path at the same frame and 180x180 size; not a screenshot pixel-diff.",
+    "mismatches": [],
+    "mismatchEvidence": "Derived from all 36 compareFrame calls matching in original verifier loop; per-frame booleans were not persisted. Separate original source comparison also records no mismatches in archive/twist-source-comparison.raw.json.",
     "matchingFrames": 36,
     "nativeSize": [
       180,
@@ -13,18 +45,26 @@
   "animationChecks": [
     {
       "id": "official",
+      "sourceFrameCount": 150,
+      "previewCycleMs": 4000,
       "distinctPaths": 5
     },
     {
       "id": "wag",
+      "sourceFrameCount": 24,
+      "previewCycleMs": 2000,
       "distinctPaths": 5
     },
     {
       "id": "sway",
+      "sourceFrameCount": 24,
+      "previewCycleMs": 2000,
       "distinctPaths": 5
     },
     {
       "id": "twist",
+      "sourceFrameCount": 36,
+      "previewCycleMs": 2000,
       "distinctPaths": 5
     }
   ],
@@ -35,6 +75,12 @@
   "layouts": [
     {
       "name": "visibility-desktop",
+      "viewportPx": [1440, 1300],
+      "deviceScaleFactor": 1,
+      "mobileEmulation": false,
+      "configuredColumns": 100,
+      "theme": "dark",
+      "stateNames": ["thinking", "requesting", "toolInput", "tool", "respondingPending", "responding", "approval", "question", "idle", "stopping", "error"],
       "states": 11,
       "fixedHeight": 22,
       "noHorizontalOverflow": true,
@@ -45,6 +91,12 @@
     },
     {
       "name": "visibility-narrow",
+      "viewportPx": [1100, 1300],
+      "deviceScaleFactor": 1,
+      "mobileEmulation": false,
+      "configuredColumns": 60,
+      "theme": "light",
+      "stateNames": ["thinking", "requesting", "toolInput", "tool", "respondingPending", "responding", "approval", "question", "idle", "stopping", "error"],
       "states": 11,
       "fixedHeight": 22,
       "noHorizontalOverflow": true,
@@ -55,6 +107,13 @@
     },
     {
       "name": "visibility-mobile",
+      "viewportPx": [390, 1400],
+      "deviceScaleFactor": 1,
+      "mobileEmulation": false,
+      "configuredColumns": 60,
+      "theme": "dark",
+      "viewportNote": "Mobile-sized browser viewport only; not mobile-device or terminal emulation.",
+      "stateNames": ["thinking", "requesting", "toolInput", "tool", "respondingPending", "responding", "approval", "question", "idle", "stopping", "error"],
       "states": 11,
       "fixedHeight": 22,
       "noHorizontalOverflow": true,
