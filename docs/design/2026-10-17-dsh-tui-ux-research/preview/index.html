@@ -143,6 +143,9 @@
     .status-mode.waiting { color:var(--warning); }
     .choice-host { flex:none; max-height:484px; min-height:0; margin:0 2ch; border-top:1px solid var(--accent); padding:11px 0; overflow:hidden; }
     .choice-panel { display:flex; flex-direction:column; max-height:460px; outline:none; }
+    /* 审批卡住在正文流末尾：随 transcript 滚动，输入块保持原位。 */
+    .transcript-approval { max-height:none; margin-top:var(--line); border-top:1px solid var(--accent); padding-top:11px; }
+    .transcript-approval .approval-command { max-height:154px; overflow:auto; margin:0 0 11px; color:var(--muted); scrollbar-width:thin; scrollbar-color:var(--rule) var(--bg); }
     .choice-title { font-weight:700; margin-bottom:11px; }
     .choice-context { margin-bottom:11px; }
     .choice-body { overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:var(--rule) var(--bg); }
@@ -386,7 +389,8 @@
     choiceEpoch:0,
   }
   const choicePreview = new window.TuiChoicePreview({host:$('#choice-host'),cells,onChange:picker=>{
-    $('.composer').hidden=picker.pending
+    // 审批卡住在正文流里，输入框保持可见；只有问卷卡仍占用输入位。
+    $('.composer').hidden=picker.kind==='question'&&picker.pending
     if(picker.pending) $('#activity').textContent=picker.kind==='approval'?'等待你的授权':'等待你的选择'
     else if(state.scene==='questions'||state.scene==='approval') $('#activity').textContent=''
     if(picker.result?.kind==='permission') {state.decision=picker.result.decision;$('#permission').classList.remove('waiting')}
@@ -598,6 +602,7 @@
       </section>`}
       ${answer()}
     </section>`)
+    if(state.scene==='approval') choicePreview.mountApproval(transcript)
     $('#activity').innerHTML = running
       ? `<span class="activity-glyph" aria-hidden="true">-</span>${cells('正在运行检查 · Esc 可停止')}`
       : waiting && !state.decision ? cells('等待你的确认') : ''
@@ -615,8 +620,8 @@
     subagentPreview.sync(state.scene==='subagents',state.long)
     updateExpandLabel()
     measureDiff()
-    if (options.top) transcript.scrollTop = 0
-    else if (options.bottom || (stick && !options.hold)) transcript.scrollTop = transcript.scrollHeight
+    if (options.top && state.scene!=='approval') transcript.scrollTop = 0
+    else if (state.scene==='approval' || options.bottom || (stick && !options.hold)) transcript.scrollTop = transcript.scrollHeight
     else {
       const nextAnchor = anchorKey && Array.from(transcript.querySelectorAll('[data-key]')).find(el => el.dataset.key === anchorKey)
       transcript.scrollTop = nextAnchor ? previousTop + nextAnchor.getBoundingClientRect().top - viewportTop - anchorOffset : previousTop
