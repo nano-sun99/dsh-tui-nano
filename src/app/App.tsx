@@ -205,13 +205,15 @@ function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
       : snapshot.theme.faint
     : snapshot.theme.muted
   const right = hint
+  const rightWidth = displayWidth(right)
   const available = Math.max(1, props.width - 2 * EDGE)
-  // 先按「右侧提示也在」的预算折叠 cwd；宽度容得下提示时，让 cwd 让位，
-  // 而不是让提示消失。notice 文本仍按可用宽度截断，不参与折叠。
-  const leftBudget = Math.max(1, available - displayWidth(right) - 1)
-  const left = snapshot.notice ? snapshot.notice.text : displayCwd(snapshot.cwd, leftBudget)
-  const showRight = displayWidth(left) + displayWidth(right) + 1 <= available
-  const finalLeftBudget = showRight ? leftBudget : available
+  // 提示放得下才给它留位置；放不下就让位，cwd 用满 available。
+  // 不能先按 1 列预算把 cwd 截掉，再发现提示其实也放不下。
+  const leftBudget = available - rightWidth - 1
+  const cwdBudget = leftBudget >= 1 ? leftBudget : available
+  const left = snapshot.notice ? snapshot.notice.text : displayCwd(snapshot.cwd, cwdBudget)
+  const showRight = displayWidth(left) + rightWidth + 1 <= available
+  const finalLeftBudget = showRight ? Math.max(1, leftBudget) : available
   return (
     <Box flexDirection="row" height={1} flexShrink={0} paddingX={EDGE} width={props.width}>
       <Text color={leftColor} wrap={false}>
@@ -353,12 +355,13 @@ function shortenHome(cwd: string | undefined): string {
 
 /**
  * 底部状态行的目录：优先 ~，太长只留最后两段；折叠后仍超 `max` 就截断。
- * `max` 由 StatusLine 按「右侧提示也要放下」的预算传入，宽度容得下提示时，
- * 这里保证 cwd 不会把提示挤掉。
+ * `max` 必须由 StatusLine 按状态行预算传入，不要退回固定常量。
  */
-function displayCwd(cwd: string | undefined, max = 44): string {
+function displayCwd(cwd: string | undefined, max: number): string {
   const short = shortenHome(cwd)
   if (displayWidth(short) <= max) return short
+  // 折叠串本身以 … 开头，预算 ≤2 时再截断会得到 ……。
+  if (max <= 2) return '…'
   const parts = short.split('/').filter(Boolean)
   return truncateText(`…/${parts.slice(-2).join('/')}`, max)
 }
