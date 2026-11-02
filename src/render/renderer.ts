@@ -69,6 +69,13 @@ interface ReconcilerInstance {
 
 const createReconciler = Reconciler as unknown as (config: unknown) => ReconcilerInstance
 
+/**
+ * 每帧都可能留下 `performance.measure`（开发构建的 React 每次组件渲染打一条，
+ * 第三方库也会打），Node 的全局测量缓冲只增不减，长会话会一路涨到 OOM
+ * （issue #138）。这里按帧数定期清空，作为「不依赖构建类型」的兜底。
+ */
+const MEASURE_SWEEP_FRAMES = 60
+
 export interface RendererOptions {
   readonly write: (bytes: string) => void
   readonly width: number
@@ -99,6 +106,7 @@ export class Renderer {
   private activityTimer: NodeJS.Timeout | undefined
   private graphics: () => ActivityGraphics | undefined = () => undefined
   private activityStopped = false
+  private framesSinceSweep = 0
   private cursorCell: { row: number; col: number } | undefined
   private lastCursorCell: { row: number; col: number } | undefined
 
@@ -236,6 +244,10 @@ export class Renderer {
 
   private frame(): void {
     if (!this.mounted) return
+    if (++this.framesSinceSweep >= MEASURE_SWEEP_FRAMES) {
+      this.framesSinceSweep = 0
+      performance.clearMeasures?.()
+    }
     this.syncRootChildren()
     this.rootYoga.setWidth(this.width)
     this.rootYoga.setHeight(this.height)

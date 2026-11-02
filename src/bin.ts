@@ -3,6 +3,9 @@
  * CLI entry. Without the fd guard this process re-executes itself once so the
  * runtime's fd 1/2 point at a log file while stdin stays the terminal.
  */
+// 必须是第一个 import：ESM 按 import 声明顺序求值，晚一步 react 就已经按
+// 开发构建加载了（issue #138）。
+import './boot/env.ts'
 import { fileURLToPath } from 'node:url'
 import { resolvePaths } from './boot/paths.ts'
 import { main } from './main.ts'
