@@ -19,7 +19,7 @@
 
 ## 依据
 
-- 用户 2026-11-02 的 `preview-main` 会话日志里 13 次 `approval/asked`：8 次 PTY e2e、2 次 `~/Downloads`、2 次全局安装（被拒）、1 次待定；其中 PTY 是沙箱拦截 `/dev/ptmx` 导致的升级，不是用户想逐条确认的操作。
+- 用户 2026-11-02 的 `preview-main` 会话日志（截至 14:31 CST 快照）里 19 次 `approval/asked`：15 次 PTY e2e、2 次 `~/Downloads`、2 次全局安装；18 次 `approval/decided` 中 2 次 `cancelled`、16 次 `allowed-once`，最后一条尚待结算。PTY 是沙箱拦截 `/dev/ptmx` 导致的升级，不是用户想逐条确认的操作。
 - 用户 Claude Code 的启动方式实际是 `--dangerously-skip-permissions`；nano 的 `workspace-write + ask` 与它不可直接对比。用户明确要求把 nano 默认对齐到这条工作流。
 - dsh base 的 `danger-full-access` 就是「沙箱 danger-full-access + 审批 never」（`node_modules/@deepseek-ai/dsh-base/cordis.patch.yml:243-275`）；没有沙箱升级，就不会有审批请求。
 - 官方 `permission-presets` 支持 `defaultPreset` 与会话 pinning；已有会话切 preset 走 `/permission`，不需要 nano 自造状态。
@@ -52,4 +52,4 @@
 - 审批卡：[ADR-20261101-approval-card-in-transcript](2026-11-01-approval-card-in-transcript.md)
 - 过程行：`docs/specs/2026-10-22-nano-visual-v1/README.md:72`、`:147`
 - 官方：`node_modules/@deepseek-ai/dsh-base/cordis.patch.yml:243-275`；`@deepseek-ai/dsh-permission-presets` README
-- 对照：Claude Code 2.1.88 `src/utils/sandbox/sandbox-adapter.ts:471`、`src/tools/BashTool/readOnlyValidation.ts`、`src/tools/BashTool/bashPermissions.ts`、`src/components/permissions/BashPermissionRequest/bashToolUseOptions.tsx:78`
+- 对照：Claude Code 2.1.88 `src/utils/sandbox/sandbox-adapter.ts:471`、`src/tools/BashTool/readOnlyValidation.ts`、`src/tools/BashTool/bashPermissions.ts`、`src/components/permissions/BashPermissionRequest/BashPermissionRequest.tsx:355`

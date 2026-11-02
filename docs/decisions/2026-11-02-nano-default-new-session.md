@@ -4,7 +4,7 @@
 - 日期：2026-11-02
 - 决策人：用户
 - 适用范围：nano 启动时的会话身份解析、`-c` / `-r` / `--root` 语义、多窗口与会话所有权
-- 取代：取代 `docs/specs/2026-10-28-nano-ts/README.md` §3.1「`--root` → `last-root` → 生成」的默认根解析口径；不取代 [ADR-20261029-root-session-resume-first](2026-10-29-root-session-resume-first.md) 的 resume-first 规则
+- 取代：取代 `docs/specs/2026-10-28-nano-ts/README.md` §3.1「`--root` → `last-root` → 生成」的默认根解析口径；**局部取代** [ADR-20261029-root-session-resume-first](2026-10-29-root-session-resume-first.md) 的「否决每次启动生成新 session id」一条；其 resume-first 决定继续有效
 - 被取代：无
 - 决策来源：用户 2026-11-02 原话「默认打开 nano 应该是新的上下文」「我们多开窗口是刚需」；同日确认「ABC 一起写」并选择机制卡「全要」
 
@@ -24,6 +24,7 @@
 - 会话 id 就是根 id（`src/conversation/controller.ts:123-151`）；S07 本来就规定「同仓库不同会话可以各开一个窗口；同一根会话不能被两个窗口同时驱动」。缺的不是多窗口能力，而是「默认怎么拿到一个新会话」。
 - Claude Code 2.1.88：默认新会话；`-c` 只看当前目录，无会话直接报 `No conversation found to continue`；`-r` 是选择器/ID（`src/main.tsx:988`、`:3102-3115`、`src/utils/listSessionsImpl.ts:227-291`）。
 - 用户 2026-11-02 明确把「开多个 nano 窗口，每个窗口负责不同的事」作为目标。
+- ADR-20261029 的「否决每次启动生成新 session id」是在「保持根连续性、支持同根重启」的单一工作流下做的；多窗口成为刚需后，默认每次新 id 是唯一能让两个窗口不撞根的做法。resume-first 仍用于 `-c` / `-r` / `--root` 的既有目标。
 
 ## 否决了什么
 
