@@ -112,7 +112,7 @@ npm uninstall -g dsh-tui-nano
 | `Ctrl+T` | 打开/关闭终端面板（空闲 / 输入 / 运行中） |
 <!-- keymap:end -->
 
-完整键位与参数见 `nano --help`。`!command` 以你的用户权限运行，不是 Agent 授权；输出会作为合成上下文注入，但不唤醒模型。
+完整键位与参数见 `nano --help`。启动方式：`nano` 新建会话；`nano -c` 续接当前目录最近的会话；`nano -r` 打开会话选择器（`-r <id>` 精确恢复）；`nano --root <id>` 指定会话身份（不存在则新建）。`!command` 以你的用户权限运行，不是 Agent 授权；输出会作为合成上下文注入，但不唤醒模型。
 
 ## 主题与透明
 

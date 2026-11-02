@@ -19,6 +19,8 @@ export interface OfficialModules {
   readonly installAnchor: string
   readonly version: string
   readonly packageRoot: string
+  /** 按需加载官方安装里的任意模块（启动前会话索引等）。 */
+  readonly load: (name: string) => Promise<Record<string, any>>
 }
 
 const requireFromHere = createRequire(import.meta.url)
@@ -74,7 +76,16 @@ export async function loadOfficial(
   const session = await load('@deepseek-ai/dsh-session')
   const agent = await load('@deepseek-ai/dsh-agent')
   const llm = await load('@deepseek-ai/dsh-llm')
-  return { appBoot, session, agent, llm, installAnchor, version: version ?? 'unknown', packageRoot }
+  return {
+    appBoot,
+    session,
+    agent,
+    llm,
+    installAnchor,
+    version: version ?? 'unknown',
+    packageRoot,
+    load,
+  }
 }
 
 /** Absolute path used by Node's ESM loader for the profile's module tree. */

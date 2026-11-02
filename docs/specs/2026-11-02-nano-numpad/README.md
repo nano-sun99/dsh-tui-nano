@@ -2,8 +2,8 @@
 
 - 组标识：`2026-11-02-nano-numpad`
 - 角色：单份 spec，总纲与执行规格合一
-- 状态：草案（待过闸）
-- Issue：待开（spec 合并后开执行单）
+- 状态：已合入（方案 PR #142）；执行 issue：#145；代码 PR：#148
+- Issue：[#145](https://github.com/nano-sun99/dsh-tui-nano/issues/145)
 - 结构：不拆——1 份 spec + 1 张执行 issue
 - 机制范围：M1–M4（见 §6）
 - 上游：
@@ -127,17 +127,17 @@
 
 ## 5. 验收
 
-- [ ] SS3 每个序列（`p..y`、`j/k/l/m/n/o/M/X`）单测：产生正确的 `char`/`enter`，sequence 正确，且 pending 为空。
-- [ ] kitty `KP_0..KP_9`、`KP_DECIMAL..KP_SEPARATOR` 单测：产生正确字符/`enter`；57416 产生 `,`；pending 为空。
-- [ ] kitty `KP_LEFT..KP_DELETE` 单测：产生对应 `KeyName`；`KP_BEGIN` 不产生事件；pending 为空。
-- [ ] CSI-u 带修饰位：shift/alt/ctrl/meta 按现有四位保留；hyper/super 不新增。
-- [ ] 未知小键盘 SS3 / `KP_*` CSI-u：不产生事件，pending 为空，输入框无功能键码点。
-- [ ] 非 KP CSI-u（`\x1b[13;2u` Shift+Enter 等）：现有行为不变。
-- [ ] 真实 Ghostty（默认 1035）：NumLock 开时 numpad 0–9、`+ - * / .`、Enter 全部可用；NumLock 关时 legacy 方向键按导航键处理，不承诺数字输入；kitty 下 `KP_LEFT..` 可用；Shift+numpad 不输出 `pqrstuvwxy`。
-- [ ] SS3 路径：单测覆盖；若需真机，显式 `CSI ?1035l` 后再验 `Op..Oy`。
-- [ ] 现有 `tests/unit/input.test.ts` 全绿；`input-frame.test.ts` 渲染用例不受影响；真实方向键、Home/End/PgUp/PgDn 无回归。
-- [ ] legacy NumLock off：`\x1b[A` / `\x1b[3~` 仍产生 up/delete，无附加事件。
-- [ ] 输入框接受 numpad 数字后，补全/草稿/历史/32 KiB 上限行为不变。
+- [x] SS3 每个序列（`p..y`、`j/k/l/m/n/o/M/X`）单测：产生正确的 `char`/`enter`，sequence 正确，且 pending 为空。
+- [x] kitty `KP_0..KP_9`、`KP_DECIMAL..KP_SEPARATOR` 单测：产生正确字符/`enter`；57416 产生 `,`；pending 为空。
+- [x] kitty `KP_LEFT..KP_DELETE` 单测：产生对应 `KeyName`；`KP_BEGIN` 不产生事件；pending 为空。
+- [x] CSI-u 带修饰位：shift/alt/ctrl/meta 按现有四位保留；hyper/super 不新增。
+- [x] 未知小键盘 SS3 / `KP_*` CSI-u：不产生事件，pending 为空，输入框无功能键码点。
+- [x] 非 KP CSI-u（`\x1b[13;2u` Shift+Enter 等）：现有行为不变。
+- [x] 真实 Ghostty（默认 1035）：NumLock 开时 numpad 0–9、`+ - * / .`、Enter 全部可用；NumLock 关时 legacy 方向键按导航键处理，不承诺数字输入；kitty 下 `KP_LEFT..` 可用；Shift+numpad 不输出 `pqrstuvwxy`。（Ghostty 1.4.0 实测：0–9、`. / * - + =`、Enter、Shift+1–5 正常；macOS 无 NumLock，`KP_LEFT..` 导航码由单测覆盖）
+- [x] SS3 路径：单测覆盖；Ghostty 默认 1035 下未另做真机。
+- [x] 现有 `tests/unit/input.test.ts` 全绿；`input-frame.test.ts` 渲染用例不受影响；真实方向键、Home/End/PgUp/PgDn 无回归。（unit 426 + feature 46 全绿）
+- [x] legacy NumLock off：`\x1b[A` / `\x1b[3~` 仍产生 up/delete，无附加事件。
+- [x] 输入框接受 numpad 数字后，补全/草稿/历史/32 KiB 上限行为不变。（沿用 `char` 路径，相关测试全绿）
 
 ## 6. 机制清单
 

@@ -1,7 +1,21 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import {
+  LAST_SESSION_LIMIT,
+  lastSessionPath,
+  lookupLastSession,
+  readLastSession,
+  recordLastSession,
+} from '../../src/boot/last-session.ts'
 import { ensureProfile, ProfileError } from '../../src/boot/profile.ts'
 import {
   acquireMountClaim,
@@ -9,7 +23,6 @@ import {
   RootInUseError,
   releaseMountClaim,
   resolveRootId,
-  writeLastRoot,
 } from '../../src/boot/root.ts'
 import { takeHandoff, writeHandoff } from '../../src/runtime/handoff.ts'
 
@@ -63,21 +76,23 @@ describe('profile', () => {
 })
 
 describe('root identity', () => {
-  it('prefers --root, then last-root, then generates', () => {
-    const dataRoot = tempDir()
-    expect(resolveRootId(dataRoot, ['--root', 'explicit'])).toMatchObject({
-      id: 'explicit',
-      source: 'arg',
-    })
-    writeLastRoot(dataRoot, 'saved-root')
-    expect(resolveRootId(dataRoot, [])).toMatchObject({ id: 'saved-root', source: 'last-root' })
-    const generated = resolveRootId(tempDir(), [])
+  it('uses --root when given, otherwise generates a fresh id', () => {
+    expect(resolveRootId('explicit')).toMatchObject({ id: 'explicit', source: 'arg' })
+    const generated = resolveRootId()
     expect(generated.source).toBe('generated')
     expect(generated.id).toMatch(/^[0-9]{8}-[0-9]{6}-[0-9a-f]{8}$/u)
   })
 
-  it('rejects an invalid root id', () => {
-    expect(() => resolveRootId(tempDir(), ['--root', '../evil'])).toThrow(/非法根身份/)
+  it('ignores last-root left on disk', () => {
+    const dataRoot = tempDir()
+    writeFileSync(join(dataRoot, 'last-root'), 'saved-root\n')
+    const generated = resolveRootId()
+    expect(generated.source).toBe('generated')
+    expect(generated.id).not.toBe('saved-root')
+  })
+
+  it('rejects an invalid session id', () => {
+    expect(() => resolveRootId('../evil')).toThrow(/非法会话身份/)
   })
 
   it('rejects a second window on the same root', () => {
@@ -120,5 +135,43 @@ describe('handoff', () => {
     writeFileSync(join(dataRoot, 'handoff.json'), '{oops')
     expect(() => takeHandoff(dataRoot)).toThrow(/损坏/)
     expect(existsSync(join(dataRoot, 'handoff.json'))).toBe(false)
+  })
+})
+
+describe('last-session', () => {
+  it('records per-cwd hints atomically and reads them back', () => {
+    const dataRoot = tempDir()
+    recordLastSession(dataRoot, '/work/a', 's1', 100)
+    recordLastSession(dataRoot, '/work/b', 's2', 200)
+    recordLastSession(dataRoot, '/work/a', 's3', 300)
+
+    expect(statSync(lastSessionPath(dataRoot)).mode & 0o777).toBe(0o600)
+    const { file, error } = readLastSession(dataRoot)
+    expect(error).toBeUndefined()
+    expect(lookupLastSession(file, ['/work/a'])).toBe('s3')
+    expect(lookupLastSession(file, ['/work/b'])).toBe('s2')
+    expect(lookupLastSession(file, ['/missing'])).toBeUndefined()
+  })
+
+  it('treats a corrupt file as empty and keeps going', () => {
+    const dataRoot = tempDir()
+    writeFileSync(lastSessionPath(dataRoot), '{oops')
+    const { file, error } = readLastSession(dataRoot)
+    expect(error).toMatch(/损坏/)
+    expect(file.byCwd).toEqual({})
+  })
+
+  it('keeps only the newest entries', () => {
+    const dataRoot = tempDir()
+    for (let index = 0; index < LAST_SESSION_LIMIT + 5; index++) {
+      recordLastSession(dataRoot, `/work/${index}`, `s${index}`, index)
+    }
+    const { file } = readLastSession(dataRoot)
+    expect(Object.keys(file.byCwd)).toHaveLength(LAST_SESSION_LIMIT)
+    expect(file.byCwd['/work/0']).toBeUndefined()
+    expect(file.byCwd[`/work/${LAST_SESSION_LIMIT + 4}`]).toEqual({
+      sessionId: `s${LAST_SESSION_LIMIT + 4}`,
+      lastUsedAt: LAST_SESSION_LIMIT + 4,
+    })
   })
 })

@@ -10,7 +10,7 @@ NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 NANO_RELEASE_VERIFY=1 npm run test:e2e
 ```
 
-前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 51 个用例：安装 17（其中发布验收 1 条默认跳过）+ 视觉 3 + 能力 1 + 交互 6 + 输入 5 + 跨会话 10 + 主链路 2 + Monitor 1 + 调度 1 + 子代理 dock 5。发布证据运行显式设置了 `NANO_NODE_22` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip；`NANO_RELEASE_VERIFY=1` 只在发布 tag 上复核 version-matrix 哈希时设置。
+前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 60 个用例（按文件顶层 `test()` 计数）：安装 17（其中发布验收 1 条默认跳过）+ 视觉 3 + 能力 1 + 交互 6 + 输入 5 + 跨会话 2 + 跨面 8 + 子代理 dock 5 + 会话生命周期 9 + 主链路 2 + Monitor 1 + 调度 1。发布证据运行显式设置了 `NANO_NODE_22` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip；`NANO_RELEASE_VERIFY=1` 只在发布 tag 上复核 version-matrix 哈希时设置。
 
 ## `release.test.mjs`（17）
 
@@ -60,6 +60,18 @@ boot 官方核心后读工具注册表：断言 terminal 不在 Agent 工具表�
 ## `monitor-policy.test.mjs`（1）
 
 读编译产物：`watch()` 默认 `quiet`；`notify` 行必须显示「会唤醒模型并计费」。
+
+## `session-lifecycle.test.mjs`（9）
+
+真 PTY 覆盖 spec `2026-11-02-nano-session-lifecycle` 的启动矩阵：
+
+- `--help` 显示 `-c` / `-r` / `--root` 新矩阵；互斥组合在进 TUI 前报错。
+- 同一 cwd 两个 `nano` 各拿不同会话 id 与挂载锁；关 A 不终止 B。
+- `-c` 优先 `last-session.json`，而不是最新创建的会话；无候选报错且不创建。
+- `-r` 先建默认新会话再开面板；只有当前会话时显示空态；`a` 切全部目录；Esc 留在新会话。
+- 面板选择已有会话经受控重启进入。
+- `-r <id>` 精确恢复；NotFound、跨目录、被占用都报错且不创建；占用时第一窗口不受影响。
+- 默认启动忽略 `last-root`；`last-session.json` 损坏或不可写时回退官方 `createdAt`，启动不失败。
 
 ## `cross-session.test.mjs`（2）
 

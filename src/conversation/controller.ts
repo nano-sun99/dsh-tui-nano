@@ -16,6 +16,10 @@ export interface ConversationOptions {
   readonly cwd: string
   readonly history: HistoryStore
   readonly onTitle?: (title: string) => void
+  /** `-c` / `-r <id>`：目标不存在时必须报错，不得 create。 */
+  readonly resumeOnly?: boolean
+  /** resume-only 目标在启动时消失时给用户看的文案。 */
+  readonly notFoundMessage?: string
 }
 
 export interface SubmitResult {
@@ -143,11 +147,13 @@ export class ConversationController {
       this.handle = await ctx.agents.resume({ resumeSessionId: sessionId, agentOptions, setup })
       resumed = true
     } catch (error) {
-      if (isNotFound(error)) {
-        this.handle = await ctx.agents.create({ sessionId, meta: { cwd }, agentOptions, setup })
-      } else {
-        throw error
+      if (!isNotFound(error)) throw error
+      if (this.options.resumeOnly === true) {
+        throw new Error(
+          this.options.notFoundMessage ?? `nano: 会话 ${rootId} 不存在；已停止，不创建替代会话。`,
+        )
       }
+      this.handle = await ctx.agents.create({ sessionId, meta: { cwd }, agentOptions, setup })
     }
     const actualId = this.handle?.agent?.session?.id
     if (actualId !== rootId) {

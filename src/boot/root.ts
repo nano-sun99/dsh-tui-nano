@@ -2,31 +2,27 @@
  * Root identity and the pre-alternate-screen mount claim (spec §2.2). One id
  * threads storage, sessions, schedule, handoff and `sessions.create`; a second
  * window on the same root is rejected before the screen is touched.
+ *
+ * Default startup always generates a fresh id; `last-root` is neither read nor
+ * written anymore (spec 2026-11-02-nano-session-lifecycle §3.2).
  */
 
 import { randomBytes } from 'node:crypto'
-import {
-  closeSync,
-  fsyncSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeSync,
-} from 'node:fs'
+import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 
 export interface RootIdentity {
   readonly id: string
-  readonly source: 'arg' | 'last-root' | 'generated'
+  readonly source: 'arg' | 'generated'
 }
 
 export class RootInUseError extends Error {
   readonly pid: number
   readonly rootId: string
   constructor(rootId: string, pid: number) {
-    super(`nano: 根 "${rootId}" 已被进程 ${pid} 占用；同一根只允许一个窗口。`)
+    super(
+      `会话 ${rootId} 已在另一个窗口打开（pid ${pid}）。开新窗口直接运行 nano；换一个会话用 nano -r；如果那个窗口已经不用了，关掉它再试。`,
+    )
     this.name = 'RootInUseError'
     this.pid = pid
     this.rootId = rootId
@@ -35,38 +31,20 @@ export class RootInUseError extends Error {
 
 const ROOT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 
-/** `--root <id>` → `<dataRoot>/last-root` → generated timestamp-id. */
-export function resolveRootId(dataRoot: string, argv: readonly string[]): RootIdentity {
-  const fromArg = readRootArg(argv)
+/** `--root <id>` → that id; otherwise a fresh timestamp-id. Never reads `last-root`. */
+export function resolveRootId(fromArg?: string): RootIdentity {
   if (fromArg !== undefined) {
-    if (!ROOT_PATTERN.test(fromArg)) {
-      throw new Error(`nano: 非法根身份 "${fromArg}"：只允许字母、数字、点、下划线和短横线。`)
-    }
+    validateRootId(fromArg)
     return { id: fromArg, source: 'arg' }
-  }
-  const lastRootPath = join(dataRoot, 'last-root')
-  try {
-    const saved = readFileSync(lastRootPath, 'utf8').trim()
-    if (saved !== '' && ROOT_PATTERN.test(saved)) return { id: saved, source: 'last-root' }
-  } catch {
-    // No previous root: generate one below.
   }
   return { id: generateRootId(), source: 'generated' }
 }
 
-/** Persist the chosen root as 0600 (atomic tmp + fsync + rename). */
-export function writeLastRoot(dataRoot: string, id: string): void {
-  mkdirSync(dataRoot, { recursive: true, mode: 0o700 })
-  const target = join(dataRoot, 'last-root')
-  const temporary = `${target}.tmp-${process.pid}`
-  const fd = openSync(temporary, 'w', 0o600)
-  try {
-    writeSync(fd, `${id}\n`)
-    fsyncSync(fd)
-  } finally {
-    closeSync(fd)
+/** Validate a user-supplied session id before it is used in a lock path. */
+export function validateRootId(id: string): void {
+  if (!ROOT_PATTERN.test(id)) {
+    throw new Error(`nano: 非法会话身份 "${id}"：只允许字母、数字、点、下划线和短横线。`)
   }
-  renameSync(temporary, target)
 }
 
 export interface MountClaim {
@@ -144,19 +122,6 @@ function unlinkQuietly(path: string): void {
   } catch {
     // ignore
   }
-}
-
-function readRootArg(argv: readonly string[]): string | undefined {
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]
-    if (arg === '--root') {
-      const value = argv[i + 1]
-      if (value === undefined) throw new Error('nano: --root 需要一个值')
-      return value
-    }
-    if (arg?.startsWith('--root=')) return arg.slice('--root='.length)
-  }
-  return undefined
 }
 
 function generateRootId(): string {

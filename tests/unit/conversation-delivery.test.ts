@@ -18,7 +18,10 @@ const PNG = Buffer.from(
   'base64',
 )
 
-function makeHarness(status: 'idle' | 'running' = 'idle') {
+function makeHarness(
+  status: 'idle' | 'running' = 'idle',
+  options: { resumeOnly?: boolean; notFoundMessage?: string; resumedId?: string } = {},
+) {
   const handlers = new Map<string, (payload: any) => void>()
   const sections: any[] = []
   const agentCtx = {
@@ -37,6 +40,10 @@ function makeHarness(status: 'idle' | 'running' = 'idle') {
     steer: vi.fn(),
     cancel: vi.fn(),
   }
+  const create = vi.fn(async (createOptions: any) => {
+    createOptions.setup(agentCtx)
+    return { agent }
+  })
   const ctx = {
     get: (name: string) =>
       name === 'agentDefaultModel'
@@ -48,14 +55,19 @@ function makeHarness(status: 'idle' | 'running' = 'idle') {
     off: () => {},
     agents: {
       resume: async () => {
+        if (options.resumedId !== undefined) {
+          return {
+            agent: {
+              ...agent,
+              session: { id: options.resumedId, deriveMessages: () => [] },
+            },
+          }
+        }
         const error = new Error('not found') as Error & { name: string }
         error.name = 'SessionPersistenceNotFoundError'
         throw error
       },
-      create: async (options: any) => {
-        options.setup(agentCtx)
-        return { agent }
-      },
+      create,
     },
   }
   const official = {
@@ -70,8 +82,9 @@ function makeHarness(status: 'idle' | 'running' = 'idle') {
     rootId: ROOT,
     cwd: '/tmp',
     history: history as any,
+    ...options,
   })
-  return { controller, agent, sections, handlers, history, official }
+  return { controller, agent, sections, handlers, history, official, create }
 }
 
 function setStatus(harness: ReturnType<typeof makeHarness>, status: 'idle' | 'running') {
@@ -79,6 +92,21 @@ function setStatus(harness: ReturnType<typeof makeHarness>, status: 'idle' | 'ru
 }
 
 describe('ConversationController delivery', () => {
+  it('resume-only 在 NotFound 时报错，不创建替代会话', async () => {
+    const harness = makeHarness('idle', {
+      resumeOnly: true,
+      notFoundMessage: '当前目录没有可续接的会话。直接运行 nano 开新会话。',
+    })
+    await expect(harness.controller.start()).rejects.toThrow('当前目录没有可续接的会话')
+    expect(harness.create).not.toHaveBeenCalled()
+  })
+
+  it('resume 返回不同 id 时硬失败，不创建替代会话', async () => {
+    const harness = makeHarness('idle', { resumedId: 'other' })
+    await expect(harness.controller.start()).rejects.toThrow(/根身份不一致/)
+    expect(harness.create).not.toHaveBeenCalled()
+  })
+
   it('空闲提交走 followup', async () => {
     const harness = makeHarness('idle')
     await harness.controller.start()
