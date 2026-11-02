@@ -51,12 +51,18 @@ async function settle() {
   await new Promise((resolve) => setImmediate(resolve))
 }
 
-function makeHarness(features: Record<string, unknown>) {
+function makeHarness(
+  features: Record<string, unknown>,
+  options: { width?: number; height?: number; cwd?: string } = {},
+) {
+  const width = options.width ?? 80
+  const height = options.height ?? 24
+  const cwd = options.cwd ?? '/tmp/project'
   const chunks: string[] = []
   const renderer = new Renderer({
     write: (bytes) => chunks.push(bytes),
-    width: 80,
-    height: 24,
+    width,
+    height,
     defaultFg: darkTheme.fg,
   })
   const ctx = new FakeContext()
@@ -71,15 +77,15 @@ function makeHarness(features: Record<string, unknown>) {
     core: { ctx, dispose: async () => {} } as never,
     official: {} as never,
     terminal: {
-      width: 80,
-      height: 24,
+      width,
+      height,
       refreshSize: () => {},
       copyToClipboard: () => {},
     } as never,
     renderer,
     claim: { rootId: 'r', path: '/tmp/x', recovered: false },
     dataRoot: '/tmp',
-    cwd: '/tmp/project',
+    cwd,
     rootId: 'r',
     conversation,
     history: { entries: () => [] } as never,
@@ -317,5 +323,36 @@ describe('详情 / 列表的正文与输入区切换', () => {
     harness.renderer.flushFrame()
     expect(harness.lines()).toContain('● 任务 A  执行中')
     harness.renderer.unmount()
+  })
+})
+
+describe('状态行 cwd 预算', () => {
+  async function renderStatus(width: number, cwd: string): Promise<string[]> {
+    const harness = makeHarness({ start: () => {}, inputActive: () => true }, { width, cwd })
+    harness.app.start().catch(() => {})
+    await tick()
+    harness.app.render()
+    harness.renderer.flushFrame()
+    const lines = harness.renderer.snapshotLines()
+    harness.renderer.unmount()
+    return lines
+  }
+
+  it('60 列下长 cwd 折到末两段，右侧提示仍可见', async () => {
+    const lines = await renderStatus(60, '/nano-fixture/deep/code/dsh-tui-nano')
+    const status = lines.find((line) => line.includes('Enter 发送 · Ctrl+C 退出')) ?? ''
+    expect(status).toContain('…/code/dsh-tui-nano')
+  })
+
+  it('折叠后仍超预算时截断 cwd，提示不被挤掉', async () => {
+    const lines = await renderStatus(60, '/nano-fixture/a/spec-2026-11-02-nano-six-fixes')
+    const status = lines.find((line) => line.includes('Enter 发送 · Ctrl+C 退出')) ?? ''
+    expect(status).toContain('…')
+    expect(status).not.toContain('six-fixes')
+  })
+
+  it('宽度容不下提示时，提示让位', async () => {
+    const text = (await renderStatus(20, '/nano-fixture/deep/code/dsh-tui-nano')).join('\n')
+    expect(text).not.toContain('Enter 发送')
   })
 })

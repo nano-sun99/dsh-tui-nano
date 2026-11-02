@@ -199,7 +199,6 @@ function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
       : snapshot.text !== ''
         ? 'Enter 发送 · Shift+Enter 换行'
         : 'Enter 发送 · Ctrl+C 退出'
-  const left = snapshot.notice ? snapshot.notice.text : displayCwd(snapshot.cwd)
   const leftColor = snapshot.notice
     ? snapshot.notice.tone === 'danger'
       ? snapshot.theme.danger
@@ -207,12 +206,16 @@ function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
     : snapshot.theme.muted
   const right = hint
   const available = Math.max(1, props.width - 2 * EDGE)
+  // 先按「右侧提示也在」的预算折叠 cwd；宽度容得下提示时，让 cwd 让位，
+  // 而不是让提示消失。notice 文本仍按可用宽度截断，不参与折叠。
+  const leftBudget = Math.max(1, available - displayWidth(right) - 1)
+  const left = snapshot.notice ? snapshot.notice.text : displayCwd(snapshot.cwd, leftBudget)
   const showRight = displayWidth(left) + displayWidth(right) + 1 <= available
-  const leftBudget = showRight ? Math.max(1, available - displayWidth(right) - 1) : available
+  const finalLeftBudget = showRight ? leftBudget : available
   return (
     <Box flexDirection="row" height={1} flexShrink={0} paddingX={EDGE} width={props.width}>
       <Text color={leftColor} wrap={false}>
-        {truncateText(left, leftBudget)}
+        {truncateText(left, finalLeftBudget)}
       </Text>
       <Box flexGrow={1} />
       {showRight ? (
@@ -348,12 +351,16 @@ function shortenHome(cwd: string | undefined): string {
   return cwd
 }
 
-/** 底部状态行的目录：优先 ~，太长只留最后两段，保证右侧提示不被挤掉。 */
+/**
+ * 底部状态行的目录：优先 ~，太长只留最后两段；折叠后仍超 `max` 就截断。
+ * `max` 由 StatusLine 按「右侧提示也要放下」的预算传入，宽度容得下提示时，
+ * 这里保证 cwd 不会把提示挤掉。
+ */
 function displayCwd(cwd: string | undefined, max = 44): string {
   const short = shortenHome(cwd)
   if (displayWidth(short) <= max) return short
   const parts = short.split('/').filter(Boolean)
-  return `…/${parts.slice(-2).join('/')}`
+  return truncateText(`…/${parts.slice(-2).join('/')}`, max)
 }
 
 function InputLine(props: { snapshot: AppSnapshot; width: number }) {
