@@ -53,6 +53,42 @@ function isInfoToggle(key: Key): boolean {
   return key.name === 'char' && key.ctrl === true && key.text === 'i'
 }
 
+/**
+ * `/compact` 的官方稳定失败文案 → 中文「原因 + 下一步」。
+ * 前缀匹配；官方原文进诊断日志，不整段弹给用户。
+ */
+const COMPACT_FAILURES: ReadonlyArray<readonly [prefix: string, text: string]> = [
+  [
+    'Compaction is unavailable because this process has an active compaction, or the agent is not idle.',
+    '压缩暂不可用：会话可能还在运行，或上一次压缩还没结束。等回合结束后再试。',
+  ],
+  ['Compaction cancelled.', '压缩已取消。'],
+  [
+    'The history selected for compaction changed before it could be replaced.',
+    '压缩期间会话历史变了，本次未替换；请重试。',
+  ],
+  ['Compaction could not produce a useful summary.', '没有生成可用的摘要；本次未替换。'],
+  [
+    'Compaction did not finish cleanly; some session history may have changed.',
+    '压缩未干净结束；请先检查会话状态再重试。',
+  ],
+  ['Compaction finished, but the session could not be saved.', '压缩已完成，但会话保存失败。'],
+  ['Usage: /compact (no arguments)', '用法：/compact（不接受参数）。'],
+]
+
+export function compactFailureText(text: string): string {
+  for (const [prefix, mapped] of COMPACT_FAILURES) {
+    if (text.startsWith(prefix)) return mapped
+  }
+  return `压缩失败：${text}`
+}
+
+/** `No compactable history yet.` 在官方是 success，不是 error。 */
+export function compactSuccessText(text: string): string {
+  if (text.startsWith('No compactable history yet.')) return '还没有可压缩的历史。'
+  return text.trim() === '' ? '压缩完成。' : text
+}
+
 export class Features implements FeatureHost {
   private context: FeatureContext | undefined
   private storage: ScheduleStorage | undefined
@@ -70,6 +106,10 @@ export class Features implements FeatureHost {
   /** 首次人工命令的权限提示：`!` 与 `!!` 各提示一次（S08 §2.2）。 */
   private bangHintShown = { inject: false, noInject: false }
   private disposeKeys: (() => void)[] = []
+  /** M4：只有一个 pending；触发点是 agent 变 idle，不是定时器。 */
+  private compactPending: string | undefined
+  private compactInFlight = false
+  private disposeCompactWatcher: (() => void) | undefined
 
   async start(context: FeatureContext): Promise<void> {
     this.context = context
@@ -242,6 +282,9 @@ export class Features implements FeatureHost {
     // `-r` 不带 id：先去默认新会话，再把现有面板打开；不额外 create。
     if (context.openSessionsPanel === true) this.sessions.toggle()
 
+    // 回合结束（agent 变 idle）时执行排队的 /compact；Ctrl+C 停止同样会走这里。
+    this.disposeCompactWatcher = context.conversation.onChange(() => this.onConversationChange())
+
     // 静态清单是唯一来源（S03 §5）：注册顺序与文档顺序一致。
     this.disposeKeys.push(...FEATURE_KEYBINDINGS.map((binding) => registerKeybinding(binding)))
   }
@@ -334,6 +377,10 @@ export class Features implements FeatureHost {
       await this.runModelCommand(text.trim().split(/\s+/u).slice(1).join(' '))
       return
     }
+    if (name === 'compact') {
+      await this.runCompactCommand(context, text)
+      return
+    }
     const definition = agent && commands ? commands.find(agent, name) : undefined
     if (!definition) {
       model.appendNotice(`未知命令 /${name}：按普通消息发送（未注入命令）`, 'warning')
@@ -367,6 +414,91 @@ export class Features implements FeatureHost {
       }
     }
     context.requestRender()
+  }
+
+  /**
+   * `/compact` 预检：运行中只记一个 pending，空闲才调官方命令。
+   * 压缩进行中再次触发只提示，不重复入队。
+   */
+  private async runCompactCommand(context: FeatureContext, raw: string): Promise<void> {
+    const model = context.conversation.model
+    context.input.take()
+    if (this.compactInFlight) {
+      model.appendNotice('压缩进行中，完成后会显示结果', 'info')
+      context.requestRender()
+      return
+    }
+    if (context.conversation.status === 'running') {
+      if (this.compactPending !== undefined) {
+        model.appendNotice('已排队，回合结束后自动压缩', 'info')
+      } else {
+        this.compactPending = raw
+        model.appendNotice('回合结束后压缩（已排队）', 'info')
+      }
+      context.requestRender()
+      return
+    }
+    await this.runCompact(context, raw)
+  }
+
+  /** agent 变 idle 才执行 pending；dispose 时会先清掉，切换/退出不执行。 */
+  private onConversationChange(): void {
+    const context = this.context
+    const pending = this.compactPending
+    if (context === undefined || pending === undefined || this.compactInFlight) return
+    if (context.conversation.status !== 'idle') return
+    this.compactPending = undefined
+    // idle 事件可能还在同一批会话 append 里；推到下一轮事件循环再压缩，
+    // 否则官方会在 append 发布期间报 "session append cannot reenter"。
+    setImmediate(() => {
+      if (this.context !== context || this.compactInFlight) return
+      if (context.conversation.status !== 'idle') {
+        // 官方在 turn/end 后可能已用微任务开了下一回合；放回 pending 等它再 idle。
+        this.compactPending ??= pending
+        return
+      }
+      void this.runCompact(context, pending)
+    })
+  }
+
+  private async runCompact(context: FeatureContext, raw: string): Promise<void> {
+    if (this.compactInFlight) return
+    this.compactInFlight = true
+    const model = context.conversation.model
+    model.appendNotice('正在压缩…', 'info')
+    context.requestRender()
+    try {
+      const agent = context.conversation.agent
+      const commands = context.core.ctx.get('commands')
+      if (!agent || typeof commands?.execute !== 'function') {
+        model.appendNotice('压缩失败：官方命令服务不可用。', 'danger')
+        return
+      }
+      const execution = await commands.execute(agent, raw, [], new AbortController().signal)
+      const result = execution?.result
+      if (result?.kind === 'success') {
+        const text = String(result.text ?? '')
+        if (text.startsWith('No compactable history yet.')) this.logCompact(text)
+        model.appendNotice(compactSuccessText(text), 'info')
+      } else if (result?.kind === 'error') {
+        const text = String(result.text ?? '')
+        this.logCompact(text)
+        model.appendNotice(compactFailureText(text), 'danger')
+      } else {
+        model.appendNotice('压缩失败：官方命令没有返回结果。', 'danger')
+      }
+    } catch (error) {
+      const text = String((error as Error)?.message ?? error)
+      this.logCompact(text)
+      model.appendNotice(`压缩失败：${text}`, 'danger')
+    } finally {
+      this.compactInFlight = false
+      context.requestRender()
+    }
+  }
+
+  private logCompact(text: string): void {
+    process.stderr.write(`nano: compact: ${text}\n`)
   }
 
   /**
@@ -629,6 +761,12 @@ export class Features implements FeatureHost {
   }
 
   async dispose(): Promise<void> {
+    // 会话切换 / 受控重启 / 退出：取消还没执行的压缩。
+    // context 先清掉：已排程的 setImmediate 靠它判断是否还在同一会话。
+    this.context = undefined
+    this.disposeCompactWatcher?.()
+    this.disposeCompactWatcher = undefined
+    this.compactPending = undefined
     this.modelPanel?.dispose()
     this.modelPanel = undefined
     this.completions?.dispose()
@@ -650,6 +788,5 @@ export class Features implements FeatureHost {
     this.schedule = undefined
     await this.storage?.dispose()
     this.storage = undefined
-    this.context = undefined
   }
 }

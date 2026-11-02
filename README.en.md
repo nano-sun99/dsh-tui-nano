@@ -114,6 +114,8 @@ npm uninstall -g dsh-tui-nano
 
 Full keymap and flags: `nano --help`. Startup: `nano` creates a new session; `nano -c` continues the most recent session in this directory; `nano -r` opens the session picker (`-r <id>` restores exactly); `nano --root <id>` pins a session id (creates it if absent). `!command` runs with your user privileges and is not an agent authorisation; its output is injected as synthetic context but does not wake the model.
 
+Permission mode: new sessions default to `danger-full-access` (sandbox off, approval `never`), so ordinary commands no longer prompt. Override for one launch with `--permission-mode read-only|workspace-write|danger-full-access`; `--dangerously-skip-permissions` is equivalent to `danger-full-access`. Precedence is CLI > `DSH_PERMISSION_MODE` > default. Existing sessions keep their pinned preset; switch inside the session with `/permission danger-full-access`. With explicit `workspace-write`, PTY commands may still be denied on `/dev/ptmx` and raise an approval card.
+
 ## Theme and transparency
 
 - `NANO_THEME=dark|light` picks nano's own palette (default `dark`); read once at startup, restart to apply.

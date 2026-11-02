@@ -10,7 +10,7 @@ NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 NANO_RELEASE_VERIFY=1 npm run test:e2e
 ```
 
-前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 60 个用例（按文件顶层 `test()` 计数）：安装 17（其中发布验收 1 条默认跳过）+ 视觉 3 + 能力 1 + 交互 6 + 输入 5 + 跨会话 2 + 跨面 8 + 子代理 dock 5 + 会话生命周期 9 + 主链路 2 + Monitor 1 + 调度 1。发布证据运行显式设置了 `NANO_NODE_22` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip；`NANO_RELEASE_VERIFY=1` 只在发布 tag 上复核 version-matrix 哈希时设置。
+前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 61 个用例（按文件顶层 `test()` 计数）：安装 17（其中发布验收 1 条默认跳过）+ 视觉 3 + 能力 1 + 交互 6 + 输入 5 + 跨会话 2 + 跨面 8 + 子代理 dock 5 + 会话生命周期 9 + 主链路 3 + Monitor 1 + 调度 1。发布证据运行显式设置了 `NANO_NODE_22` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip；`NANO_RELEASE_VERIFY=1` 只在发布 tag 上复核 version-matrix 哈希时设置。
 
 ## `release.test.mjs`（17）
 
@@ -90,12 +90,13 @@ boot 官方核心后读工具注册表：断言 terminal 不在 Agent 工具表�
 
 boot 两个 root 的官方核心与 nano 调度门面：A 创建任务后，A 门面能看到；B 创建自己的任务后，B 门面能看到自己的、看不到 A 的，A 也看不到 B 的。同时断言门面投影不丢 `id/title/prompt/scheduledAt`。
 
-## `main-chain.test.mjs`（2）+ `mock-model.mjs`
+## `main-chain.test.mjs`（3）+ `mock-model.mjs`
 
 用本地 Anthropic Messages SSE mock 当模型（`DEEPSEEK_BASE_URL` 指向它，假 key），真 PTY 跑主链路：
 
-- 同一条链路：read → edit → bash 提权；差异块点击展开后可见 `- old` / `+ new`；审批卡默认焦点「拒绝」，↑+Enter 选「允许一次」后命令执行并完成。
+- 同一条链路（显式 `--permission-mode workspace-write`）：read → edit → bash 提权；差异块点击展开后可见 `- old` / `+ new`；审批卡默认焦点「拒绝」，↑+Enter 选「允许一次」后命令执行并完成。
 - 拒绝路径：直接 Enter 走默认「拒绝」，命令不执行，mock 按 `is_error` 回失败文本、不谎报完成。
+- 默认 bypass：不传权限开关，bash 不弹审批直接执行，主链路正常完成。
 
 mock 监听随机端口，不触真实网络与真实凭据。
 
