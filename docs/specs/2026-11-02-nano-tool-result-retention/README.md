@@ -2,8 +2,8 @@
 
 - 组标识：`2026-11-02-nano-tool-result-retention`
 - 角色：单份 spec，总纲与执行规格合一
-- 状态：草案（本 PR 待过闸）
-- 实施 issue：[#140](https://github.com/nano-sun99/dsh-tui-nano/issues/140)（沿用原 bug 单；spec 合并后回填）
+- 状态：已完成（PR #156，2026-11-02；验收回填见 issue #140）
+- 实施 issue：[#140](https://github.com/nano-sun99/dsh-tui-nano/issues/140)
 - 结构：不拆——1 份 spec + 沿用 #140 作为执行单；本改动无多阶段里程碑
 - 机制范围：M1–M4（见 §6）
 - 上游：
