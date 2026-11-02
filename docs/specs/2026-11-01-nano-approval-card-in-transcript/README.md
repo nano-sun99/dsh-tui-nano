@@ -144,10 +144,10 @@ Claude Code 在用户拒绝/取消后不会让记录消失：工具行保留，�
   - `cancelled` → `已取消 · 未执行`
   - `unavailable` → `无法回答 · 按失败关闭处理`
   - `allowed-once` → 不加额外行；工具结果照常出现（成功/失败由工具自身结果决定）。
-- 决策行属于 transcript 内容：随正文滚动、参与分页、在卡片消失后仍然存在。它不新增 entry，而是作为 `ToolEntry.decision` 字段随该条保存。
+- 决策行属于 transcript 内容：随正文滚动、参与分页、在卡片消失后仍然存在。正常路径不新增 entry，而是作为 `ToolEntry.decision` 字段随该条保存。
 - 不依赖官方英文 reason；官方工具结果若自带错误行，仍按现有 `failureRows` 展示，决策行在前、错误详情在后。
-- `callId` 缺失或找不到对应工具行时，`rejected` / `cancelled` / `unavailable` 退化为一条 `notice`（同文案），不吞掉记录；`allowed-once` 不需要记录。
-- 连续 read-like 工具会合并成组行：组行追加 ` · 已拒绝` / ` · 已取消` / ` · 无法回答` 摘要；展开后在该条目行下显示完整决策行。
+- `callId` 缺失或找不到对应工具行时，`rejected` / `cancelled` / `unavailable` 退化为一条 `notice`（同文案），走 `TranscriptModel.appendNotice`（持久行），不用 `src/app/notice.ts` 的单槽瞬态提示；`allowed-once` 不需要记录。此为退化路径，允许新增一条 entry。
+- 连续 read-like 工具会合并成组行：折叠时组行追加摘要——同一结果的写 ` · 已拒绝` / ` · 已取消` / ` · 无法回答`，混合结果按数量写 ` · 已拒绝 1 · 已取消 1`；展开后每条目行下显示各自的完整决策行。
 
 ## 4. 视觉规格
 
@@ -183,8 +183,8 @@ Claude Code 在用户拒绝/取消后不会让记录消失：工具行保留，�
 3. 4 个选项顺序与 `APPROVAL_OPTIONS` 一致，默认焦点为「拒绝」，`1`–`4` 直选与 `Enter` 结果不变。
 4. `PageUp`/`PageDown` 在审批挂起时滚动正文；`↑`/`↓` 焦点行始终可见。
 5. 渲染原语层不再有 `Overlay` 导出与 `type === 'overlay'` 分支；`src/app/scenes.ts`、`src/input/keymap*.ts` 里表示「场景 / 作用域」的 `overlay` 词义不受影响；`tests/unit/renderer.test.ts:67` 的 `createElement('overlay')` 已改为普通 box 或删除。
-6. 拒绝 / 取消 / 无法回答各留下决策行（文案见 §3.9）；允许不额外加行、工具结果照常出现。卡片消失后该行仍在（重绘/滚动后仍可见）。
-7. `callId` 缺失时，拒绝/取消/无法回答退化为 `notice`，仍可见。
+6. 拒绝 / 取消 / 无法回答各留下决策行（文案见 §3.9）；允许不额外加行、工具结果照常出现。read-like 组行折叠时显示摘要、展开后显示完整决策行；卡片消失后该行仍在（重绘/滚动后仍可见）。
+7. `callId` 缺失或 transcript 中找不到对应 `ToolEntry` 时，拒绝/取消/无法回答退化为 `TranscriptModel.appendNotice` 的持久 `notice`，仍可见。
 8. **鲸尾回归**：`src/activity/*`、`ActivityLine`、`activityRows()`、`render/activity-image.ts` 未被改动；`tests/unit/activity.test.ts` 全绿；审批挂起时活动行是静态「等待你的授权」（无动画），结算后回到正常活动态。
 
 ### 渲染与证据
@@ -206,7 +206,7 @@ Claude Code 在用户拒绝/取消后不会让记录消失：工具行保留，�
 
 - **采纳**：审批卡进正文滚动区、输入框保留（`REPL.tsx:4565` + `FullscreenLayout.tsx:361`）；完整命令展示（`BashPermissionRequest.tsx:84-88`）；拒绝/取消后保留工具行并在下方渲染 dim 的 `Interrupted · What should Claude do instead?`（`components/InterruptedByUser.tsx`，`FallbackToolUseRejectedMessage` / `UserToolCanceledMessage` 复用）。
 - **不采纳**：「Yes, and don't ask again」（依赖权限规则存储，nano 没有）；`Tab to amend`（无编辑命令流程）。
-- **保留差异**：nano 的 4 个协议结果（含取消 / 无法回答），Claude Code 为 Yes / always-allow / No；决策行文案用中文并区分四种结果，Claude Code 只有笼统的 `Interrupted`。
+- **保留差异**：nano 的 4 个协议结果（含取消 / 无法回答），Claude Code 为 Yes / always-allow / No；决策行文案用中文并区分拒绝/取消/无法回答三种结果（允许由工具结果承担），Claude Code 只有笼统的 `Interrupted`。
 - **理由**：落点决定体验与缺陷面；结果集合由官方 fail-closed seam 决定，不能为了照抄上游而删出口；留痕让四种出口都可回看。
 
 ## 9. 自定细节
@@ -220,7 +220,7 @@ Claude Code 在用户拒绝/取消后不会让记录消失：工具行保留，�
 - 无 `command` 字段时，所有工具都走 `args` 顶层键值降级（值为字符串时原样、其他 JSON 序列化后截断）。
 - 活动行保留「等待你的授权」，与卡片不重复。
 - 卡片行 block 追加在 transcript 末尾，不写入 `TranscriptModel.entries`（不参与历史持久化）。
-- 决策行挂在 `ToolEntry.decision` 上（1 行、`muted`、缩进 `INDENT`），不新增 entry；卡片消失后仍随工具行渲染。
+- 决策行挂在 `ToolEntry.decision` 上（1 行、`muted`、缩进 `INDENT`），正常路径不新增 entry；卡片消失后仍随工具行渲染。
 - 设计稿在结算后保留一行结果作演示（样稿惯例）：拒绝/取消/无法回答与 §3.9 文案一致；允许路径显示 `已允许一次 · 演示不执行命令`（样稿不执行命令），真实 TUI 不加演示行、由工具结果承担。
 
 ## 10. 审核修订记录
@@ -271,3 +271,12 @@ Claude Code 在用户拒绝/取消后不会让记录消失：工具行保留，�
 | 30 | 轻微 | 「下游：spec 合并后开 issue」已过时 | 改为 Issue #134（已开，待实施委托） |
 | 31 | 轻微 | `callId` 退化未限定结果集 | §3.9 / §6 第 7 条 / ADR 限定为拒绝/取消/无法回答 |
 | 32 | 轻微 | read-like 组行的决策行落点未定义 | §3.9 增组行摘要 + 展开后条目行决策行 |
+
+### 2026-11-02 复审（PR #135）修订
+
+| # | 严重度 | 发现 | 处置 |
+|---|---|---|---|
+| 33 | 重要 | read-like 组行在 §3.9 / §6 / ADR 三处口径不一，混合结果未定义 | §3.9 / §6 第 6 条 / ADR 决定 1 统一：折叠摘要、展开完整行、混合按数量 |
+| 34 | 轻微 | §6 第 7 条漏「callId 存在但找不到 ToolEntry」 | 验收补齐该分支 |
+| 35 | 轻微 | 「不新增 entry」与 notice 退化冲突；notice 有两套通道 | 限定正常路径；退化只走 `TranscriptModel.appendNotice` 持久行 |
+| 36 | 轻微 | §8 说「区分四种结果」，实际只有三条决策行 | 改为三条 + 允许由工具结果承担 |
