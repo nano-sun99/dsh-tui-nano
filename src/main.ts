@@ -29,6 +29,7 @@ import { HistoryStore } from './input/history.ts'
 import { describeBindings } from './input/keymap.ts'
 import { renderKeymapHelp } from './input/keymap-docs.ts'
 import { Renderer } from './render/renderer.ts'
+import { startHeapWatch } from './runtime/heap-watch.ts'
 import { Terminal } from './runtime/terminal.ts'
 import { featureBootPatches } from './sessions/boot-patches.ts'
 import { activeTheme } from './theme/theme.ts'
@@ -178,6 +179,8 @@ export async function main(argv: readonly string[]): Promise<number> {
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
       features: new Features(),
     })
+    // 只看不救：真炸时日志里至少要有一行「当时堆多大」（issue #138）。
+    startHeapWatch({ report: (line) => process.stderr.write(`${line}\n`) })
     try {
       await app.start()
       return 0
