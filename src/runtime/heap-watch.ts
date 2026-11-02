@@ -27,7 +27,8 @@ export interface HeapWatchOptions {
 export function startHeapWatch(options: HeapWatchOptions): () => void {
   const configured = Number(options.limitMb ?? process.env.NANO_HEAP_WARN_MB ?? HEAP_WARN_MB)
   const limitMb = Number.isFinite(configured) && configured > 0 ? configured : HEAP_WARN_MB
-  const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS
+  // 下限 1s：看门狗查的是「几 GB 的堆」，亚秒轮询只会空转。
+  const intervalMs = Math.max(1000, options.intervalMs ?? DEFAULT_INTERVAL_MS)
   const cooldownMs = options.cooldownMs ?? DEFAULT_COOLDOWN_MS
   const heapUsedMb = options.heapUsedMb ?? (() => process.memoryUsage().heapUsed / (1024 * 1024))
   const now = options.now ?? (() => Date.now())
@@ -35,7 +36,7 @@ export function startHeapWatch(options: HeapWatchOptions): () => void {
 
   const timer = setInterval(() => {
     const used = heapUsedMb()
-    if (used < limitMb) return
+    if (!Number.isFinite(used) || used < limitMb) return
     const at = now()
     if (at - lastReport < cooldownMs) return
     lastReport = at

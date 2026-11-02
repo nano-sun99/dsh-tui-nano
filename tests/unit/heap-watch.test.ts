@@ -64,6 +64,28 @@ describe('堆看门狗', () => {
     expect(lines).toHaveLength(1)
   })
 
+  it('间隔有 1s 下限，不会被夹成毫秒轮询', () => {
+    vi.useFakeTimers()
+    const lines: string[] = []
+    startHeapWatch({ intervalMs: 0, heapUsedMb: () => 4096, report: (line) => lines.push(line) })
+    vi.advanceTimersByTime(999)
+    expect(lines).toHaveLength(0)
+    vi.advanceTimersByTime(1)
+    expect(lines).toHaveLength(1)
+  })
+
+  it('堆值读不出来（NaN）时不写假警报', () => {
+    vi.useFakeTimers()
+    const lines: string[] = []
+    startHeapWatch({
+      intervalMs: 1000,
+      heapUsedMb: () => Number.NaN,
+      report: (line) => lines.push(line),
+    })
+    vi.advanceTimersByTime(10_000)
+    expect(lines).toHaveLength(0)
+  })
+
   it('预警线可用环境变量覆盖', () => {
     vi.useFakeTimers()
     vi.stubEnv('NANO_HEAP_WARN_MB', '100')
