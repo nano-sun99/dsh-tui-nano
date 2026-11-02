@@ -1,4 +1,4 @@
-/** Public component surface for Nano screens (`<Box>`, `<Text>`, `<Overlay>`). */
+/** Public component surface for Nano screens (`<Box>`, `<Text>`). */
 import { createElement } from 'react'
 import type { CellGrid } from './grid.ts'
 import type { BoxProps, TextProps } from './host.ts'
@@ -18,11 +18,6 @@ export function Box(props: PressableBoxProps) {
 
 export function Text(props: PressableTextProps) {
   return createElement('text', props)
-}
-
-/** Full-screen layer painted after normal content (modals, question panels). */
-export function Overlay(props: BoxProps) {
-  return createElement('overlay', props)
 }
 
 export interface GridProps {

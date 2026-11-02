@@ -5,6 +5,7 @@
  * disappears once committed, and only in-place clicks expand a row.
  */
 
+import { type ApprovalOutcome, approvalDecisionText } from '../decisions/manager.ts'
 import { graphemes } from '../render/text.ts'
 import { EDGE, INDENT } from '../theme/spacing.ts'
 import { diffsFromMeta, type FileDiff, renderDiffs } from './diff.ts'
@@ -56,6 +57,8 @@ function activationFromResult(name: string, resultText: string | undefined): str
   return id === undefined || id === '' ? undefined : `subagent:result:${id}`
 }
 
+export type ApprovalDecision = Exclude<ApprovalOutcome, 'allowed-once'>
+
 export interface ToolEntry {
   readonly kind: 'tool'
   readonly id: string
@@ -66,6 +69,8 @@ export interface ToolEntry {
   readonly status: 'running' | 'ok' | 'error'
   readonly resultText?: string
   readonly resultMeta?: unknown
+  /** User-facing approval decision (spec §3.9); allowed-once leaves no row. */
+  readonly decision?: ApprovalDecision
 }
 
 export interface NoticeEntry {
@@ -197,6 +202,32 @@ export class TranscriptModel {
       status: 'running',
     })
     this.notify()
+  }
+
+  /** Look up one tool call for the approval card's command block (spec §3.3). */
+  toolEntryByCallId(callId: string): ToolEntry | undefined {
+    return this.entries.find(
+      (entry): entry is ToolEntry => entry.kind === 'tool' && entry.callId === callId,
+    )
+  }
+
+  /**
+   * Record the user's approval decision so the tool row keeps a visible record
+   * after the card closes (spec §3.9). Returns false when the call is unknown
+   * so the caller can fall back to a transcript notice.
+   */
+  markApprovalDecision(callId: string, outcome: ApprovalOutcome): boolean {
+    if (outcome === 'allowed-once') return false
+    const index = this.entries.findIndex(
+      (entry): entry is ToolEntry => entry.kind === 'tool' && entry.callId === callId,
+    )
+    if (index < 0) return false
+    const entry = this.entries[index] as ToolEntry
+    if (entry.decision !== outcome) {
+      this.entries[index] = { ...entry, decision: outcome }
+      this.notify()
+    }
+    return true
   }
 
   completeTool(callId: string, resultText: string, isError: boolean, resultMeta?: unknown): void {
@@ -347,7 +378,10 @@ export class TranscriptModel {
     const expanded = options.expanded.has(id)
     const width = Math.max(1, options.width - EDGE)
     const version = group
-      .map((entry) => `${entry.id}:${entry.status}:${entry.resultText?.length ?? 0}`)
+      .map(
+        (entry) =>
+          `${entry.id}:${entry.status}:${entry.resultText?.length ?? 0}:${entry.decision ?? ''}`,
+      )
       .join(',')
     const cacheKey = `${id}|${options.width}|${expanded ? 1 : 0}|${version}`
     const groupKind: Unit['kind'] = group.length > 1 || isReadLike(first.name) ? 'group' : 'tool'
@@ -358,11 +392,13 @@ export class TranscriptModel {
     if (isReadLike(first.name)) {
       const label = group.length === 1 ? `读取 ${readTarget(first)}` : `读取 ${group.length} 项`
       const statusMark = running ? '…' : failures > 0 ? ` · ${failures} 失败` : ''
+      const decisionMark = decisionSummary(group)
       rows.push(
         ...wrapSpans(
           [
             textSpan(label, 'tool'),
             textSpan(statusMark, failures > 0 ? 'danger' : 'muted'),
+            textSpan(decisionMark, 'muted'),
             textSpan(suffix, 'faint'),
           ],
           width,
@@ -379,6 +415,7 @@ export class TranscriptModel {
             ],
             indent: EDGE,
           })
+          rows.push(...decisionRows(entry, width))
           if (entry.status === 'error') rows.push(...failureRows(entry, width))
         }
       }
@@ -401,6 +438,7 @@ export class TranscriptModel {
         width,
       ).map((row) => ({ ...row, indent: EDGE })),
     )
+    rows.push(...decisionRows(entry, width))
     if (entry.status === 'error' && !expanded) rows.push(...failureRows(entry, width))
     if (expanded) {
       rows.push(...expandedToolRows(entry, width))
@@ -477,7 +515,7 @@ interface ParsedArgs {
   [key: string]: unknown
 }
 
-function parseArgs(raw: string): ParsedArgs {
+export function parseArgs(raw: string): ParsedArgs {
   try {
     const value = JSON.parse(raw)
     return typeof value === 'object' && value !== null ? (value as ParsedArgs) : {}
@@ -525,6 +563,37 @@ function expandedToolRows(entry: ToolEntry, width: number): Row[] {
 }
 
 /** Failures keep exactly three result lines when collapsed. */
+const DECISION_LABELS: Record<ApprovalDecision, string> = {
+  rejected: '已拒绝',
+  cancelled: '已取消',
+  unavailable: '无法回答',
+}
+
+const DECISION_ORDER: ApprovalDecision[] = ['rejected', 'cancelled', 'unavailable']
+
+/** 组行折叠摘要：同一结果写一次，混合结果按数量（spec §3.9）。 */
+function decisionSummary(group: ToolEntry[]): string {
+  const counts = new Map<ApprovalDecision, number>()
+  for (const entry of group) {
+    if (entry.decision) counts.set(entry.decision, (counts.get(entry.decision) ?? 0) + 1)
+  }
+  if (counts.size === 0) return ''
+  if (counts.size === 1) return ` · ${DECISION_LABELS[[...counts.keys()][0]!]}`
+  return DECISION_ORDER.filter((decision) => counts.has(decision))
+    .map((decision) => ` · ${DECISION_LABELS[decision]} ${counts.get(decision)}`)
+    .join('')
+}
+
+/** 工具行下方的决策行（`muted`、缩进 `INDENT`）；允许路径没有这一行。 */
+function decisionRows(entry: ToolEntry, width: number): Row[] {
+  const text = entry.decision ? approvalDecisionText(entry.decision) : undefined
+  if (text === undefined) return []
+  return wrapSpans([textSpan(text, 'muted')], width).map((row) => ({
+    ...row,
+    indent: INDENT,
+  }))
+}
+
 function failureRows(entry: ToolEntry, width: number): Row[] {
   const text = entry.resultText ?? '（无错误输出）'
   const lines = text.split('\n').slice(0, 3)

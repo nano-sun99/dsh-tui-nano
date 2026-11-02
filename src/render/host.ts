@@ -351,31 +351,6 @@ export const hostConfig = {
       applyBoxProps(yoga, gridProps)
       return node
     }
-    if (type === 'overlay') {
-      const overlayProps: AnyProps = {
-        ...props,
-        position: 'absolute',
-        left: 0,
-        top: 0,
-        width: '100%',
-        height: '100%',
-      }
-      const node: BoxNode = {
-        kind: 'box',
-        type,
-        props: overlayProps,
-        yoga,
-        parent: null,
-        hidden: false,
-        left: 0,
-        top: 0,
-        width: 0,
-        height: 0,
-        children: [],
-      }
-      applyBoxProps(yoga, overlayProps)
-      return node
-    }
     const node: BoxNode = {
       kind: 'box',
       type,

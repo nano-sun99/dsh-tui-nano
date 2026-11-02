@@ -214,12 +214,12 @@ test('审批：A 的待确认卡不出现在 B', async () => {
       rootId: 'approval-a',
       port: mock.port,
       send: '触发审批',
-      sendUntil: '需要确认：bash',
+      sendUntil: '是否运行这条检查命令？',
       sendWait: 20,
       split: true,
     })
     const b = await runRoot({ rootId: 'approval-b', wait: 6 })
-    expectOnlyInA(a, b, '需要确认：bash')
+    expectOnlyInA(a, b, '是否运行这条检查命令？')
   } finally {
     mock.child.kill('SIGKILL')
   }
@@ -250,7 +250,7 @@ test('Monitor：A 的后台任务与监听器不出现在 B', async () => {
       port: mock.port,
       split: true,
       steps: [
-        { send: '启动后台任务\r', until: '需要确认：bash', timeout: 20 },
+        { send: '启动后台任务\r', until: '是否运行这条检查命令？', timeout: 20 },
         { send: '\u001b[A\r', until: 'MONITOR_STARTED', timeout: 20 },
         { send: '\u001b[106;5u', until: '任务', timeout: 10 },
         { send: 'm', until: 'Monitor', timeout: 8 },

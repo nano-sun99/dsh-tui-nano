@@ -1,13 +1,13 @@
 /**
- * Screen composition: transcript viewport, status line, composer and the two
- * decision overlays. Pure function of an immutable snapshot; the orchestrator
+ * Screen composition: transcript viewport, status line, composer and the
+ * decision card. Pure function of an immutable snapshot; the orchestrator
  * re-renders this tree whenever state changes.
  */
 
 import { Fragment, type ReactNode } from 'react'
 import type { Activity } from '../activity/state.ts'
-import { APPROVAL_OPTIONS, type DecisionManager } from '../decisions/manager.ts'
-import { Box, Overlay, Text } from '../render/components.ts'
+import type { DecisionManager } from '../decisions/manager.ts'
+import { Box, Text } from '../render/components.ts'
 import { displayWidth, graphemes, truncateText } from '../render/text.ts'
 import { ACTIVITY_ROWS, ACTIVITY_SLOT, CHROME_GAP, EDGE, INLINE } from '../theme/spacing.ts'
 import type { Theme } from '../theme/theme.ts'
@@ -55,6 +55,8 @@ export interface AppSnapshot {
   readonly inputHidden?: boolean
   /** Pending question owns this input-area slot before other bottom panels. */
   readonly decisionBody?: ReactNode
+  /** Approval card rows appended to the transcript (spec 2026-11-01). */
+  readonly approvalRows?: readonly Row[]
   /** 补全弹层（正文与状态行之间）。 */
   readonly completionBody?: ReactNode
   readonly completionRows?: number
@@ -144,12 +146,18 @@ export interface TranscriptViewProps {
   readonly scrollOffset: number
   readonly stickBottom: boolean
   readonly theme: Theme
+  /** Rows appended after the transcript content (the approval card). */
+  readonly extraRows?: readonly Row[]
 }
 
 /** 主对话与子代理详情共用的正文渲染器（spec §4.3：不复制渲染逻辑）。 */
 export function TranscriptView(props: TranscriptViewProps): ReactNode {
   const innerWidth = Math.max(1, props.width)
-  const lines = props.model.layout({ width: innerWidth, expanded: props.expanded })
+  const content = props.model.layout({ width: innerWidth, expanded: props.expanded })
+  const lines =
+    props.extraRows !== undefined && props.extraRows.length > 0
+      ? [...content, ...props.extraRows.map((row, index) => ({ key: `approval-${index}`, row }))]
+      : content
   const total = lines.length
   const height = Math.max(1, props.height)
   const start = props.stickBottom
@@ -176,6 +184,7 @@ function Transcript(props: { snapshot: AppSnapshot; bodyHeight: number; width: n
       scrollOffset={snapshot.scrollOffset}
       stickBottom={snapshot.stickBottom}
       theme={snapshot.theme}
+      {...(snapshot.approvalRows !== undefined ? { extraRows: snapshot.approvalRows } : {})}
     />
   )
 }
@@ -371,56 +380,6 @@ function InputLine(props: { snapshot: AppSnapshot; width: number }) {
   )
 }
 
-/** 审批卡仍是全屏浮层：审批卡的视觉与交互另立 spec，本 spec 不碰。 */
-function ApprovalOverlay(props: { snapshot: AppSnapshot; width: number; height: number }) {
-  const { snapshot } = props
-  const prompt = snapshot.decisions.prompt
-  if (prompt?.kind !== 'approval') return null
-  const panelWidth = Math.min(72, Math.max(30, props.width - 8))
-  return (
-    <Overlay>
-      <Box
-        flexDirection="column"
-        justifyContent="center"
-        alignItems="center"
-        width={props.width}
-        height={props.height}
-      >
-        <Box flexDirection="column" width={panelWidth} padding={2} clear>
-          <Text color={snapshot.theme.warning} bold>
-            {`需要确认：${prompt.toolName}`}
-          </Text>
-          <Text> </Text>
-          {prompt.reason ? (
-            <Text color={snapshot.theme.muted} wrap>
-              {prompt.reason}
-            </Text>
-          ) : null}
-          <Text> </Text>
-          {APPROVAL_OPTIONS.map((option, index) => {
-            const selected = index === prompt.selected
-            return (
-              <Box
-                key={option.outcome}
-                flexDirection="row"
-                onPress={`decision:approval:${index}`}
-                {...(selected ? { backgroundColor: snapshot.theme.focusBg } : {})}
-              >
-                <Text color={selected ? snapshot.theme.accent : snapshot.theme.fg}>
-                  {selected ? '▸ ' : '  '}
-                  {`${index + 1}. ${option.label}`}
-                </Text>
-              </Box>
-            )
-          })}
-          <Text> </Text>
-          <Text color={snapshot.theme.faint}>↑/↓ 选择 · Enter 确认 · Esc 取消请求（默认拒绝）</Text>
-        </Box>
-      </Box>
-    </Overlay>
-  )
-}
-
 export function activityRows(snapshot: AppSnapshot): number {
   if (snapshot.activityOwned === false) return 0
   if (snapshot.decisions.prompt?.kind === 'question') return ACTIVITY_ROWS
@@ -599,7 +558,6 @@ export function App(props: { snapshot: AppSnapshot }) {
           ) : null}
         </>
       )}
-      <ApprovalOverlay snapshot={snapshot} width={width} height={height} />
     </Box>
   )
 }

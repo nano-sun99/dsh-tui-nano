@@ -18,12 +18,30 @@ export type { QuestionDraft, QuestionPrompt } from './types.ts'
 
 export type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
 
-export const APPROVAL_OPTIONS: ReadonlyArray<{ outcome: ApprovalOutcome; label: string }> = [
-  { outcome: 'allowed-once', label: '允许一次' },
-  { outcome: 'rejected', label: '拒绝' },
+export const APPROVAL_OPTIONS: ReadonlyArray<{
+  outcome: ApprovalOutcome
+  label: string
+  description?: string
+}> = [
+  { outcome: 'allowed-once', label: '允许一次', description: '仅允许本次命令，不更改后续权限。' },
+  { outcome: 'rejected', label: '拒绝', description: '不执行本次命令。' },
   { outcome: 'cancelled', label: '取消请求' },
   { outcome: 'unavailable', label: '无法回答（按失败关闭处理）' },
 ]
+
+/** 决策行文案（spec §3.9）：允许由工具结果承担，不产生决策行。 */
+export function approvalDecisionText(outcome: ApprovalOutcome): string | undefined {
+  switch (outcome) {
+    case 'rejected':
+      return '已拒绝 · 未执行'
+    case 'cancelled':
+      return '已取消 · 未执行'
+    case 'unavailable':
+      return '无法回答 · 按失败关闭处理'
+    case 'allowed-once':
+      return undefined
+  }
+}
 
 export const QUESTION_ERRORS = {
   emptySelection: '请至少选择一项。',
@@ -69,6 +87,7 @@ export class DecisionManager {
     | { prompt: QuestionPrompt; waiter: QuestionWaiter; cleanup: () => void }
     | undefined
   private readonly listeners = new Set<() => void>()
+  private approvalSettled: ((prompt: ApprovalPrompt, outcome: ApprovalOutcome) => void) | undefined
 
   onChange(listener: () => void): () => void {
     this.listeners.add(listener)
@@ -93,6 +112,16 @@ export class DecisionManager {
     return this.prompt !== undefined
   }
 
+  /** 审批结算回调：覆盖用户键位/鼠标与官方 signal abort 两条路径（spec §3.9）。 */
+  onApprovalSettled(
+    listener: (prompt: ApprovalPrompt, outcome: ApprovalOutcome) => void,
+  ): () => void {
+    this.approvalSettled = listener
+    return () => {
+      if (this.approvalSettled === listener) this.approvalSettled = undefined
+    }
+  }
+
   askApproval(request: any): Promise<ApprovalOutcome> {
     return new Promise<ApprovalOutcome>((resolve, reject) => {
       const prompt: ApprovalPrompt = {
@@ -105,7 +134,11 @@ export class DecisionManager {
       }
       const signal: AbortSignal | undefined = request.signal
       const abort = () => {
-        if (this.approval?.waiter.resolve === resolve) this.approval = undefined
+        if (this.approval?.waiter.resolve === resolve) {
+          const active = this.approval
+          this.approval = undefined
+          this.approvalSettled?.(active.prompt, 'cancelled')
+        }
         resolve('cancelled')
         this.notify()
       }
@@ -226,6 +259,7 @@ export class DecisionManager {
     if (!active) return
     this.approval = undefined
     active.signal?.removeEventListener('abort', () => {})
+    this.approvalSettled?.(active.prompt, outcome)
     active.waiter.resolve(outcome)
     this.notify()
   }

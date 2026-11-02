@@ -1,6 +1,7 @@
 // 主链路 e2e（S03 §3.3「主链路」行）：对话 → 工具 → 差异 → 审批 → 完成，
 // 全部在**同一条链路**里跑完。模型用本地 Anthropic Messages SSE mock，
 // 不打真实请求、不需要真实凭据。全程真 PTY、不开窗口、不抢焦点、不动剪贴板。
+// biome-ignore-all lint/suspicious/noControlCharactersInRegex: 解析终端 CSI/APC/DCS/OSC 必须匹配 ESC
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -111,7 +112,7 @@ test('同一条链路：对话 → read → edit（差异）→ 审批允许 →
       mode: 'chain',
       send: '改文件并跑一次审批',
       workspace,
-      sendUntil: '需要确认：bash',
+      sendUntil: '是否运行这条检查命令？',
       keys: 'up,enter',
       keysUntil: '主链路完成',
       clickMarker: 'edit note.txt',
@@ -120,8 +121,11 @@ test('同一条链路：对话 → read → edit（差异）→ 审批允许 →
     // 工具：文件确实被 edit 改写
     assert.equal(readFileSync(path.join(workspace, 'note.txt'), 'utf8'), 'new line\n')
     // 审批：卡片出现、默认焦点在拒绝、允许一次后命令执行
-    assert.match(screen, /需要确认：bash/, '应弹出审批卡')
-    assert.match(screen, /▸ 2\. 拒绝/, '默认焦点应在「拒绝」')
+    assert.match(screen, /是否运行这条检查命令？/, '应弹出审批卡')
+    const plain = screen
+      .replace(/\x1b[_P^][^\x1b]*(?:\x1b\\)?/g, '')
+      .replace(/\x1b\[[0-9;?>]*[A-Za-z]/g, '')
+    assert.match(plain, /> 2\. 拒绝/, '默认焦点应在「拒绝」')
     assert.ok(existsSync(path.join(workspace, 'approval-ok.txt')), '允许后命令应执行')
     // 差异：展开 edit 行后应看到 -old / +new
     assert.match(screen, /- old line/, '展开后应出现删除行')
@@ -145,7 +149,7 @@ test('同一条链路：默认拒绝时不执行命令，mock 也不谎报完成
       mode: 'chain-deny',
       send: '改文件并跑一次审批',
       workspace,
-      sendUntil: '需要确认：bash',
+      sendUntil: '是否运行这条检查命令？',
       keys: 'enter',
       keysUntil: '主链路结束',
     })
