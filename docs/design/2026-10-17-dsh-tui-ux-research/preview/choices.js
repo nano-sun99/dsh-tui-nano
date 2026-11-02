@@ -206,7 +206,7 @@
     receipt() {
       if(this.result.kind==='permission') {
         const text={
-          allow:'已允许一次 · 命令已执行',
+          allow:'已允许一次 · 演示不执行命令',
           deny:'已拒绝 · 未执行',
           cancel:'已取消 · 未执行',
           unavailable:'无法回答 · 按失败关闭处理',
