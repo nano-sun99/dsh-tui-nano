@@ -240,8 +240,30 @@ export class InputParser {
       const codePoint = Number.parseInt(parts[0] ?? '0', 10)
       const mods = Number.parseInt(parts[1] ?? '1', 10)
       if (Number.isFinite(codePoint) && codePoint > 0) {
-        const char = String.fromCodePoint(codePoint)
         const flags = parseModifierFlags(mods)
+        const numpadChar = kittyNumpadChar(codePoint)
+        if (numpadChar !== undefined) {
+          events.push({
+            type: 'key',
+            key: { ...key('char', sequence), text: numpadChar, ...flags },
+          })
+          return index + 1
+        }
+        const numpadName = kittyNumpadKeyName(codePoint)
+        if (numpadName === 'ignore') return index + 1
+        if (numpadName) {
+          events.push({
+            type: 'key',
+            key: {
+              ...key(numpadName, sequence),
+              text: numpadName === 'enter' ? '\r' : undefined,
+              ...flags,
+            },
+          })
+          return index + 1
+        }
+        if (isKittyFunctionalCodePoint(codePoint)) return index + 1
+        const char = String.fromCodePoint(codePoint)
         const name = namedFromCodepoint(codePoint) ?? 'char'
         events.push({ type: 'key', key: { ...key(name, sequence), text: char, ...flags } })
         return index + 1
@@ -282,9 +304,18 @@ export class InputParser {
             : final === 'D'
               ? 'left'
               : undefined
+    const sequence = text.slice(0, 3)
     if (name) {
-      events.push({ type: 'key', key: key(name, text.slice(0, 3)) })
+      events.push({ type: 'key', key: key(name, sequence) })
       return 3
+    }
+    if (final === 'M') {
+      events.push({ type: 'key', key: { ...key('enter', sequence), text: '\r' } })
+      return 3
+    }
+    const numpadChar = ss3NumpadChar(final)
+    if (numpadChar !== undefined) {
+      events.push({ type: 'key', key: { ...key('char', sequence), text: numpadChar } })
     }
     return 3
   }
@@ -348,6 +379,90 @@ function namedFromCodepoint(codePoint: number): KeyName | undefined {
     default:
       return undefined
   }
+}
+
+function ss3NumpadChar(final: string): string | undefined {
+  if (final >= 'p' && final <= 'y') return String.fromCharCode(48 + final.charCodeAt(0) - 0x70)
+  switch (final) {
+    case 'j':
+      return '*'
+    case 'k':
+      return '+'
+    case 'l':
+      return ','
+    case 'm':
+      return '-'
+    case 'n':
+      return '.'
+    case 'o':
+      return '/'
+    case 'X':
+      return '='
+    default:
+      return undefined
+  }
+}
+
+function kittyNumpadChar(codePoint: number): string | undefined {
+  if (codePoint >= 57399 && codePoint <= 57408) {
+    return String.fromCharCode(48 + codePoint - 57399)
+  }
+  switch (codePoint) {
+    case 57409:
+      return '.'
+    case 57410:
+      return '/'
+    case 57411:
+      return '*'
+    case 57412:
+      return '-'
+    case 57413:
+      return '+'
+    case 57415:
+      return '='
+    case 57416:
+      return ','
+    default:
+      return undefined
+  }
+}
+
+function kittyNumpadKeyName(codePoint: number): KeyName | 'ignore' | undefined {
+  switch (codePoint) {
+    case 57414:
+      return 'enter'
+    case 57417:
+      return 'left'
+    case 57418:
+      return 'right'
+    case 57419:
+      return 'up'
+    case 57420:
+      return 'down'
+    case 57421:
+      return 'pageup'
+    case 57422:
+      return 'pagedown'
+    case 57423:
+      return 'home'
+    case 57424:
+      return 'end'
+    case 57425:
+      return 'insert'
+    case 57426:
+      return 'delete'
+    case 57427:
+      // NumLock off makes numpad 5 report KP_BEGIN; it must not insert "5".
+      return 'ignore'
+    default:
+      return undefined
+  }
+}
+
+function isKittyFunctionalCodePoint(codePoint: number): boolean {
+  // Kitty encodes non-text keys (F1-F35, media keys, ...) in the Unicode
+  // private-use area; they must never surface as typed text.
+  return codePoint >= 57344 && codePoint <= 63743
 }
 
 function parseSgrMouse(body: string, pressed: boolean): MouseEvent | undefined {
