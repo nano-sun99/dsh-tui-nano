@@ -44,12 +44,19 @@
 ## 复现
 
 ```sh
+# 发布物按 tag 冻结：先切到发布 tag 再复现（main 已含发布后改动）
+git switch --detach v0.2.0
 npm ci
 npm run build
-NANO_NODE_22="$HOME/.nvm/versions/node/v22.19.0/bin/node" \
+# v0.2.0 tag 上的测试是旧版，哈希校验恒执行、这个开关不生效；
+# 含该开关的检出版本才靠它复核，见 tests/e2e/README.md。
+NANO_RELEASE_VERIFY=1 \
+  NANO_NODE_22="$HOME/.nvm/versions/node/v22.19.0/bin/node" \
   NANO_NODE_20="$HOME/.nvm/versions/node/v20.20.0/bin/node" \
   npm run test:e2e
 mkdir -p packaging/dist
 npm pack --pack-destination packaging/dist
 shasum -a 256 packaging/dist/dsh-tui-nano-0.2.0.tgz
 ```
+
+日常 e2e 不设置 `NANO_RELEASE_VERIFY=1` 时只校验「两次打包同哈希」。`v0.2.0` tag 上的旧测试没有这个开关，哈希校验恒执行；含本开关的检出版本只在发布 tag 上复核历史产物。

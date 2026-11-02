@@ -227,13 +227,26 @@ function integrityOf(file) {
   return `sha512-${createHash('sha512').update(readFileSync(file)).digest('base64')}`
 }
 
-test('pack 产物可复现且与版本矩阵一致', () => {
+test('pack 产物可复现', () => {
   assert.match(ctx.packed.sha256, /^[0-9a-f]{64}$/)
   assert.ok(ctx.packed.tarball.endsWith(`dsh-tui-nano-${expectedVersion}.tgz`))
-  const matrix = readFileSync(path.join(repoRoot, 'docs/release/0.2.0/version-matrix.md'), 'utf8')
+})
+
+// 发布物在发布时打一次包，SHA 记进 version-matrix 后即冻结；之后改 src 通常会
+// 让当前 tarball 换哈希。日常 e2e 只校验「两次打包同哈希」，历史产物绑定改为
+// 发布验收时显式复核：切到发布 tag、设置 NANO_RELEASE_VERIFY=1。
+const releaseVerify = process.env.NANO_RELEASE_VERIFY === '1'
+
+test('pack 产物与版本矩阵一致（发布验收）', {
+  skip: releaseVerify ? false : '未设置 NANO_RELEASE_VERIFY=1（只在发布 tag 上复核历史产物）',
+}, () => {
+  const matrix = readFileSync(
+    path.join(repoRoot, `docs/release/${expectedVersion}/version-matrix.md`),
+    'utf8',
+  )
   assert.ok(
     matrix.includes(ctx.packed.sha256),
-    `version-matrix.md 未记录当前 tarball 的 SHA-256（${ctx.packed.sha256}）`,
+    `version-matrix.md 未记录当前 tarball 的 SHA-256（${ctx.packed.sha256}）；请确认当前在发布 tag（v${expectedVersion}）上运行`,
   )
 })
 

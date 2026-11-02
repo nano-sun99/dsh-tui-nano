@@ -6,15 +6,18 @@
 npm run test:e2e
 # 可选：带上 Node 版本矩阵
 NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
+# 可选：只在发布 tag 上复核 version-matrix 里冻结的产物哈希
+NANO_RELEASE_VERIFY=1 npm run test:e2e
 ```
 
-前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 59 个用例（按文件顶层 `test()` 计数）：安装 16 + 视觉 3 + 能力 1 + 交互 6 + 输入 5 + 跨会话 2 + 跨面 8 + 子代理 dock 5 + 会话生命周期 9 + 主链路 2 + Monitor 1 + 调度 1。发布证据运行显式设置了 `NANO_NODE_22` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip，59/59 全过。
+前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 60 个用例（按文件顶层 `test()` 计数）：安装 17（其中发布验收 1 条默认跳过）+ 视觉 3 + 能力 1 + 交互 6 + 输入 5 + 跨会话 2 + 跨面 8 + 子代理 dock 5 + 会话生命周期 9 + 主链路 2 + Monitor 1 + 调度 1。发布证据运行显式设置了 `NANO_NODE_22` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip；`NANO_RELEASE_VERIFY=1` 只在发布 tag 上复核 version-matrix 哈希时设置。
 
-## `release.test.mjs`（16）
+## `release.test.mjs`（17）
 
 | 用例                                   | 判据                                                                                                     |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `pack 产物可复现且与版本矩阵一致`      | 连打两次 SHA-256 相同；`version-matrix.md` 记录了该值；`dist/bin.js` 带 shebang；`src/`、`tests/` 不进包 |
+| `pack 产物可复现`                      | 连打两次 SHA-256 相同；文件名含版本；`dist/bin.js` 带 shebang；`src/`、`tests/` 不进包                   |
+| `pack 产物与版本矩阵一致（发布验收）`  | 设置 `NANO_RELEASE_VERIFY=1` 时，`version-matrix.md` 记录了当前 tarball 的 SHA-256；日常 e2e 跳过该条    |
 | `全新安装后 nano --version 可用`       | 合成前缀里 `npm install -g <tarball>`，bin 可执行，版本与 harness 正确                                   |
 | `--help 含用法与键位段`                | `--help` 有用法与从 keymap 源码生成的键位段                                                              |
 | `purge 无 --yes 且非交互时拒绝`        | 退出非零、提示 `--yes`、数据根原样保留                                                                   |

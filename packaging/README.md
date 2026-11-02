@@ -42,6 +42,6 @@ npm uninstall -g dsh-tui-nano
 | --- | --- | --- |
 | 键位区块与源码一致 | `node scripts/keymap-docs.mjs --check` | `prepack` 与发布验收 |
 | tarball 内容、入口 shebang | `node scripts/prepack-check.mjs` | `prepack` 与发布验收 |
-| 安装/升级/purge/卸载/重装 | `npm run test:e2e` | 发布验收 |
+| 安装/升级/purge/卸载/重装 | `NANO_RELEASE_VERIFY=1 npm run test:e2e`（发布 tag 上跑，见 `docs/release/0.2.0/version-matrix.md` 复现段） | 发布验收 |
 
 `tests/e2e` 全部使用合成的 `HOME` / `DSH_HOME` / 安装前缀，不读写用户的真实数据根。

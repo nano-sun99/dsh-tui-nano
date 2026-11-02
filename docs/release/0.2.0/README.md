@@ -19,14 +19,21 @@
 ## 复核方式
 
 ```sh
+# 发布物按 tag 冻结：先切到发布 tag 再复核
+git switch --detach v0.2.0
 npm ci
 npm run build
 npm test
-NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
+NANO_RELEASE_VERIFY=1 \
+  NANO_NODE_22=<node-22.19> \
+  NANO_NODE_20=<node-20> \
+  npm run test:e2e
 mkdir -p packaging/dist
 npm pack --pack-destination packaging/dist
 shasum -a 256 packaging/dist/dsh-tui-nano-0.2.0.tgz
 ```
+
+`v0.2.0` tag 上的测试是旧版，哈希校验恒执行、开关不生效；含该开关的检出版本才靠它复核。细则见 [`version-matrix.md`](version-matrix.md) 复现段。
 
 前置：macOS arm64 + Ghostty；Node 22.19 与 24.x 各一份（证据运行用 nvm 的 v22.19.0 与 v24.18.0，另用 v20.20.0 验证拒绝启动）。所有测试使用合成 `HOME` / `DSH_HOME` / 数据根 / 安装前缀；npm cache 固定在系统临时目录，不写 `~/.npm`。
 
