@@ -143,6 +143,31 @@ function renderNode(node: ReactNode, width = 80, height = 10): string {
   return renderer.snapshotLines().join('\n')
 }
 
+describe('SubagentNavigation：审批强制退回主视图', () => {
+  it('restores the root draft and keeps it when re-entering', async () => {
+    const { dock, nav, input, drafts, emit } = setup({
+      entries: [
+        { kind: 'child', id: 'a', mode: 'continuable', label: '任务 A', activity: 'running' },
+      ],
+      inputHistory: ['root history'],
+    })
+    emit('subagent/start', { id: 'a' })
+    await dock.refresh()
+    input.insert('root draft')
+    expect(nav.handlePress('subagent:row:a')).toBe(true)
+    await flush()
+    expect(nav.view).toMatchObject({ mode: 'child', id: 'a' })
+    input.insert('child draft')
+    nav.resetToMain()
+    expect(nav.view).toMatchObject({ mode: 'main' })
+    expect(input.text).toBe('root draft')
+    expect(drafts.get({ root: 'root' })?.text).toBe('root draft')
+    expect(nav.handlePress('subagent:row:a')).toBe(true)
+    await flush()
+    expect(drafts.get({ root: 'root' })?.text).toBe('root draft')
+  })
+})
+
 describe('SubagentNavigation：dock 焦点与进入', () => {
   it('空草稿按 ↑ 聚焦 dock，Enter 进入详情', async () => {
     const { dock, nav, emit } = setup({

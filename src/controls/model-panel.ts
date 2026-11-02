@@ -258,7 +258,7 @@ export class ModelPanel {
     }
   }
 
-  private close(): void {
+  close(): void {
     this.submitToken += 1
     this.visible = false
     if (this.timer) clearInterval(this.timer)

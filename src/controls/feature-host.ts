@@ -523,6 +523,7 @@ export class Features implements FeatureHost {
     this.info?.hide()
     this.sessions?.hide()
     this.jobs?.hide()
+    this.modelPanel?.close()
     this.completions?.dismiss()
   }
 

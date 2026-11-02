@@ -264,10 +264,10 @@ export class Completions {
     return count
   }
 
-  /** 打开其他面板时收起补全。 */
+  /** 打开其他面板时收起补全；飞行中的查询也要作废，否则会回来重开。 */
   dismiss(): void {
-    if (!this.session.isOpen) return
-    this.session.close()
+    ++this.requestToken
+    if (this.session.isOpen) this.session.close()
     this.options.onChange()
   }
 
