@@ -1,6 +1,8 @@
 # 0.2.0 功能面证据矩阵（beta §5）
 
-- 日期：2026-10-30
+> **2026-11-02 更新**：本版改为 GitHub Release `v0.2.0` 发布，npm registry 不发布。下方「本版不发布」与「必须发布 registry 后 `npm view`」按 2026-10-30 历史保留；`dist.integrity` 已与本地 tarball 核对一致，`npm view` 不适用。
+
+- 日期：2026-10-30（2026-11-02 发布改判，见文首说明）
 - 口径：覆盖 = 该组每个必测子项都有真机或功能/单元测试证据；部分 = 主路径有证据、仍有子项未取证；边界 = 本版无对应 UI 或不可自动模拟，需 owner 认可后按边界处理；未覆盖 = 尚未取证。
 - 本文件不替代 spec；只把 `release-conclusion.md` 的「功能面」阻断拆到可验收的粒度。
 
@@ -29,11 +31,11 @@
 2. 真实物理断网：只能模拟连接不可达（`127.0.0.1:9` 连接被拒）；不切系统网络。仓库没有 DNS 用例，不宣称验证过 DNS。
 3. 冷改名四种失败路径、终端缺口 / 背压、`!` inject step boundary、Monitor 切根停止、子代理审批 / 续聊、调度 CAS / 无暂停 / 非严格一次：本版无对应 UI 或属官方语义；按边界或后续单处理。
 4. 压缩：nano 不实现独立压缩界面，`/compact` 原样转发官方命令；压缩行为与证据由官方核心负责。该行归类随 2026-10-30 PR #103 修订（用户选「改」）一并获批。
-5. `dist.integrity`：必须发布 registry 后 `npm view`；本版不发布，保留本地期望值，发布后外部核对。
+5. `dist.integrity`：原口径为发布 registry 后 `npm view`；2026-11-02 改判为 GitHub Release、npm registry 不发布，`npm view` 不适用；本地 SHA-512 已核对一致。
 
 ## 结论
 
 - 功能面 16 组中 2 组「覆盖」、13 组「部分」、1 组「边界」（压缩）；另有 5 条边界说明（含物理断网、`dist.integrity`）由 owner 2026-10-30 认可。
 - 断网 PTY 模拟已补，但只有「连接被拒」一条路径；真实物理断网按边界认可。
 - B3 九面已覆盖：`cross-surface.test.mjs` 8 项 + `schedule-surface.test.mjs` 1 项（含 A/B 正控与门面投影）。
-- 本版不发布；`dist.integrity` 留作发布后外部核对。
+- 本版发布渠道为 GitHub Release `v0.2.0`（npm registry 不发布）；`dist.integrity` 已本地核对。

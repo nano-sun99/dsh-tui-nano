@@ -1,8 +1,8 @@
 # dsh-tui-nano 0.2.0 发布验收
 
 - 规格：`docs/specs/2026-10-28-nano-ts/S03-release.md`；执行单：#88。
-- **结论：不发布。** 打包、安装链与 Rust/bridge 退场已完成；§3.3 的必测项除用户 2026-10-30 认可按边界结案的项外均已取证。本版由用户拍板不发布，`dist.integrity` 留作发布后外部核对。详见 [`release-conclusion.md`](release-conclusion.md)。
-- 产物：`packaging/dist/dsh-tui-nano-0.2.0.tgz`，SHA-256 `384215a2…`（完整值见 [`version-matrix.md`](version-matrix.md)）。
+- **结论：发布（2026-11-02 用户拍板改判）。** 发行渠道为 **GitHub Release `v0.2.0`**，附件是当前 `main`（`0e43397`）构建的 tarball；**npm registry 仍不发布**。2026-10-30 的「不发布」结论与 `dist.integrity` 外部核对项保留在 [`release-conclusion.md`](release-conclusion.md)，本次改判不改变 `npm view` 未验证的状态。
+- 产物：`packaging/dist/dsh-tui-nano-0.2.0.tgz`，SHA-256 `ea64a53e…`（2026-11-02 重建；完整值见 [`version-matrix.md`](version-matrix.md)）。
 
 ## 目录
 
@@ -12,9 +12,9 @@
 | `version-matrix.md` | 产物哈希、官方依赖、Node/Ghostty/macOS/CPU、复现命令 |
 | `known-limitations.md` | 必须披露的限制与证据未覆盖项 |
 | `feature-matrix.md` | 功能面 16 组逐项证据、部分 / 边界与剩余缺口 |
-| `evidence/tests-unit-feature.txt` | `npm run build && npm test`（单元 112 + 功能 25） |
+| `evidence/tests-unit-feature.txt` | `npm run build && npm test`（单元 112 + 功能 25；**2026-10-30 旧构建**，当前发布物未重跑） |
 | `evidence/ghostty/` | 真 Ghostty 截图（深/浅、60/100 列、CJK、diff、透明度）与 `summary.json` |
-| `evidence/e2e-release.txt` | 发布级 e2e 42 个用例全过（安装 16 + 视觉 3 + 能力 1 + 交互 6 + 输入 2 + 跨会话 10 + 主链路 2 + Monitor 1 + 调度 1） |
+| `evidence/e2e-release.txt` | 发布级 e2e 42 个用例全过（安装 16 + 视觉 3 + 能力 1 + 交互 6 + 输入 2 + 跨会话 10 + 主链路 2 + Monitor 1 + 调度 1；**2026-10-30 旧构建**，当前发布物未重跑） |
 
 ## 复核方式
 
@@ -30,7 +30,11 @@ shasum -a 256 packaging/dist/dsh-tui-nano-0.2.0.tgz
 
 前置：macOS arm64 + Ghostty；Node 22.19 与 24.x 各一份（证据运行用 nvm 的 v22.19.0 与 v24.18.0，另用 v20.20.0 验证拒绝启动）。所有测试使用合成 `HOME` / `DSH_HOME` / 数据根 / 安装前缀；npm cache 固定在系统临时目录，不写 `~/.npm`。
 
-当前无本版阻断项；功能面部分 / 边界、物理断网模拟按用户 2026-10-30 拍板结案，`dist.integrity` 属发布后外部核对项（见 `release-conclusion.md` §3）。
+当前无本版阻断项；功能面部分 / 边界、物理断网模拟按用户 2026-10-30 拍板结案。
+
+> **2026-11-02 发布物（`ea64a53e…`）的验证范围**：未重跑上表的 42 项 e2e 与旧单测快照；当前构建的验证以 PR #136 为准（vitest 399、feature 46、`main-chain` 2/2、`cross-surface` 8/8、typecheck 通过）。tarball 与 `main@0e43397` 的 `dist/` 已逐文件比对一致。
+>
+> **安装方式**：npm registry 未发布，不要执行 `npm install -g dsh-tui-nano`；请按 GitHub Release `v0.2.0` 的 Release notes 用下载后的 tarball 安装（`npm install -g <tarball>`）。
 
 ## 历史
 
