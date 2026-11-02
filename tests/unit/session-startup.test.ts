@@ -47,7 +47,9 @@ describe('CLI 启动模式', () => {
     expect(parseCli(['--root', 'purge'])).toMatchObject({ rootId: 'purge', purge: false })
     expect(parseCli(['-r', 'purge'])).toMatchObject({ resumeId: 'purge', purge: false })
     expect(parseCli(['-r', '--help'])).toMatchObject({ resumePanel: true, help: true })
-    expect(() => parseCli(['--root'])).toThrow('nano: --root 需要一个值')
+    expect(parseCli(['--root'])).toMatchObject({ rootMissing: true })
+    expect(parseCli(['--help', '--root'])).toMatchObject({ help: true, rootMissing: true })
+    expect(parseCli(['--version', '--root'])).toMatchObject({ version: true, rootMissing: true })
   })
 
   it('拒绝互斥组合', () => {

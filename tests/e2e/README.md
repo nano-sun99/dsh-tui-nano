@@ -8,7 +8,7 @@ npm run test:e2e
 NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 ```
 
-前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 51 个用例：安装 16 + 视觉 3 + 能力 1 + 交互 6 + 输入 2 + 跨会话 10 + 会话生命周期 9 + 主链路 2 + Monitor 1 + 调度 1。发布证据运行显式设置了 `NANO_NODE_22` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip，51/51 全过。
+前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 59 个用例（按文件顶层 `test()` 计数）：安装 16 + 视觉 3 + 能力 1 + 交互 6 + 输入 5 + 跨会话 2 + 跨面 8 + 子代理 dock 5 + 会话生命周期 9 + 主链路 2 + Monitor 1 + 调度 1。发布证据运行显式设置了 `NANO_NODE_22` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip，59/59 全过。
 
 ## `release.test.mjs`（16）
 

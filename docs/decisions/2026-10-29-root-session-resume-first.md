@@ -5,7 +5,7 @@
 - 决策人：用户
 - 适用范围：Nano 启动时根会话的创建/恢复、根身份一致性校验与历史回放
 - 取代：无
-- 被取代：无
+- 被取代：局部被 [ADR-20261102-nano-default-new-session](2026-11-02-nano-default-new-session.md) 取代（仅「否决每次启动生成新 session id」一条；resume-first 决定继续有效）
 - 决策来源：2026-10-29 实施审核发现「开启 resume 优先与 S01 §2.2 字面 create 冲突」；用户当日选择「接受并补文档（改旧 spec）」
 
 ## 决定

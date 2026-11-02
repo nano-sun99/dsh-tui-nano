@@ -12,7 +12,7 @@ import { createElement } from 'react'
 import { AppExit, AppRestart, NanoApp } from './app/nano-app.ts'
 import { Skeleton } from './app/skeleton.tsx'
 import { type PreparedCore, prepareCore, startCore } from './boot/assemble.ts'
-import { assertLaunchMode, type CliArgs, parseCli } from './boot/cli.ts'
+import { assertLaunchMode, parseCli } from './boot/cli.ts'
 import { recordLastSession } from './boot/last-session.ts'
 import { loadOfficial, type OfficialModules, PINNED_HARNESS_VERSION } from './boot/official.ts'
 import { type Paths, resolvePaths } from './boot/paths.ts'
@@ -37,13 +37,7 @@ import { featureBootPatches } from './sessions/boot-patches.ts'
 import { activeTheme } from './theme/theme.ts'
 
 export async function main(argv: readonly string[]): Promise<number> {
-  let args: CliArgs
-  try {
-    args = parseCli(argv)
-  } catch (error) {
-    reportVisible(message(error))
-    return 1
-  }
+  const args = parseCli(argv)
   if (args.help) {
     process.stdout.write(helpText())
     return 0
@@ -59,6 +53,11 @@ export async function main(argv: readonly string[]): Promise<number> {
     rmSync(paths.dataRoot, { recursive: true, force: true })
     process.stdout.write(`nano: 已删除数据根 ${paths.dataRoot}\n`)
     return 0
+  }
+  // `--root` 缺值不在解析期抛错：help / version / purge 的顺序保持不变。
+  if (args.rootMissing) {
+    reportVisible('nano: --root 需要一个值')
+    return 1
   }
   try {
     assertLaunchMode(args)

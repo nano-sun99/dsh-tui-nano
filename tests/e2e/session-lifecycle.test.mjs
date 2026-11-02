@@ -243,6 +243,22 @@ test('--help 显示新的启动矩阵，互斥组合在进 TUI 前报错', () =>
   assert.match(help.stdout, /--root <id>\s+使用指定会话身份/)
   assert.doesNotMatch(help.stdout, /默认沿用上一次的根/)
 
+  // 悬空 --root 不能抢在 help / version 前报错（spec §3.1 解析顺序）。
+  const helpDangling = spawnSync(nodeBin, [bin, '--help', '--root'], {
+    cwd: repoRoot,
+    env: env(),
+    encoding: 'utf8',
+  })
+  assert.equal(helpDangling.status, 0)
+  assert.match(helpDangling.stdout, /用法：nano/)
+  const versionDangling = spawnSync(nodeBin, [bin, '--version', '--root'], {
+    cwd: repoRoot,
+    env: env(),
+    encoding: 'utf8',
+  })
+  assert.equal(versionDangling.status, 0)
+  assert.match(versionDangling.stdout, /^nano /)
+
   const rootWithContinue = runPty('mutex-root', ['--root', 'x', '-c'], {
     cwd: workEmpty,
     until: null,

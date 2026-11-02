@@ -12,6 +12,8 @@ export interface CliArgs {
   readonly yes: boolean
   /** `--root <id>`：精确会话身份的低级逃生口。 */
   readonly rootId?: string
+  /** `--root` 缺值；不在解析期抛错，让 help / version / purge 的顺序不变。 */
+  readonly rootMissing: boolean
   /** `-c` / `--continue`：续接当前 cwd 最近的顶层会话。 */
   readonly continueSession: boolean
   /** `-r <id>`：精确恢复；与 `resumePanel` 互斥（解析时只会命中一个）。 */
@@ -26,6 +28,7 @@ export function parseCli(argv: readonly string[]): CliArgs {
   let purge = false
   let yes = false
   let rootId: string | undefined
+  let rootMissing = false
   let continueSession = false
   let resumeId: string | undefined
   let resumePanel = false
@@ -34,7 +37,10 @@ export function parseCli(argv: readonly string[]): CliArgs {
     const arg = argv[index]
     if (arg === '--root') {
       const value = argv[index + 1]
-      if (value === undefined) throw new Error('nano: --root 需要一个值')
+      if (value === undefined) {
+        rootMissing = true
+        continue
+      }
       rootId = value
       index += 1
       continue
@@ -76,6 +82,7 @@ export function parseCli(argv: readonly string[]): CliArgs {
     purge,
     yes,
     ...(rootId !== undefined ? { rootId } : {}),
+    rootMissing,
     continueSession,
     ...(resumeId !== undefined ? { resumeId } : {}),
     resumePanel,
