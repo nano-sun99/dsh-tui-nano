@@ -562,6 +562,17 @@ export class SubagentNavigation {
     this.options.onChange()
   }
 
+  /** Approval owns the screen: drop child/list views back to the main transcript. */
+  resetToMain(): void {
+    if (this.viewState.mode === 'child') {
+      this.closeChild()
+      this.viewState = initialView()
+    } else if (this.viewState.listOpen) {
+      this.viewState = closeList(this.viewState)
+    }
+    this.options.onChange()
+  }
+
   private closeList(): void {
     if (this.viewState.mode !== 'main') return
     this.viewState = closeList(this.viewState)

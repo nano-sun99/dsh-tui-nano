@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { App, type AppSnapshot } from '../../src/app/App.tsx'
 import {
   applyApprovalSettlement,
+  approvalCommandForCall,
   approvalCommandFromArgs,
+  approvalOwnsPress,
   buildApprovalCard,
+  compensateScroll,
   focusScrollOffset,
 } from '../../src/app/approval-card.ts'
 import { DecisionManager } from '../../src/decisions/manager.ts'
@@ -133,6 +136,29 @@ describe('approval helpers', () => {
     expect(fallback?.split('\n')[0]?.endsWith('…')).toBe(true)
     expect(approvalCommandFromArgs({})).toBeUndefined()
     expect(approvalCommandFromArgs(undefined)).toBeUndefined()
+  })
+
+  it('reads the command through the transcript lookup', () => {
+    const model = new TranscriptModel()
+    model.appendTool('call-1', 'bash', JSON.stringify({ command: 'npm test' }))
+    expect(approvalCommandForCall(model, 'call-1')).toBe('npm test')
+    expect(approvalCommandForCall(model, 'missing')).toBeUndefined()
+    expect(approvalCommandForCall(model, undefined)).toBeUndefined()
+  })
+
+  it('lets only approval rows own presses while a card is pending', () => {
+    expect(approvalOwnsPress('approval', 'subagent:row:a')).toBe(false)
+    expect(approvalOwnsPress('approval', 'subagent:back')).toBe(false)
+    expect(approvalOwnsPress('approval', 'decision:approval:1')).toBe(true)
+    expect(approvalOwnsPress('question', 'subagent:row:a')).toBe(true)
+    expect(approvalOwnsPress(undefined, 'subagent:row:a')).toBe(true)
+  })
+
+  it('compensates scroll when the card grows or shrinks', () => {
+    expect(compensateScroll(20, 10, 3, false)).toEqual({ offset: 13, stickBottom: false })
+    expect(compensateScroll(10, 20, 3, false)).toEqual({ offset: 0, stickBottom: true })
+    expect(compensateScroll(15, 20, 9, false)).toEqual({ offset: 4, stickBottom: false })
+    expect(compensateScroll(10, 20, 3, true)).toEqual({ offset: 3, stickBottom: true })
   })
 
   it('keeps the focus row inside the viewport', () => {

@@ -205,7 +205,23 @@ describe('approval settlement', () => {
     expect(seen).toEqual(['cancelled', 'unavailable'])
   })
 
-  it('reports an official abort as cancelled and does not double settle', async () => {
+  it('reports an official abort as cancelled', async () => {
+    const manager = new DecisionManager()
+    const seen: string[] = []
+    manager.onApprovalSettled((_prompt, outcome) => seen.push(outcome))
+    const controller = new AbortController()
+    const pending = manager.askApproval({
+      toolName: 'bash',
+      callId: 'c1',
+      signal: controller.signal,
+    })
+    await tick()
+    controller.abort()
+    await expect(pending).resolves.toBe('cancelled')
+    expect(seen).toEqual(['cancelled'])
+  })
+
+  it('does not settle twice when an abort follows a user choice', async () => {
     const manager = new DecisionManager()
     const seen: string[] = []
     manager.onApprovalSettled((_prompt, outcome) => seen.push(outcome))

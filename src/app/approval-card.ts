@@ -12,6 +12,7 @@ import {
 } from '../decisions/manager.ts'
 import { truncateText } from '../render/text.ts'
 import { EDGE, NESTED } from '../theme/spacing.ts'
+import { parseArgs } from '../transcript/model.ts'
 import { type Row, textSpan, wrapSpans } from '../transcript/spans.ts'
 
 export interface ApprovalCardParts {
@@ -145,4 +146,36 @@ export function focusScrollOffset(
   if (focus < start) return Math.min(maxScroll, offset + start - focus)
   if (focus >= start + height) return Math.max(0, offset - (focus - (start + height - 1)))
   return offset
+}
+
+/** Command for one call: transcript entry args → command block (spec §3.3). */
+export function approvalCommandForCall(
+  model: { toolEntryByCallId(callId: string): { readonly args: string } | undefined },
+  callId: string | undefined,
+): string | undefined {
+  if (callId === undefined) return undefined
+  const entry = model.toolEntryByCallId(callId)
+  if (entry === undefined) return undefined
+  return approvalCommandFromArgs(parseArgs(entry.args))
+}
+
+/** While an approval is pending it owns the screen: only its own rows are pressable. */
+export function approvalOwnsPress(
+  promptKind: 'approval' | 'question' | undefined,
+  id: string,
+): boolean {
+  return promptKind !== 'approval' || id.startsWith('decision:approval:')
+}
+
+/** Keep the top line stable when transcript content grows or shrinks. */
+export function compensateScroll(
+  total: number,
+  lastTotal: number | undefined,
+  offset: number,
+  stickBottom: boolean,
+): { offset: number; stickBottom: boolean } {
+  if (stickBottom || lastTotal === undefined || total === lastTotal) return { offset, stickBottom }
+  if (total > lastTotal) return { offset: offset + (total - lastTotal), stickBottom }
+  const next = Math.max(0, offset - (lastTotal - total))
+  return { offset: next, stickBottom: next === 0 ? true : stickBottom }
 }

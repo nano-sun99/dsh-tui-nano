@@ -29,7 +29,6 @@ import { writeHandoff } from '../runtime/handoff.ts'
 import { formatShutdownReport, Lifecycle } from '../runtime/lifecycle.ts'
 import type { Terminal } from '../runtime/terminal.ts'
 import { activeTheme } from '../theme/theme.ts'
-import { parseArgs } from '../transcript/model.ts'
 import type { Row } from '../transcript/spans.ts'
 import {
   App,
@@ -40,8 +39,10 @@ import {
 } from './App.tsx'
 import {
   applyApprovalSettlement,
-  approvalCommandFromArgs,
+  approvalCommandForCall,
+  approvalOwnsPress,
   buildApprovalCard,
+  compensateScroll,
   focusScrollOffset,
 } from './approval-card.ts'
 import { InputModel } from './input-model.ts'
@@ -124,6 +125,8 @@ export interface FeatureHost {
   handlePress?(id: string): boolean
   /** 滚轮先给 S02；返回 false 才滚主对话。 */
   handleWheel?(delta: number): boolean
+  /** 审批到达时收起详情 / 列表 / 终端等，保证审批卡可见。 */
+  resetToMain?(): void
   /** 详情 / 列表占满正文区。 */
   replacesTranscript?(): boolean
   inputPlaceholder?(): string | undefined
@@ -223,7 +226,13 @@ export class NanoApp {
     this.registerSignals()
     void conversation.model.onChange(() => this.scheduleRender())
     void conversation.onChange(() => this.scheduleRender())
-    this.decisions.onChange(() => this.scheduleRender())
+    let approvalOpen = this.decisions.prompt?.kind === 'approval'
+    this.decisions.onChange(() => {
+      const open = this.decisions.prompt?.kind === 'approval'
+      if (open && !approvalOpen) this.options.features?.resetToMain?.()
+      approvalOpen = open
+      this.scheduleRender()
+    })
     return finish.then((code) => {
       if (this.pendingRestart) throw new AppRestart(this.pendingRestart.rootId)
       throw new AppExit(code)
@@ -650,7 +659,7 @@ export class NanoApp {
   private handlePress(id: string): void {
     // 审批挂起时决策卡拥有焦点：任何非 decision 的点击都不能切走视图，
     // 否则卡片被隐藏但 ↑/↓/Enter 仍会结算（误 allow）。
-    if (this.decisions.prompt?.kind === 'approval' && !id.startsWith('decision:approval:')) return
+    if (!approvalOwnsPress(this.decisions.prompt?.kind, id)) return
     if (
       this.decisions.prompt?.kind === 'question' &&
       (!id.startsWith('decision:') ||
@@ -733,12 +742,7 @@ export class NanoApp {
   }
 
   private approvalCommand(prompt: ApprovalPrompt): string | undefined {
-    const entry =
-      prompt.callId !== undefined
-        ? this.options.conversation.model.toolEntryByCallId(prompt.callId)
-        : undefined
-    if (entry === undefined) return undefined
-    return approvalCommandFromArgs(parseArgs(entry.args))
+    return approvalCommandForCall(this.options.conversation.model, prompt.callId)
   }
 
   private approvalRowsFor(prompt: ApprovalPrompt): Row[] {
@@ -764,13 +768,7 @@ export class NanoApp {
     }).length
     const total = content + card.rows.length
     const height = Math.max(1, this.currentBodyHeight)
-    const start = Math.max(0, total - height - this.scrollOffset)
-    const focus = content + card.focusRow
-    if (focus < start)
-      this.scrollOffset = Math.min(this.maxScroll, this.scrollOffset + start - focus)
-    else if (focus >= start + height) {
-      this.scrollOffset = Math.max(0, this.scrollOffset - (focus - (start + height - 1)))
-    }
+    this.scrollOffset = focusScrollOffset(total, height, this.scrollOffset, content + card.focusRow)
     this.stickBottom = this.scrollOffset === 0
   }
 
@@ -784,12 +782,10 @@ export class NanoApp {
       expanded: this.expanded,
     })
     const total = lines.length + (approvalRows?.length ?? 0)
-    if (!this.stickBottom && this.lastTotalLines !== undefined) {
-      if (total > this.lastTotalLines) this.scrollOffset += total - this.lastTotalLines
-      else if (total < this.lastTotalLines) {
-        this.scrollOffset = Math.max(0, this.scrollOffset - (this.lastTotalLines - total))
-        if (this.scrollOffset === 0) this.stickBottom = true
-      }
+    if (this.lastTotalLines !== undefined) {
+      const next = compensateScroll(total, this.lastTotalLines, this.scrollOffset, this.stickBottom)
+      this.scrollOffset = next.offset
+      this.stickBottom = next.stickBottom
     }
     this.lastTotalLines = total
     const contextRatio = occupancyRatio(this.options.core.ctx, this.options.conversation.agent)
