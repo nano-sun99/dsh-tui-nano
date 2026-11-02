@@ -10,7 +10,7 @@
 
 ## 决定
 
-1. **UI transcript 不再保存工具结果的原始全文**。`completeTool` 在写入 `ToolEntry.resultText` 前，把它投影成显示预览：头 24 行 + 尾 16 行 + 一行「省略 K 行」，每条保留行最多 500 个 UTF-16 码元。
+1. **UI transcript 不再保存工具结果的原始全文**。`completeTool` 在写入 `ToolEntry.resultText` 前，把它投影成显示预览：头 24 行 + 尾 16 行 + 一行「省略 K 行」，每条保留行的内容最多 500 个 UTF-16 码元（行内标记另计）。
 2. **截断必须产生新字符串**。任何发生截断的预览都用 `Array.from(preview).join('')` 重建，切断 V8 `SlicedString` 对原始大串的父引用；只用 `slice` / `substring` / 字符串拼接不算完成。
 3. **模型可见结果不变**。官方 `tool/result` 事件、session log 与模型上下文仍保留完整结果；本决定只处理 UI 留存的那一份。
 4. **渲染缓存按条目内容版本失效**。`ToolEntry` 增加 `rev`，`completeTool` 与 `markApprovalDecision` 每次变更递增；`toolUnit` 的昂贵构建移进 `cachedRows` 回调，缓存键使用组内每个条目的 `id:rev`，不再用 `resultText.length`。
@@ -35,7 +35,7 @@
 
 ## 接受的代价
 
-- 展开体从“头 40 行”变成“头 24 + 标记 + 尾 16”；中间被省略的内容不再出现在 UI，只能去 session/log 查。
+- 展开体从“头 40 行”变成“头 24 + 标记 + 尾 16”；中间被省略的内容不再出现在 UI，只能去 session/log 查。折叠失败摘要取自预览前 3 行，超长行会带行内截断标记。
 - 每条有界不等于总量有界；长会话的条目数仍会增长，整段 transcript 的淘汰/分页另立 issue。
 - 首次进 transcript 会扫描原文一次（计数与定位头尾），这是 O(N) 的一次成本；不得退化成每次重排都扫描。
 - `NANO_TOOL_PREVIEW_LINES` 调大等于让 UI 多存，是调试旋钮，不是内存优化。
