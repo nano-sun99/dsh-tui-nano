@@ -516,6 +516,17 @@ export class Features implements FeatureHost {
     return this.navigation?.handleWheel(delta) ?? false
   }
 
+  /** Approval owns the screen: close takeover views so the card is visible. */
+  resetToMain(): void {
+    this.navigation?.resetToMain()
+    this.terminal?.hide()
+    this.info?.hide()
+    this.sessions?.hide()
+    this.jobs?.hide()
+    this.modelPanel?.close()
+    this.completions?.dismiss()
+  }
+
   replacesTranscript(): boolean {
     return this.navigation?.replacesTranscript ?? false
   }

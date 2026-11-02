@@ -58,13 +58,19 @@ describe('renderer', () => {
     renderer.unmount()
   })
 
-  it('clears cells under an overlay so the layer is opaque to text', () => {
+  it('clears cells under an absolutely positioned layer', () => {
+    // The Overlay primitive was removed (ADR-20261101-approval-card-in-transcript);
+    // a plain absolute box still owns the `clear` behaviour.
     const { renderer } = createRenderer(6, 2)
     renderer.mount(
       box(
         { width: 6, height: 2, flexDirection: 'column' },
         text('AAAAAA'),
-        createElement('overlay', { clear: true }, text('X')),
+        createElement(
+          'box',
+          { position: 'absolute', left: 0, top: 0, width: '100%', height: 1, clear: true },
+          text('X'),
+        ),
       ),
     )
     renderer.flushFrame()

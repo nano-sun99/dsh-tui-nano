@@ -14,7 +14,12 @@ import {
   deliveryNotice,
   STEER_NOTICE,
 } from '../conversation/controller.ts'
-import { APPROVAL_OPTIONS, type ApprovalOutcome, DecisionManager } from '../decisions/manager.ts'
+import {
+  APPROVAL_OPTIONS,
+  type ApprovalOutcome,
+  type ApprovalPrompt,
+  DecisionManager,
+} from '../decisions/manager.ts'
 import { HISTORY_LIMIT, type HistoryStore } from '../input/history.ts'
 import { resolveKey } from '../input/keymap.ts'
 import type { InputEvent, Key } from '../input/parser.ts'
@@ -24,6 +29,7 @@ import { writeHandoff } from '../runtime/handoff.ts'
 import { formatShutdownReport, Lifecycle } from '../runtime/lifecycle.ts'
 import type { Terminal } from '../runtime/terminal.ts'
 import { activeTheme } from '../theme/theme.ts'
+import type { Row } from '../transcript/spans.ts'
 import {
   App,
   type AppSnapshot,
@@ -31,6 +37,14 @@ import {
   questionActivityCap,
   transcriptBodyHeight,
 } from './App.tsx'
+import {
+  applyApprovalSettlement,
+  approvalCommandForCall,
+  approvalOwnsPress,
+  buildApprovalCard,
+  compensateScroll,
+  focusScrollOffset,
+} from './approval-card.ts'
 import { InputModel } from './input-model.ts'
 import { NoticeState, type NoticeTone } from './notice.ts'
 import { buildQuestionCard, questionCardWindow } from './question-card.ts'
@@ -111,6 +125,8 @@ export interface FeatureHost {
   handlePress?(id: string): boolean
   /** 滚轮先给 S02；返回 false 才滚主对话。 */
   handleWheel?(delta: number): boolean
+  /** 审批到达时收起详情 / 列表 / 终端等，保证审批卡可见。 */
+  resetToMain?(): void
   /** 详情 / 列表占满正文区。 */
   replacesTranscript?(): boolean
   inputPlaceholder?(): string | undefined
@@ -176,6 +192,9 @@ export class NanoApp {
   async start(): Promise<void> {
     const { core, conversation, history } = this.options
     this.decisions.register(core.ctx)
+    this.decisions.onApprovalSettled((prompt, outcome) => {
+      applyApprovalSettlement(this.options.conversation.model, prompt, outcome)
+    })
     this.input.setHistory(history.entries().map((entry) => entry.display))
     this.options.terminal.refreshSize()
     this.options.renderer.resize(this.options.terminal.width, this.options.terminal.height)
@@ -207,7 +226,13 @@ export class NanoApp {
     this.registerSignals()
     void conversation.model.onChange(() => this.scheduleRender())
     void conversation.onChange(() => this.scheduleRender())
-    this.decisions.onChange(() => this.scheduleRender())
+    let approvalOpen = this.decisions.prompt?.kind === 'approval'
+    this.decisions.onChange(() => {
+      const open = this.decisions.prompt?.kind === 'approval'
+      if (open && !approvalOpen) this.options.features?.resetToMain?.()
+      approvalOpen = open
+      this.scheduleRender()
+    })
     return finish.then((code) => {
       if (this.pendingRestart) throw new AppRestart(this.pendingRestart.rootId)
       throw new AppExit(code)
@@ -463,8 +488,14 @@ export class NanoApp {
     const prompt = this.decisions.prompt
     if (!prompt) return
     if (prompt.kind === 'approval') {
-      if (key.name === 'up') this.decisions.move(-1)
-      else if (key.name === 'down') this.decisions.move(1)
+      if (key.name === 'up') {
+        this.decisions.move(-1)
+        this.revealApprovalFocus()
+      } else if (key.name === 'down') {
+        this.decisions.move(1)
+        this.revealApprovalFocus()
+      } else if (key.name === 'pageup') this.scrollBy(5)
+      else if (key.name === 'pagedown') this.scrollBy(-5)
       else if (key.name === 'enter') this.decisions.chooseApproval()
       else if (key.name === 'escape') this.decisions.escape()
       else if (key.name === 'char' && /^[1-4]$/u.test(key.text ?? '')) {
@@ -626,6 +657,9 @@ export class NanoApp {
   }
 
   private handlePress(id: string): void {
+    // 审批挂起时决策卡拥有焦点：任何非 decision 的点击都不能切走视图，
+    // 否则卡片被隐藏但 ↑/↓/Enter 仍会结算（误 allow）。
+    if (!approvalOwnsPress(this.decisions.prompt?.kind, id)) return
     if (
       this.decisions.prompt?.kind === 'question' &&
       (!id.startsWith('decision:') ||
@@ -707,16 +741,51 @@ export class NanoApp {
     return this.decisions.hasDecision || (this.options.features?.modelPanelRows?.() ?? 0) === 0
   }
 
+  private approvalCommand(prompt: ApprovalPrompt): string | undefined {
+    return approvalCommandForCall(this.options.conversation.model, prompt.callId)
+  }
+
+  private approvalRowsFor(prompt: ApprovalPrompt): Row[] {
+    return [
+      ...buildApprovalCard(prompt, this.approvalCommand(prompt), this.options.terminal.width).rows,
+    ]
+  }
+
+  /** Keep the focused approval option inside the transcript viewport. */
+  private revealApprovalFocus(): void {
+    const prompt = this.decisions.prompt
+    if (prompt?.kind !== 'approval') return
+    const card = buildApprovalCard(
+      prompt,
+      this.approvalCommand(prompt),
+      this.options.terminal.width,
+    )
+    if (card.focusRow < 0) return
+    const width = Math.max(1, this.options.terminal.width)
+    const content = this.options.conversation.model.layout({
+      width,
+      expanded: this.expanded,
+    }).length
+    const total = content + card.rows.length
+    const height = Math.max(1, this.currentBodyHeight)
+    this.scrollOffset = focusScrollOffset(total, height, this.scrollOffset, content + card.focusRow)
+    this.stickBottom = this.scrollOffset === 0
+  }
+
   private snapshot(): AppSnapshot {
     const width = this.options.terminal.width
+    const prompt = this.decisions.prompt
+    const approvalRows = prompt?.kind === 'approval' ? this.approvalRowsFor(prompt) : undefined
     const lines = this.options.conversation.model.layout({
       // 与 App.tsx 的 Transcript 同宽：折行宽度决定总行数，也决定滚动上限。
       width: Math.max(1, width),
       expanded: this.expanded,
     })
-    const total = lines.length
-    if (!this.stickBottom && this.lastTotalLines !== undefined && total > this.lastTotalLines) {
-      this.scrollOffset += total - this.lastTotalLines
+    const total = lines.length + (approvalRows?.length ?? 0)
+    if (this.lastTotalLines !== undefined) {
+      const next = compensateScroll(total, this.lastTotalLines, this.scrollOffset, this.stickBottom)
+      this.scrollOffset = next.offset
+      this.stickBottom = next.stickBottom
     }
     this.lastTotalLines = total
     const contextRatio = occupancyRatio(this.options.core.ctx, this.options.conversation.agent)
@@ -724,7 +793,6 @@ export class NanoApp {
     const modelPanelRows = this.options.features?.modelPanelRows?.() ?? 0
     const dockRows = this.options.features?.dockRows?.() ?? 0
     const inputPlaceholder = this.options.features?.inputPlaceholder?.()
-    const prompt = this.decisions.prompt
     const activityOwned = this.activityOwnedNow()
     const waiting =
       prompt?.kind === 'approval'
@@ -755,6 +823,7 @@ export class NanoApp {
       ...(this.notices.current
         ? { notice: { text: this.notices.current.text, tone: this.notices.current.tone } }
         : {}),
+      ...(approvalRows !== undefined ? { approvalRows } : {}),
       caretActive: this.options.features?.inputActive?.() ?? true,
       ...(contextRatio !== undefined ? { contextRatio } : {}),
       ...(completionRows > 0 ? { completionRows } : {}),

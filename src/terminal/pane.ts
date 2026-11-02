@@ -81,11 +81,11 @@ export class TerminalPane {
     // 重新打开时复用同一个 terminal id 与网格：不新建 PTY，避免配额与画面串台。
     if (!this.info) this.grid = new CellGrid(this.cols, this.rows)
     this.options.onChange()
+    const control = new AbortController()
     try {
       const terminal = this.options.ctx.get('terminalController')
       if (!terminal) throw new Error('terminalController 不可用')
       const id = this.info?.id ?? `nano-term-${this.options.sessionId}`
-      const control = new AbortController()
       // 先断旧流/旧 Peer，再附着；未确认输入不回放。
       this.abort?.abort()
       await this.peer?.dispose?.().catch?.(() => {})
@@ -103,6 +103,12 @@ export class TerminalPane {
       this.state = 'open'
       this.options.onChange()
     } catch (error) {
+      // A hide() during the await aborts the signal on purpose; stay closed.
+      if (control.signal.aborted) {
+        this.state = 'closed'
+        this.options.onChange()
+        return
+      }
       this.state = 'failed'
       this.error = String((error as { message?: string })?.message ?? error)
       this.options.writeDiagnostic(`nano: 终端打开失败：${this.error}`)
@@ -167,7 +173,9 @@ export class TerminalPane {
         this.options.onChange()
       }
     } catch (error) {
-      if (!this.closing && !this.abort?.signal.aborted) {
+      // hide() clears this.abort after aborting it; a closed pane must not
+      // come back as a spurious "terminal stream interrupted" failure.
+      if (!this.closing && this.state !== 'closed' && !this.abort?.signal.aborted) {
         this.state = 'failed'
         this.error = String((error as { message?: string })?.message ?? error)
         this.options.writeDiagnostic(`nano: 终端流中断：${this.error}`)
@@ -178,8 +186,9 @@ export class TerminalPane {
 
   /** 隐藏但保留 PTY：断开输出流，重新打开时用同一 id 重新附着。 */
   hide(): void {
-    this.abort?.abort()
+    const control = this.abort
     this.abort = undefined
+    control?.abort()
     void this.peer?.dispose?.().catch?.(() => {})
     this.peer = undefined
     this.stream = undefined

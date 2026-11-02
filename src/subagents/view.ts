@@ -562,6 +562,33 @@ export class SubagentNavigation {
     this.options.onChange()
   }
 
+  /** Approval owns the screen: drop child/list views back to the main transcript. */
+  resetToMain(): void {
+    if (this.viewState.mode === 'child') {
+      this.restoreMainInput(this.viewState)
+      this.viewState = initialView()
+    } else if (this.viewState.listOpen) {
+      this.viewState = closeList(this.viewState)
+    }
+    this.options.onChange()
+  }
+
+  /** Shared with returnFromChild: save the child draft, restore the root draft and history. */
+  private restoreMainInput(view: ChildView): void {
+    const child = this.childState
+    if (child?.mode === 'continuable') {
+      this.saveInput({ root: this.options.rootId, subagent: view.id })
+    }
+    this.closeChild()
+    this.restoreInput({ root: this.options.rootId }, true)
+    if (this.options.history !== undefined) {
+      this.options.input.setHistory(
+        this.options.history.entries(HISTORY_LIMIT).map((entry) => entry.display),
+      )
+    }
+    this.mainBeforeChild = undefined
+  }
+
   private closeList(): void {
     if (this.viewState.mode !== 'main') return
     this.viewState = closeList(this.viewState)
@@ -657,18 +684,8 @@ export class SubagentNavigation {
   private returnFromChild(): void {
     const view = this.viewState
     if (view.mode !== 'child') return
-    const child = this.childState
-    if (child?.mode === 'continuable') {
-      this.saveInput({ root: this.options.rootId, subagent: view.id })
-    }
     const left = leaveChild(view)
-    this.closeChild()
-    this.restoreInput({ root: this.options.rootId }, true)
-    if (this.options.history !== undefined) {
-      this.options.input.setHistory(
-        this.options.history.entries(HISTORY_LIMIT).map((entry) => entry.display),
-      )
-    }
+    this.restoreMainInput(view)
     // 回到进入前的同一主视图：列表来源保留滚动位置并把焦点行拉回视口；
     // 结果卡来源回到原滚动位置（主对话滚动由 S01 保留）。
     const base = this.mainBeforeChild ?? left.view
