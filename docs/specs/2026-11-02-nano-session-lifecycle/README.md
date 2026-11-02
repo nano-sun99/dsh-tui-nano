@@ -2,8 +2,8 @@
 
 - 组标识：`2026-11-02-nano-session-lifecycle`
 - 角色：单份 spec，总纲与执行规格合一
-- 状态：草案（待过闸）
-- Issue：待开（spec 合并后开执行单）
+- 状态：已完成（PR #149，2026-11-02；验收回填见 issue #143）
+- 实施 issue：[#143](https://github.com/nano-sun99/dsh-tui-nano/issues/143)
 - 结构：不拆——1 份 spec + 1 张执行 issue
 - 机制范围：M1–M7（见 §6）
 - 上游：
