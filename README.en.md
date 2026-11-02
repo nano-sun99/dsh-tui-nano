@@ -2,9 +2,9 @@
 
 **A minimal, restrained terminal interface for DeepSeek Harness.**
 
-[中文](README.md) · [Specs](docs/specs/2026-10-28-nano-ts/README.md) · [Release acceptance](docs/release/0.2.0/README.md)
+[中文](README.md) · [Specs](docs/specs/2026-10-28-nano-ts/README.md) · [Release acceptance](docs/release/0.2.1/README.md)
 
-> **0.2.0 (TypeScript rewrite).** Not published to the npm registry yet; acceptance and evidence live in `docs/release/0.2.0/`.<br>
+> **0.2.1.** Not published to the npm registry yet; acceptance and evidence live in `docs/release/0.2.1/`.<br>
 > This is an independent project, not an official DeepSeek product.
 
 ![status](https://img.shields.io/badge/status-release--candidate-orange)
@@ -153,8 +153,8 @@ Top-level layout:
 
 | Item | State |
 | --- | --- |
-| 0.2.0 release | **not published to the registry**; `npm pack` output installs globally, see `docs/release/0.2.0/` |
-| Platform | macOS arm64 + Ghostty verified by manual interaction; no 0.2.0 visual screenshots yet |
+| 0.2.1 release | **not published to the registry**; `npm pack` output installs globally, see `docs/release/0.2.1/` |
+| Platform | macOS arm64 + Ghostty verified by manual interaction; no 0.2.1 visual screenshots yet (0.2.0 evidence retained) |
 | First publish | dist-tag `next`; promote to `latest` after the release conclusion passes |
 
 ## Known limitations

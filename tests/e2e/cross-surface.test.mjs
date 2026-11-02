@@ -125,7 +125,7 @@ function runRoot({
   })
 }
 
-function runSequence({ rootId, steps, wait = 10, split, port = 9 }) {
+function runSequence({ rootId, steps, wait = 10, split, port = 9, permissionMode }) {
   const out = path.join(home, `seq-${rootId}.bin`)
   const splitPath = split ? path.join(home, `seq-split-${rootId}.bin`) : undefined
   const args = [
@@ -146,7 +146,10 @@ function runSequence({ rootId, steps, wait = 10, split, port = 9 }) {
     JSON.stringify(steps),
   ]
   if (splitPath) args.push('--split-out', splitPath)
-  args.push('--', nodeBin, path.join(repoRoot, 'dist', 'bin.js'), '--root', rootId)
+  const cli = [nodeBin, path.join(repoRoot, 'dist', 'bin.js')]
+  if (permissionMode) cli.push('--permission-mode', permissionMode)
+  cli.push('--root', rootId)
+  args.push('--', ...cli)
   return new Promise((resolve) => {
     const child = spawn('python3', args, {
       cwd: repoRoot,
@@ -262,6 +265,7 @@ test('Monitor：A 的后台任务与监听器不出现在 B', async () => {
     const a = await runSequence({
       rootId: 'monitor-a',
       port: mock.port,
+      permissionMode: 'workspace-write',
       split: true,
       steps: [
         { send: '启动后台任务\r', until: '是否运行这条检查命令？', timeout: 20 },
@@ -272,6 +276,7 @@ test('Monitor：A 的后台任务与监听器不出现在 B', async () => {
     })
     const b = await runSequence({
       rootId: 'monitor-b',
+      permissionMode: 'workspace-write',
       split: true,
       steps: [{ send: '\u001b[106;5u', until: '任务', timeout: 10 }],
     })
