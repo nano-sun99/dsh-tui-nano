@@ -56,12 +56,12 @@ function startMock(mode) {
   })
 }
 
-function saveEvidence(name, screen) {
+// 证据直接用断言那块 Screen（已按用例实际宽高喂过），不在这里另开固定尺寸重排：
+// 60 列用例的断言与证据必须是同一块屏，否则证据宽度和应用实际宽度对不上。
+function saveEvidence(name, model) {
   const dir = process.env.NANO_EVIDENCE_DIR
   if (!dir) return
   mkdirSync(dir, { recursive: true })
-  const model = new Screen(100, 30)
-  model.feed(screen)
   writeFileSync(path.join(dir, `${name}.txt`), model.lines().join('\n'))
 }
 
@@ -126,7 +126,7 @@ test('真实 PTY：subagent 工具启动子代理后 dock 入列并显示状态'
       'dock 应是终端最后一块',
     )
     assert.match(lines[dockIndex] ?? '', /完成/, 'dock 应显示完成态的视觉结果')
-    saveEvidence('pty-dock', screen)
+    saveEvidence('pty-dock', final)
   } finally {
     if (mock) mock.child.kill('SIGKILL')
     rmSync(home, { recursive: true, force: true })
@@ -229,7 +229,7 @@ test('真实 PTY：60 列下 dock 仍在状态栏之后，不压输入', async (
       lines.slice(dockIndex + 1).every((line) => line.trim() === ''),
       'dock 应是终端最后一块',
     )
-    saveEvidence('pty-dock-60', screen)
+    saveEvidence('pty-dock-60', final)
   } finally {
     if (mock) mock.child.kill('SIGKILL')
     rmSync(frame.home, { recursive: true, force: true })
@@ -251,10 +251,13 @@ test('真实 PTY：Alt+L 打开全部子代理列表并显示计数', async () =
     })
     assert.equal(result.status, 0, `pty-start.py 失败：${result.stderr}`)
     const screen = readFileSync(frame.out, 'utf8').replaceAll(frame.home, '<home>')
-    assert.match(screen, /全部子代理 · 1/, '列表标题应显示本地直接子代理计数')
-    assert.match(screen, /查找配置依赖/, '列表应出现子代理名字')
-    assert.match(screen, /×/, '列表应有关闭按钮')
-    saveEvidence('pty-list', screen)
+    const final = new Screen(100, 30)
+    final.feed(screen)
+    const flat = final.lines().join('\n')
+    assert.match(flat, /全部子代理 · 1/, '列表标题应显示本地直接子代理计数')
+    assert.match(flat, /查找配置依赖/, '列表应出现子代理名字')
+    assert.match(flat, /×/, '列表应有关闭按钮')
+    saveEvidence('pty-list', final)
   } finally {
     if (mock) mock.child.kill('SIGKILL')
     rmSync(frame.home, { recursive: true, force: true })
@@ -284,7 +287,7 @@ test('真实 PTY：从 dock 进入详情，顶部标识与输入占位按设计�
     assert.match(flat, /给 查找配置依赖 发送消息/, '详情输入框应显示设计稿占位')
     assert.match(flat, /子任务：核对配置依赖/, '详情应显示 child 正文')
     assert.doesNotMatch(flat, /读取中…/, '详情不应停在读取中')
-    saveEvidence('pty-detail', screen)
+    saveEvidence('pty-detail', final)
   } finally {
     if (mock) mock.child.kill('SIGKILL')
     rmSync(frame.home, { recursive: true, force: true })
@@ -315,7 +318,7 @@ test('真实 PTY：终态 30 秒后 dock 行消失，父对话回执仍在', asy
       /Background subagent .* finished and will do no further work/,
       '父对话的 settlement notice 仍应保留',
     )
-    saveEvidence('pty-grace', text)
+    saveEvidence('pty-grace', screen)
   } finally {
     if (mock) mock.child.kill('SIGKILL')
     rmSync(frame.home, { recursive: true, force: true })
