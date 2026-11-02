@@ -452,6 +452,11 @@ export class Features implements FeatureHost {
     // 否则官方会在 append 发布期间报 "session append cannot reenter"。
     setImmediate(() => {
       if (this.context !== context || this.compactInFlight) return
+      if (context.conversation.status !== 'idle') {
+        // 官方在 turn/end 后可能已用微任务开了下一回合；放回 pending 等它再 idle。
+        this.compactPending ??= pending
+        return
+      }
       void this.runCompact(context, pending)
     })
   }
@@ -757,6 +762,8 @@ export class Features implements FeatureHost {
 
   async dispose(): Promise<void> {
     // 会话切换 / 受控重启 / 退出：取消还没执行的压缩。
+    // context 先清掉：已排程的 setImmediate 靠它判断是否还在同一会话。
+    this.context = undefined
     this.disposeCompactWatcher?.()
     this.disposeCompactWatcher = undefined
     this.compactPending = undefined
@@ -781,6 +788,5 @@ export class Features implements FeatureHost {
     this.schedule = undefined
     await this.storage?.dispose()
     this.storage = undefined
-    this.context = undefined
   }
 }

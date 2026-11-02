@@ -99,6 +99,50 @@ describe('compact queue', () => {
     expect(execute).not.toHaveBeenCalled()
   })
 
+  it('keeps pending when the next turn starts before the deferred check', async () => {
+    const execute = vi.fn(async () => ({ result: { kind: 'success', text: 'ok' } }))
+    const { context } = fakeContext('running', execute)
+    const features = new Features() as unknown as {
+      context: unknown
+      runCompactCommand(context: unknown, raw: string): Promise<void>
+      onConversationChange(): void
+    }
+    features.context = context
+    await features.runCompactCommand(context, '/compact')
+
+    ;(context as any).conversation.status = 'idle'
+    features.onConversationChange()
+    // 官方在 turn/end 后的微任务里直接开下一回合。
+    ;(context as any).conversation.status = 'running'
+    await flush()
+    expect(execute).not.toHaveBeenCalled()
+
+    ;(context as any).conversation.status = 'idle'
+    features.onConversationChange()
+    await flush()
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels a scheduled compact as soon as dispose starts', async () => {
+    const execute = vi.fn()
+    const { context } = fakeContext('running', execute)
+    const features = new Features() as unknown as {
+      context: unknown
+      runCompactCommand(context: unknown, raw: string): Promise<void>
+      onConversationChange(): void
+      dispose(): Promise<void>
+    }
+    features.context = context
+    await features.runCompactCommand(context, '/compact')
+
+    ;(context as any).conversation.status = 'idle'
+    features.onConversationChange()
+    const disposing = features.dispose()
+    await flush()
+    await disposing
+    expect(execute).not.toHaveBeenCalled()
+  })
+
   it('drops a queued compact on dispose', async () => {
     const execute = vi.fn()
     const { context } = fakeContext('running', execute)
