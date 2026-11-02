@@ -67,7 +67,17 @@ function startMock(mode) {
   })
 }
 
-function runRoot({ rootId, port, send, sendRaw, sendUntil, wait = 10, sendWait = 8, split }) {
+function runRoot({
+  rootId,
+  port,
+  send,
+  sendRaw,
+  sendUntil,
+  wait = 10,
+  sendWait = 8,
+  split,
+  permissionMode,
+}) {
   const out = path.join(home, `screen-${rootId}.bin`)
   const splitPath = split ? path.join(home, `split-${rootId}.bin`) : undefined
   const args = [
@@ -89,7 +99,10 @@ function runRoot({ rootId, port, send, sendRaw, sendUntil, wait = 10, sendWait =
   if (send) args.push('--send', send, '--send-wait', String(sendWait))
   if (sendUntil) args.push('--send-until', sendUntil)
   if (sendRaw) args.push('--send-raw', sendRaw, '--send-wait', String(sendWait))
-  args.push('--', nodeBin, path.join(repoRoot, 'dist', 'bin.js'), '--root', rootId)
+  const cli = [nodeBin, path.join(repoRoot, 'dist', 'bin.js')]
+  if (permissionMode) cli.push('--permission-mode', permissionMode)
+  cli.push('--root', rootId)
+  args.push('--', ...cli)
   return new Promise((resolve) => {
     const child = spawn('python3', args, {
       cwd: repoRoot,
@@ -217,6 +230,7 @@ test('审批：A 的待确认卡不出现在 B', async () => {
       sendUntil: '是否运行这条检查命令？',
       sendWait: 20,
       split: true,
+      permissionMode: 'workspace-write',
     })
     const b = await runRoot({ rootId: 'approval-b', wait: 6 })
     expectOnlyInA(a, b, '是否运行这条检查命令？')

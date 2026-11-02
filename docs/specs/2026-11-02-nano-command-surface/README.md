@@ -210,3 +210,6 @@
 | 10 | 轻微 | 默认值验收未 unset `DSH_PERMISSION_MODE` | 已改：§5 项 1 / 两项补 `unset` |
 | 11 | 轻微 | §3.5 / §7 对 `env.ts` / `main.ts` 落点表述不一致 | 已改：统一为 `main.ts` 写 env，`env.ts` 只设 `NODE_ENV` |
 | 12 | 轻微 | §6 M4 未覆盖进度态与压缩中提示 | 已改：M4 补进度态与压缩中提示 |
+| 13 | 重要 | 实施轻审：排队压缩在下一回合已开始时执行并丢失 pending | 已改：`setImmediate` 内重新确认 idle，运行中则放回 pending |
+| 14 | 轻微 | 实施轻审：dispose 异步窗口内可能仍执行已排程压缩 | 已改：dispose 开头清 context，排程回调据此取消 |
+| 15 | 轻微 | 实施轻审：`tests/e2e/README.md` 格式重排噪声 | 已改：恢复原格式，只保留内容变更 |

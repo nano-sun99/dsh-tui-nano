@@ -58,7 +58,17 @@ function startMock(mode) {
   })
 }
 
-function runChain({ port, mode, send, workspace, sendUntil, keys, keysUntil, clickMarker }) {
+function runChain({
+  port,
+  mode,
+  send,
+  workspace,
+  sendUntil,
+  keys,
+  keysUntil,
+  clickMarker,
+  permissionMode = 'workspace-write',
+}) {
   const home = mkdtempSync(path.join(os.tmpdir(), 'nano-main-'))
   const dshHome = path.join(home, '.dsh')
   const out = path.join(home, 'screen.bin')
@@ -85,7 +95,10 @@ function runChain({ port, mode, send, workspace, sendUntil, keys, keysUntil, cli
   if (keys) args.push('--keys', keys, '--keys-wait', '15')
   if (keysUntil) args.push('--keys-until', keysUntil)
   if (clickMarker) args.push('--click-marker', clickMarker, '--click-wait', '3')
-  args.push('--', nodeBin, path.join(repoRoot, 'dist', 'bin.js'), '--root', `main-${mode}`)
+  const cli = [nodeBin, path.join(repoRoot, 'dist', 'bin.js')]
+  if (permissionMode) cli.push('--permission-mode', permissionMode)
+  cli.push('--root', `main-${mode}`)
+  args.push('--', ...cli)
   try {
     const result = spawnSync('python3', args, {
       cwd: repoRoot,
@@ -157,6 +170,31 @@ test('同一条链路：默认拒绝时不执行命令，mock 也不谎报完成
     assert.ok(!existsSync(path.join(workspace, 'approval-ok.txt')), '拒绝后命令不应执行')
     assert.match(screen, /主链路结束：审批被拒绝或命令失败。/, 'mock 应按 is_error 返回失败文本')
     assert.doesNotMatch(screen, /审批已通过/, '拒绝后不得出现成功文本')
+  } finally {
+    if (mock) mock.child.kill('SIGKILL')
+    rmSync(workspace, { recursive: true, force: true })
+  }
+})
+
+test('默认 bypass：不弹审批，bash 直接执行', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'nano-main-ws-'))
+  let mock
+  try {
+    writeFileSync(path.join(workspace, 'note.txt'), 'old line\n')
+    mock = await startMock('chain')
+    const { code, screen } = runChain({
+      port: mock.port,
+      mode: 'chain-bypass',
+      send: '改文件并跑一次审批',
+      workspace,
+      sendUntil: '主链路完成',
+      permissionMode: null,
+    })
+    assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
+    assert.doesNotMatch(screen, /是否运行这条检查命令？/, '默认 bypass 下不应弹审批卡')
+    assert.equal(readFileSync(path.join(workspace, 'note.txt'), 'utf8'), 'new line\n')
+    assert.ok(existsSync(path.join(workspace, 'approval-ok.txt')), 'bash 应在无审批下执行')
+    assert.match(screen, /主链路完成：文件已改、审批已通过。/, '应收到最终回复')
   } finally {
     if (mock) mock.child.kill('SIGKILL')
     rmSync(workspace, { recursive: true, force: true })

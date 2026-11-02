@@ -114,6 +114,8 @@ npm uninstall -g dsh-tui-nano
 
 完整键位与参数见 `nano --help`。启动方式：`nano` 新建会话；`nano -c` 续接当前目录最近的会话；`nano -r` 打开会话选择器（`-r <id>` 精确恢复）；`nano --root <id>` 指定会话身份（不存在则新建）。`!command` 以你的用户权限运行，不是 Agent 授权；输出会作为合成上下文注入，但不唤醒模型。
 
+权限模式：新会话默认 `danger-full-access`（沙箱关闭、审批 `never`），普通命令不再逐次确认。启动时可用 `--permission-mode read-only|workspace-write|danger-full-access` 临时覆盖，`--dangerously-skip-permissions` 等价于 `danger-full-access`；优先级为 CLI > `DSH_PERMISSION_MODE` > 默认值。已有会话保留自己 pin 的 preset，要切换请在会话内执行 `/permission danger-full-access`。显式选择 `workspace-write` 时，PTY 仍可能因 `/dev/ptmx` 被拒而弹审批卡。
+
 ## 主题与透明
 
 - `NANO_THEME=dark|light` 选择 Nano 自有界面的配色，默认 `dark`；启动时读取一次，修改后重启生效。
