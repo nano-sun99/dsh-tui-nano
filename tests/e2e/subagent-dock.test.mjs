@@ -2,7 +2,7 @@
 // 观察 dock 入列、状态词与完成后的保留。不开窗口、不抢焦点。
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -134,7 +134,10 @@ test('真实 PTY：subagent 工具启动子代理后 dock 入列并显示状态'
 })
 
 function runSubagentScreen() {
-  const home = mkdtempSync(path.join(os.tmpdir(), 'nano-subagent-'))
+  // realpath 一次：macOS 的 os.tmpdir() 给 `/var/folders/…`，而子进程 chdir 之后
+  // `process.cwd()` 拿到的是 `/private/var/folders/…`。HOME 不先归一，`shortenHome`
+  // 的 startsWith 永远不成立，`~/…` 缩写也就不会发生。
+  const home = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'nano-subagent-')))
   const dshHome = path.join(home, '.dsh')
   const out = path.join(home, 'screen.bin')
   return { home, dshHome, out }
@@ -188,9 +191,10 @@ function spawnScreen({
 }
 
 // 状态行右侧提示是「有空间才保留，否则让位」（spec 2026-10-30-nano-input-caret-notice §4）。
-// 60 列时左槽 cwd 一长，提示就会被挤掉：仓库检出路径只要在 33–44 字符之间（不触发
-// displayCwd 的 44 字折叠）就会让这条用例随路径翻脸。这里把工作目录钉在家目录下的
-// `p`（显示成 `~/p`），断言才不依赖仓库放在哪。
+// 60 列下左槽上限是 31 列（60 - 2×2ch 边距 - 24 列提示 - 1 空格）；cwd 一长提示就没了。
+// 仓库检出路径只要落在「不触发 displayCwd 折叠」或「折叠后仍超 31」的区间，这条用例就会
+// 随路径翻脸。把工作目录钉在 $HOME/p（HOME 是 runSubagentScreen 里 realpath 过的临时家目录），
+// 显示成 `~/p`（3 列），断言才与仓库放哪、TMPDIR 指哪都无关。
 test('真实 PTY：60 列下 dock 仍在状态栏之后，不压输入', async () => {
   const frame = runSubagentScreen()
   const workdir = path.join(frame.home, 'p')
