@@ -1,8 +1,8 @@
 # dsh-tui-nano 0.2.0 发布验收
 
 - 规格：`docs/specs/2026-10-28-nano-ts/S03-release.md`；执行单：#88。
-- **结论：不发布。** 打包、安装链与 Rust/bridge 退场已完成；§3.3 的必测项除用户 2026-10-30 认可按边界结案的项外均已取证。本版由用户拍板不发布，`dist.integrity` 留作发布后外部核对。详见 [`release-conclusion.md`](release-conclusion.md)。
-- 产物：`packaging/dist/dsh-tui-nano-0.2.0.tgz`，SHA-256 `384215a2…`（完整值见 [`version-matrix.md`](version-matrix.md)）。
+- **结论：发布（2026-11-02 用户拍板改判）。** 发行渠道为 **GitHub Release `v0.2.0`**，附件是当前 `main`（`0e43397`）构建的 tarball；**npm registry 仍不发布**。2026-10-30 的「不发布」结论与 `dist.integrity` 外部核对项保留在 [`release-conclusion.md`](release-conclusion.md)，本次改判不改变 `npm view` 未验证的状态。
+- 产物：`packaging/dist/dsh-tui-nano-0.2.0.tgz`，SHA-256 `ea64a53e…`（2026-11-02 重建；完整值见 [`version-matrix.md`](version-matrix.md)）。
 
 ## 目录
 
