@@ -10,6 +10,7 @@ import { graphemes } from '../render/text.ts'
 import { EDGE, INDENT } from '../theme/spacing.ts'
 import { diffsFromMeta, type FileDiff, renderDiffs } from './diff.ts'
 import { renderMarkdown } from './markdown.ts'
+import { previewToolResult } from './preview.ts'
 import { type Row, textSpan, wrapSpans } from './spans.ts'
 
 export interface Block {
@@ -67,10 +68,13 @@ export interface ToolEntry {
   readonly name: string
   readonly args: string
   readonly status: 'running' | 'ok' | 'error'
+  /** Display preview projected at `completeTool`; never the raw payload. */
   readonly resultText?: string
   readonly resultMeta?: unknown
   /** User-facing approval decision (spec §3.9); allowed-once leaves no row. */
   readonly decision?: ApprovalDecision
+  /** Content revision used as the render-cache key (spec §3.5). */
+  readonly rev: number
 }
 
 export interface NoticeEntry {
@@ -200,6 +204,7 @@ export class TranscriptModel {
       name,
       args,
       status: 'running',
+      rev: 0,
     })
     this.notify()
   }
@@ -224,7 +229,7 @@ export class TranscriptModel {
     if (index < 0) return false
     const entry = this.entries[index] as ToolEntry
     if (entry.decision !== outcome) {
-      this.entries[index] = { ...entry, decision: outcome }
+      this.entries[index] = { ...entry, decision: outcome, rev: entry.rev + 1 }
       this.notify()
     }
     return true
@@ -239,8 +244,9 @@ export class TranscriptModel {
     this.entries[index] = {
       ...entry,
       status: isError ? 'error' : 'ok',
-      resultText,
+      resultText: previewToolResult(resultText),
       ...(resultMeta !== undefined ? { resultMeta } : {}),
+      rev: entry.rev + 1,
     }
     this.notify()
   }
@@ -377,75 +383,72 @@ export class TranscriptModel {
     const id = group.length === 1 ? first.id : `group-${first.id}`
     const expanded = options.expanded.has(id)
     const width = Math.max(1, options.width - EDGE)
-    const version = group
-      .map(
-        (entry) =>
-          `${entry.id}:${entry.status}:${entry.resultText?.length ?? 0}:${entry.decision ?? ''}`,
-      )
-      .join(',')
+    const version = group.map((entry) => `${entry.id}:${entry.rev}`).join(',')
     const cacheKey = `${id}|${options.width}|${expanded ? 1 : 0}|${version}`
     const groupKind: Unit['kind'] = group.length > 1 || isReadLike(first.name) ? 'group' : 'tool'
-    const failures = group.filter((entry) => entry.status === 'error').length
-    const running = group.some((entry) => entry.status === 'running')
-    const rows: Row[] = []
     const suffix = expanded ? ' · 点击收起' : ' · 点击展开'
     if (isReadLike(first.name)) {
-      const label = group.length === 1 ? `读取 ${readTarget(first)}` : `读取 ${group.length} 项`
-      const statusMark = running ? '…' : failures > 0 ? ` · ${failures} 失败` : ''
-      const decisionMark = decisionSummary(group)
-      rows.push(
+      const rows = this.cachedRows(cacheKey, () => {
+        const built: Row[] = []
+        const failures = group.filter((entry) => entry.status === 'error').length
+        const running = group.some((entry) => entry.status === 'running')
+        const label = group.length === 1 ? `读取 ${readTarget(first)}` : `读取 ${group.length} 项`
+        const statusMark = running ? '…' : failures > 0 ? ` · ${failures} 失败` : ''
+        const decisionMark = decisionSummary(group)
+        built.push(
+          ...wrapSpans(
+            [
+              textSpan(label, 'muted'),
+              textSpan(statusMark, failures > 0 ? 'danger' : 'muted'),
+              textSpan(decisionMark, 'muted'),
+              textSpan(suffix, 'faint'),
+            ],
+            width,
+          ).map((row) => ({ ...row, indent: EDGE })),
+        )
+        if (expanded) {
+          for (const entry of group) {
+            const mark = entry.status === 'error' ? '✗' : entry.status === 'running' ? '…' : '✓'
+            built.push({
+              spans: [
+                textSpan('  ', 'muted'),
+                textSpan(`${mark} `, entry.status === 'error' ? 'danger' : 'muted'),
+                textSpan(`${entry.name} ${readTarget(entry)}`, 'muted'),
+              ],
+              indent: EDGE,
+            })
+            built.push(...decisionRows(entry, width))
+            if (entry.status === 'error') built.push(...failureRows(entry, width))
+          }
+        }
+        return built
+      })
+      return { id, kind: groupKind, gapBefore: 'Block', rows, pressId: id }
+    }
+    const entry = first
+    const rows = this.cachedRows(cacheKey, () => {
+      const built: Row[] = []
+      const mark = entry.status === 'error' ? '✗' : entry.status === 'running' ? '…' : '✓'
+      built.push(
         ...wrapSpans(
           [
-            textSpan(label, 'muted'),
-            textSpan(statusMark, failures > 0 ? 'danger' : 'muted'),
-            textSpan(decisionMark, 'muted'),
+            textSpan(`${mark} `, entry.status === 'error' ? 'danger' : 'muted'),
+            textSpan(toolTitle(entry), 'muted'),
             textSpan(suffix, 'faint'),
           ],
           width,
         ).map((row) => ({ ...row, indent: EDGE })),
       )
-      if (expanded) {
-        for (const entry of group) {
-          const mark = entry.status === 'error' ? '✗' : entry.status === 'running' ? '…' : '✓'
-          rows.push({
-            spans: [
-              textSpan('  ', 'muted'),
-              textSpan(`${mark} `, entry.status === 'error' ? 'danger' : 'muted'),
-              textSpan(`${entry.name} ${readTarget(entry)}`, 'muted'),
-            ],
-            indent: EDGE,
-          })
-          rows.push(...decisionRows(entry, width))
-          if (entry.status === 'error') rows.push(...failureRows(entry, width))
-        }
-      }
-      const cached = this.cachedRows(cacheKey, () => rows)
-      return { id, kind: groupKind, gapBefore: 'Block', rows: cached, pressId: id }
-    }
-    const entry = first
-    const title = toolTitle(entry)
-    const mark = entry.status === 'error' ? '✗' : entry.status === 'running' ? '…' : '✓'
-    rows.push(
-      ...wrapSpans(
-        [
-          textSpan(`${mark} `, entry.status === 'error' ? 'danger' : 'muted'),
-          textSpan(title, 'muted'),
-          textSpan(suffix, 'faint'),
-        ],
-        width,
-      ).map((row) => ({ ...row, indent: EDGE })),
-    )
-    rows.push(...decisionRows(entry, width))
-    if (entry.status === 'error' && !expanded) rows.push(...failureRows(entry, width))
-    if (expanded) {
-      rows.push(...expandedToolRows(entry, width))
-    }
-    const cached = this.cachedRows(cacheKey, () => rows)
+      built.push(...decisionRows(entry, width))
+      if (entry.status === 'error' && !expanded) built.push(...failureRows(entry, width))
+      if (expanded) built.push(...expandedToolRows(entry, width))
+      return built
+    })
     return {
       id,
       kind: groupKind,
       gapBefore: 'Block',
-      rows: cached,
+      rows,
       pressId:
         activationTarget(entry.resultMeta) ??
         activationFromResult(entry.name, entry.resultText) ??
@@ -552,7 +555,7 @@ function expandedToolRows(entry: ToolEntry, width: number): Row[] {
   const diffs: FileDiff[] | undefined = diffsFromMeta(entry.resultMeta)
   if (diffs) rows.push(...renderDiffs(diffs, width, { expanded: true }))
   if (entry.resultText && entry.resultText.trim() !== '') {
-    const lines = entry.resultText.split('\n').slice(0, 40)
+    const lines = entry.resultText.split('\n')
     const tone = entry.status === 'error' ? 'danger' : 'muted'
     rows.push(...lines.map((line) => ({ spans: [textSpan(line, tone)], indent: EDGE })))
   }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { toneColor } from '../../src/app/App.tsx'
 import { darkTheme, lightTheme } from '../../src/theme/theme.ts'
 import { diffLines, renderDiffs } from '../../src/transcript/diff.ts'
@@ -165,5 +165,130 @@ describe('process display', () => {
     const expanded = model.units({ width: 60, expanded: new Set(['tool-c1']) })
     const text = expanded[0]!.rows.map(rowText).join('\n')
     expect(text).toContain('e4')
+  })
+})
+
+describe('tool result projection', () => {
+  function numberedLines(count: number): string {
+    return Array.from({ length: count }, (_, index) => `row ${index} ${'x'.repeat(40)}`).join('\n')
+  }
+
+  function storedResult(model: TranscriptModel): string {
+    const entry = model.all.find((item) => item.kind === 'tool')
+    if (entry?.kind !== 'tool' || entry.resultText === undefined) {
+      throw new Error('missing tool result')
+    }
+    return entry.resultText
+  }
+
+  it('bounds a 1 MB result before it enters the transcript', () => {
+    const model = new TranscriptModel()
+    model.appendTool('c1', 'bash', JSON.stringify({ command: 'cat big' }))
+    const large = numberedLines(20_000)
+    expect(large.length).toBeGreaterThan(1_000_000)
+
+    model.completeTool('c1', large, false)
+
+    const stored = storedResult(model)
+    expect(stored.length).toBeLessThan(21_000)
+    const lines = stored.split('\n')
+    expect(lines).toHaveLength(41)
+    expect(lines[0]).toBe(`row 0 ${'x'.repeat(40)}`)
+    expect(lines[24]).toBe('… 省略 19960 行 …')
+    expect(lines[40]).toBe(`row 19999 ${'x'.repeat(40)}`)
+  })
+
+  it('renders the preview head, marker and tail when expanded', () => {
+    const model = new TranscriptModel()
+    model.appendTool('c1', 'bash', JSON.stringify({ command: 'seq 100' }))
+    model.completeTool(
+      'c1',
+      Array.from({ length: 100 }, (_, index) => `line ${index}`).join('\n'),
+      false,
+    )
+
+    const rows = model.units({ width: 60, expanded: new Set(['tool-c1']) })[0]!.rows
+    const text = rows.map(rowText).join('\n')
+    expect(text).toContain('line 0')
+    expect(text).toContain('… 省略 60 行 …')
+    expect(text).toContain('line 99')
+    expect(text).not.toContain('line 50')
+  })
+
+  it('keeps the collapsed failure summary to the first three preview lines', () => {
+    const model = new TranscriptModel()
+    model.appendTool('c1', 'bash', JSON.stringify({ command: 'false' }))
+    model.completeTool(
+      'c1',
+      Array.from({ length: 100 }, (_, index) => `err ${index}`).join('\n'),
+      true,
+    )
+
+    const rows = model.units({ width: 60, expanded: new Set() })[0]!.rows
+    const text = rows.map(rowText).join('\n')
+    expect(text).toContain('err 0')
+    expect(text).toContain('err 1')
+    expect(text).toContain('err 2')
+    expect(text).not.toContain('err 3')
+  })
+
+  it('keeps subagent activation from the first preview line', () => {
+    const model = new TranscriptModel()
+    model.appendTool('c1', 'subagent', JSON.stringify({ description: 'x' }))
+    model.completeTool('c1', `started subagent child-9\n${'noise\n'.repeat(100)}`, false)
+
+    const unit = model.units({ width: 60, expanded: new Set() })[0]!
+    expect(unit.pressId).toBe('subagent:result:child-9')
+  })
+
+  it('bumps rev for every content change', () => {
+    const model = new TranscriptModel()
+    model.appendTool('c1', 'bash', JSON.stringify({ command: 'ls' }))
+    const rev = (): number => {
+      const entry = model.all.find((item) => item.kind === 'tool')
+      return entry?.kind === 'tool' ? entry.rev : -1
+    }
+
+    expect(rev()).toBe(0)
+    model.completeTool('c1', 'out', false)
+    expect(rev()).toBe(1)
+    model.markApprovalDecision('c1', 'rejected')
+    expect(rev()).toBe(2)
+  })
+
+  it('reuses cached rows without splitting again on a cache hit', () => {
+    const model = new TranscriptModel()
+    model.appendTool('c1', 'bash', JSON.stringify({ command: 'echo hi' }))
+    model.completeTool('c1', 'a\nb\nc', false)
+    const options = { width: 60, expanded: new Set(['tool-c1']) }
+    const first = model.units(options)[0]!.rows
+
+    const split = vi.spyOn(String.prototype, 'split')
+    const second = model.units(options)[0]!.rows
+    expect(second).toBe(first)
+    expect(split).not.toHaveBeenCalled()
+    split.mockRestore()
+  })
+
+  it('invalidates cached rows when a same-length result changes', () => {
+    const model = new TranscriptModel()
+    model.appendTool('c1', 'bash', JSON.stringify({ command: 'echo hi' }))
+    model.completeTool('c1', 'first', false)
+    const options = { width: 60, expanded: new Set(['tool-c1']) }
+    expect(model.units(options)[0]!.rows.map(rowText).join('\n')).toContain('first')
+
+    model.completeTool('c1', 'secnd', false)
+    expect(model.units(options)[0]!.rows.map(rowText).join('\n')).toContain('secnd')
+  })
+
+  it('invalidates cached rows when an approval decision lands', () => {
+    const model = new TranscriptModel()
+    model.appendTool('c1', 'bash', JSON.stringify({ command: 'echo hi' }))
+    model.completeTool('c1', 'ok', false)
+    const options = { width: 60, expanded: new Set(['tool-c1']) }
+    expect(model.units(options)[0]!.rows.map(rowText).join('\n')).not.toContain('已拒绝')
+
+    model.markApprovalDecision('c1', 'rejected')
+    expect(model.units(options)[0]!.rows.map(rowText).join('\n')).toContain('已拒绝')
   })
 })
