@@ -12,6 +12,8 @@ import { createElement } from 'react'
 import { AppExit, AppRestart, NanoApp } from './app/nano-app.ts'
 import { Skeleton } from './app/skeleton.tsx'
 import { type PreparedCore, prepareCore, startCore } from './boot/assemble.ts'
+import { assertLaunchMode, parseCli } from './boot/cli.ts'
+import { recordLastSession } from './boot/last-session.ts'
 import { loadOfficial, type OfficialModules, PINNED_HARNESS_VERSION } from './boot/official.ts'
 import { type Paths, resolvePaths } from './boot/paths.ts'
 import {
@@ -19,9 +21,9 @@ import {
   hasStaleMountClaim,
   type MountClaim,
   releaseMountClaim,
-  resolveRootId,
-  writeLastRoot,
 } from './boot/root.ts'
+import { openSessionIndex } from './boot/session-index.ts'
+import { type StartupSelection, selectStartupRoot } from './boot/startup.ts'
 import { Features } from './controls/feature-host.ts'
 import { FEATURE_KEYBINDINGS } from './controls/feature-keys.ts'
 import { ConversationController } from './conversation/controller.ts'
@@ -34,15 +36,8 @@ import { Terminal } from './runtime/terminal.ts'
 import { featureBootPatches } from './sessions/boot-patches.ts'
 import { activeTheme } from './theme/theme.ts'
 
-interface CliArgs {
-  readonly help: boolean
-  readonly version: boolean
-  readonly purge: boolean
-  readonly yes: boolean
-}
-
 export async function main(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv)
+  const args = parseCli(argv)
   if (args.help) {
     process.stdout.write(helpText())
     return 0
@@ -59,12 +54,23 @@ export async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(`nano: 已删除数据根 ${paths.dataRoot}\n`)
     return 0
   }
+  // `--root` 缺值不在解析期抛错：help / version / purge 的顺序保持不变。
+  if (args.rootMissing) {
+    reportVisible('nano: --root 需要一个值')
+    return 1
+  }
+  try {
+    assertLaunchMode(args)
+  } catch (error) {
+    reportVisible(message(error))
+    return 1
+  }
   if (process.stdin.isTTY !== true) {
     reportVisible('nano: 需要在真实终端中运行（stdin 不是 TTY）。')
     return 1
   }
 
-  // 骨架前：版本 / profile / 根身份 / 认领。
+  // 骨架前：版本 / profile / 会话目标 / 认领。
   let official: OfficialModules
   try {
     official = await loadOfficial()
@@ -73,15 +79,22 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 1
   }
 
-  let rootId: string
+  let startup: StartupSelection
   try {
-    rootId = resolveRootId(paths.dataRoot, argv).id
+    startup = await selectStartupRoot({
+      args,
+      dataRoot: paths.dataRoot,
+      cwd: process.cwd(),
+      openIndex: () => openSessionIndex(official, paths.dataRoot),
+      onDiagnostic: (line) => process.stderr.write(`${line}\n`),
+    })
   } catch (error) {
     reportVisible(message(error))
     return 1
   }
+  const rootId = startup.rootId
 
-  // Spec order: ensure profile → persist root identity → take the mount claim.
+  // Spec order: ensure profile → take the mount claim (root identity is chosen above).
   let prepared: PreparedCore
   try {
     prepared = await prepareCore({
@@ -92,13 +105,6 @@ export async function main(argv: readonly string[]): Promise<number> {
       rootId,
       extraPatches: featureBootPatches(rootId),
     })
-  } catch (error) {
-    reportVisible(message(error))
-    return 1
-  }
-
-  try {
-    writeLastRoot(paths.dataRoot, rootId)
   } catch (error) {
     reportVisible(message(error))
     return 1
@@ -161,9 +167,19 @@ export async function main(argv: readonly string[]): Promise<number> {
       rootId,
       cwd: process.cwd(),
       history,
+      resumeOnly: startup.resumeOnly,
+      ...(startup.notFoundMessage !== undefined
+        ? { notFoundMessage: startup.notFoundMessage }
+        : {}),
     })
     conversation.model.appendNotice(buildStartupSources(paths, prepared), 'info')
     await conversation.start()
+    // `-c` 的导航提示：成功启动后更新；写失败只写诊断，不阻塞启动。
+    try {
+      recordLastSession(paths.dataRoot, process.cwd(), rootId)
+    } catch (error) {
+      process.stderr.write(`nano: last-session 写入失败：${message(error)}\n`)
+    }
     for (const signal of earlySignals) process.off(signal, earlySignalHandler)
     app = new NanoApp({
       core,
@@ -176,6 +192,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       rootId,
       conversation,
       history,
+      openSessionsPanel: startup.openSessionsPanel,
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
       features: new Features(),
     })
@@ -185,7 +202,9 @@ export async function main(argv: readonly string[]): Promise<number> {
       await app.start()
       return 0
     } catch (error) {
-      if (error instanceof AppRestart) return await relaunchInto(error.rootId)
+      if (error instanceof AppRestart) {
+        return await relaunchInto(error.rootId, error.resumeOnly)
+      }
       if (error instanceof AppExit) return error.code
       throw error
     }
@@ -208,14 +227,16 @@ export async function main(argv: readonly string[]): Promise<number> {
 }
 
 /**
- * 受控重启：终端已恢复、认领已释放，交回 launcher 以 `--root <rootId>` 重新拉起。
- * 清掉 `NANO_GUARDED`，让新进程重新走 fd 守护。
+ * 受控重启：终端已恢复、认领已释放，交回 launcher 重新拉起。
+ * 目标已存在（面板切换 / 冷改名）用 `-r <id>`，NotFound 不创建；
+ * 只有显式 `--root` 路径才保留 resume-or-create。清掉 `NANO_GUARDED` 重新走 fd 守护。
  */
-function relaunchInto(rootId: string): Promise<number> {
+function relaunchInto(rootId: string, resumeOnly: boolean): Promise<number> {
   return new Promise((resolve) => {
     const env = { ...process.env }
     delete env.NANO_GUARDED
-    const child = spawn(process.execPath, [process.argv[1] as string, '--root', rootId], {
+    const mode = resumeOnly ? ['-r', rootId] : ['--root', rootId]
+    const child = spawn(process.execPath, [process.argv[1] as string, ...mode], {
       stdio: ['inherit', 'inherit', 'inherit'],
       env,
     })
@@ -252,27 +273,6 @@ function buildStartupSources(paths: Paths, prepared: PreparedCore): string {
   ].join(' ')
 }
 
-function parseArgs(argv: readonly string[]): CliArgs {
-  let help = false
-  let version = false
-  let purge = false
-  let yes = false
-  for (let index = 0; index < argv.length; index++) {
-    const arg = argv[index]
-    // `--root <id>` 的值不是子命令：root id 允许叫 `purge`。
-    if (arg === '--root') {
-      index += 1
-      continue
-    }
-    if (arg?.startsWith('--root=') === true) continue
-    if (arg === '--help' || arg === '-h') help = true
-    else if (arg === '--version' || arg === '-v') version = true
-    else if (arg === 'purge' || arg === '--purge') purge = true
-    else if (arg === '--yes' || arg === '-y') yes = true
-  }
-  return { help, version, purge, yes }
-}
-
 /** 删除数据根前的人类确认；非交互环境必须显式 `--yes`，不默认放行。 */
 async function confirmPurge(dataRoot: string, yes: boolean): Promise<boolean> {
   if (yes) return true
@@ -300,13 +300,16 @@ function helpText(): string {
   return [
     'nano — DeepSeek Harness 的终端界面',
     '',
-    '用法：nano [--root <id>] [--help] [--version] [purge [--yes]]',
+    '用法：nano [-c | -r [<id>] | --root <id>] [--help] [--version] [purge [--yes]]',
     '',
-    '  --root <id>   指定根会话身份（默认沿用上一次的根）',
-    '  --help        显示本帮助与键位表',
-    '  --version     显示版本',
-    '  purge         删除数据根（含 profile；不可撤销；交互确认）',
-    '  --yes, -y     配合 purge，跳过交互确认',
+    '  无参数          新建会话（每次启动都是新上下文）',
+    '  -c, --continue  续接当前目录最近使用的会话（不存在则报错，不新建）',
+    '  -r, --resume    打开会话选择器；-r <id> 精确恢复（不存在则报错）',
+    '  --root <id>     使用指定会话身份（不存在则新建；日常续接用 -c / -r）',
+    '  --help          显示本帮助与键位表',
+    '  --version       显示版本',
+    '  purge           删除数据根（含 profile；不可撤销；交互确认）',
+    '  --yes, -y       配合 purge，跳过交互确认',
     '',
     renderKeymapHelp([...describeBindings(), ...FEATURE_KEYBINDINGS]),
     '',
