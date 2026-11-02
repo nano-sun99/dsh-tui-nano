@@ -1,6 +1,6 @@
 # 发布结论（0.2.0）
 
-> **2026-11-02 更新（用户拍板）**：本版改为发布，渠道为 GitHub Release `v0.2.0`，附件是当前 `main`（`0e43397`）构建的 tarball（SHA-256 `ea64a53e…`）。**npm registry 仍不发布。** 下方「不发布」结论与 §3.3 的 `npm view` 未验证项保留为历史记录；本次改判不代表该外部核对项已完成。当前构建的验证以 PR #136 的测试与证据为准（vitest 399、feature 46、main-chain 2/2、cross-surface 8/8、typecheck 通过），不重跑本页 2026-10-30 的全量 42 项 e2e 矩阵。
+> **2026-11-02 更新（用户拍板）**：本版改为发布，渠道为 GitHub Release `v0.2.0`，附件是构建自 `0e43397`（本发布记录 PR 合并前 main；tag 在合并 commit，差异仅本目录文档）的 tarball（SHA-256 `ea64a53e…`）。**npm registry 仍不发布。** 下方「不发布」结论与 §3.3 的 `npm view` 未验证项保留为历史记录；本次改判不代表该外部核对项已完成。当前构建的验证以 PR #136 的测试与证据为准（vitest 399、feature 46、main-chain 2/2、cross-surface 8/8、typecheck 通过），不重跑本页 2026-10-30 的全量 42 项 e2e 矩阵。
 
 **结论：不发布。**
 
@@ -29,7 +29,7 @@
 | 维度 | 必测项 | 状态 | 证据 / 缺口 |
 | --- | --- | --- | --- |
 | 版本 | `npm pack` 产物与 SHA-256 | 通过 | e2e 连打两次比 SHA-256 一致，并断言 `version-matrix.md` 记录了该值 |
-| 版本 | `npm view dsh-tui-nano@0.2.0 dist.integrity` | 未验证 | 用户 2026-10-30 拍板本版不发布；本地期望值已算（见 version-matrix），`npm view` 留作发布后外部核对。按 §3.2 默认口径这是未验证项；用户明确认可其不构成本版阻断 |
+| 版本 | `npm view dsh-tui-nano@0.2.0 dist.integrity` | 不适用（历史：未验证） | 2026-11-02 改判为 GitHub Release、npm registry 不发布，`npm view` 永不适用；本地 SHA-512 已与 tarball 核对一致（见 version-matrix）。2026-10-30 的「未验证」记录保留为历史 |
 | 版本 | 官方精确版本 / 来源 | 通过 | `package.json` 精确 `0.2.1-rc.2` + `overrides`；e2e「未知 harness 版本拒绝启动」 |
 | 版本 | Node 22.19 与 24.x | 通过 | e2e 42/42：先断言 `NANO_NODE_22` 真是 22.19.0、PATH 解析一致，再跑启动冒烟；24.18 跑全流程；`NANO_NODE_20` 的 20.20 按预期拒绝 |
 | 版本 | Ghostty / macOS / CPU / 日期 | 通过 | `version-matrix.md`（环境记录，不代表视觉验收） |
@@ -51,7 +51,7 @@
 
 ## 3. 阻断项汇总
 
-按 §3.2 的默认口径，未验证项构成阻断。本版唯一保留「未验证」的是 `dist.integrity`（发布后才能外部核对）；用户 2026-10-30 明确认可本版不发布、该项留作发布后核对，功能面 13 组「部分」+1 组边界与物理断网模拟按边界结案，因此本版阻断项记无。
+按 §3.2 的默认口径，未验证项构成阻断。`dist.integrity` 原为「发布后才能外部核对」；2026-11-02 改判为 GitHub Release、npm registry 不发布后该项不适用，本地 SHA-512 已核对一致。功能面 13 组「部分」+1 组边界与物理断网模拟按边界结案，因此本版阻断项记无；历史「不发布」语境保留。
 
 阻断项：无（除用户 2026-10-30 明确认可的上述边界 / 发布后项外）。
 
@@ -94,7 +94,7 @@
 | 项 | 结果 | 证据 |
 | --- | --- | --- |
 | npm 包结构与 manifest | `private:false`、`files:["dist"]`、`bin: nano → dist/bin.js`、`publishConfig`、精确官方依赖与 overrides | `package.json`；`scripts/prepack-check.mjs` |
-| 打包检查 | `npm pack` 自动跑 build + keymap `--check` + packlist 断言 | `prepack`；tarball 118 个文件、入口带 shebang |
+| 打包检查 | `npm pack` 自动跑 build + keymap `--check` + packlist 断言 | `prepack`；tarball 137 个文件（2026-11-02 构建；2026-10-30 旧构建为 118）、入口带 shebang |
 | 安装链 | 全新安装 → 启动 → 升级 → purge → 卸载 → 重装 → 再启动 | `docs/release/0.2.0/evidence/e2e-release.txt` |
 | Node 下限 | 22.19 启动通过；20.20 入口拒绝并给可操作错误（e2e 设置 `NANO_NODE_22/20`，42/42） | 同上 |
 | 键位文档 | README 中英区块与 `--help` 都从源码单一源生成，`--check` 挂 `prepack` | `scripts/keymap-docs.mjs`；e2e |

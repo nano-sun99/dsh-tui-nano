@@ -2,7 +2,7 @@
 
 - 记录日期：2026-11-02（发布改判后重建；历史记录日期 2026-10-30）
 - 包名 / 版本：`dsh-tui-nano` / `0.2.0`
-- 源码：`main` @ `0e43397`（PR #136 合并后，2026-11-02）；历史构建基线 `d38fbed`（2026-10-30）；归档基线 `f8a7971`
+- 源码：构建自 `0e43397`（PR #136 合并后、本发布记录 PR 合并前；tag 在合并 commit，差异仅本目录文档）；历史构建基线 `d38fbed`（2026-10-30）；归档基线 `f8a7971`
 - 归档：tag `rust-final`（`f8a7971`）与分支 `archive/rust-v1`
 
 ## 产物
@@ -16,7 +16,7 @@
 | 期望 `dist.integrity` | `sha512-oWC/IW0CHruMiy4t46K3Wwr+tS+w9exC2UwxznDKcndfki86NaJoOnKpDfHB/GHHbFB3Mc2ztuKNctlMPqBb+w==` |
 | 发布渠道 | GitHub Release `v0.2.0`（tarball 附件）；npm registry 未发布 |
 
-期望 integrity 按 npm 的算法（tarball 的 SHA-512，base64）本地计算；只有发布到 registry 后才能用 `npm view dsh-tui-nano@0.2.0 dist.integrity` 核对。见 `release-conclusion.md` 的未验证项。
+期望 integrity 按 npm 的算法（tarball 的 SHA-512，base64）本地计算，已与本地 tarball 核对一致。本版 npm registry 不发布，`npm view dsh-tui-nano@0.2.0 dist.integrity` 不适用；见 `release-conclusion.md` 的未验证项与 2026-11-02 改判说明。
 
 ## 官方依赖
 
