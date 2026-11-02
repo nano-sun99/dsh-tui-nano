@@ -150,7 +150,11 @@ describe('numpad', () => {
     const parser = new InputParser()
     const events = parser.feed('\x1b[57414u')
     expect(events).toHaveLength(1)
-    expect(keyOf(events[0]!)).toMatchObject({ name: 'enter' })
+    expect(keyOf(events[0]!)).toMatchObject({
+      name: 'enter',
+      text: '\r',
+      sequence: '\x1b[57414u',
+    })
     expect(parser.hasPending()).toBe(false)
   })
 
@@ -229,11 +233,40 @@ describe('numpad', () => {
 
   it('leaves non-kitty CSI-u keys unchanged', () => {
     const { events } = feedAll(['\x1b[13;2u', '\x1b[9u', '\x1b[27u'])
-    expect(events.map((event) => (event.type === 'key' ? event.key.name : event.type))).toEqual([
-      'enter',
-      'tab',
-      'escape',
-    ])
+    expect(events).toHaveLength(3)
+    expect(keyOf(events[0]!)).toMatchObject({ name: 'enter', text: '\r', shift: true })
+    expect(keyOf(events[1]!)).toMatchObject({ name: 'tab', text: '\t' })
+    expect(keyOf(events[2]!)).toMatchObject({ name: 'escape', text: '\x1b' })
+  })
+
+  it('reassembles split SS3 numpad sequences', () => {
+    const parser = new InputParser()
+    expect(parser.feed('\x1bO')).toEqual([])
+    const events = parser.feed('p')
+    expect(events).toHaveLength(1)
+    expect(keyOf(events[0]!)).toMatchObject({ name: 'char', text: '0', sequence: '\x1bOp' })
+    expect(parser.hasPending()).toBe(false)
+  })
+
+  it('reassembles split kitty numpad sequences', () => {
+    const parser = new InputParser()
+    expect(parser.feed('\x1b[574')).toEqual([])
+    const events = parser.feed('00;2u')
+    expect(events).toHaveLength(1)
+    expect(keyOf(events[0]!)).toMatchObject({
+      name: 'char',
+      text: '1',
+      shift: true,
+      sequence: '\x1b[57400;2u',
+    })
+    expect(parser.hasPending()).toBe(false)
+  })
+
+  it('reassembles split KP_BEGIN and still ignores it', () => {
+    const parser = new InputParser()
+    expect(parser.feed('\x1b[57427')).toEqual([])
+    expect(parser.feed('u')).toEqual([])
+    expect(parser.hasPending()).toBe(false)
   })
 
   it('keeps legacy NumLock-off navigation bytes as navigation', () => {
