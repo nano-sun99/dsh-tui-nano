@@ -7,35 +7,12 @@
 // 开发构建加载了（issue #138）。
 import './boot/env.ts'
 import { fileURLToPath } from 'node:url'
+import { commandArgs } from './boot/cli.ts'
 import { resolvePaths } from './boot/paths.ts'
 import { main } from './main.ts'
 import { isGuarded, launchGuarded } from './runtime/fd-guard.ts'
 
 const argv = process.argv.slice(2)
-
-/**
- * 去掉 `--root <id>` / `-r <id>` 的值再判断子命令。会话 id 允许叫 `purge`，
- * 若直接扫原始 argv，`nano --root purge` 或 `nano -r purge` 会被误当成 purge 子命令。
- */
-function commandArgs(args: readonly string[]): string[] {
-  const out: string[] = []
-  for (let index = 0; index < args.length; index++) {
-    const arg = args[index]
-    if (arg === '--root') {
-      index += 1
-      continue
-    }
-    if (arg?.startsWith('--root=') === true) continue
-    if (arg === '-r' || arg === '--resume') {
-      const value = args[index + 1]
-      if (value !== undefined && !value.startsWith('-')) index += 1
-      continue
-    }
-    if (arg?.startsWith('--resume=') === true) continue
-    if (arg !== undefined) out.push(arg)
-  }
-  return out
-}
 
 const commands = commandArgs(argv)
 // 非 TUI 命令不套 fd 守护：purge 的报错和确认必须留在用户终端上，

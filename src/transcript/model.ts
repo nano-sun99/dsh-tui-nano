@@ -396,7 +396,7 @@ export class TranscriptModel {
       rows.push(
         ...wrapSpans(
           [
-            textSpan(label, 'tool'),
+            textSpan(label, 'muted'),
             textSpan(statusMark, failures > 0 ? 'danger' : 'muted'),
             textSpan(decisionMark, 'muted'),
             textSpan(suffix, 'faint'),
@@ -428,11 +428,8 @@ export class TranscriptModel {
     rows.push(
       ...wrapSpans(
         [
-          textSpan(
-            `${mark} `,
-            entry.status === 'error' ? 'danger' : entry.status === 'running' ? 'muted' : 'success',
-          ),
-          textSpan(title, 'tool'),
+          textSpan(`${mark} `, entry.status === 'error' ? 'danger' : 'muted'),
+          textSpan(title, 'muted'),
           textSpan(suffix, 'faint'),
         ],
         width,

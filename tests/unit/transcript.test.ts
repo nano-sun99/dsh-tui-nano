@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { toneColor } from '../../src/app/App.tsx'
+import { darkTheme, lightTheme } from '../../src/theme/theme.ts'
 import { diffLines, renderDiffs } from '../../src/transcript/diff.ts'
 import { renderMarkdown } from '../../src/transcript/markdown.ts'
 import { TranscriptModel } from '../../src/transcript/model.ts'
@@ -71,6 +73,72 @@ describe('process display', () => {
     bad.completeTool('c1', 'e1\ne2\ne3\ne4', true)
     const badRows = bad.units({ width: 60, expanded: new Set() })[0]!.rows
     expect(badRows).toHaveLength(4)
+  })
+
+  it('renders collapsed process rows muted, keeping failures in danger', () => {
+    const ok = new TranscriptModel()
+    ok.appendTool('c1', 'bash', JSON.stringify({ command: 'ls' }))
+    ok.completeTool('c1', 'a', false)
+    const okSpans = ok
+      .units({ width: 60, expanded: new Set() })[0]!
+      .rows.flatMap((row) => row.spans)
+    expect(okSpans.some((span) => span.tone === 'muted')).toBe(true)
+    expect(okSpans.some((span) => span.tone === 'success' || span.tone === 'tool')).toBe(false)
+
+    const reads = new TranscriptModel()
+    reads.appendTool('c2', 'read_file', JSON.stringify({ file_path: 'a.ts' }))
+    reads.completeTool('c2', 'x', false)
+    const readSpans = reads
+      .units({ width: 60, expanded: new Set() })[0]!
+      .rows.flatMap((row) => row.spans)
+    expect(readSpans.some((span) => span.tone === 'tool')).toBe(false)
+
+    const bad = new TranscriptModel()
+    bad.appendTool('c3', 'bash', JSON.stringify({ command: 'false' }))
+    bad.completeTool('c3', 'e1', true)
+    const badSpans = bad
+      .units({ width: 60, expanded: new Set() })[0]!
+      .rows.flatMap((row) => row.spans)
+    expect(badSpans.some((span) => span.tone === 'danger')).toBe(true)
+  })
+
+  it('keeps collapsed process rows on the muted color in both themes and widths', () => {
+    for (const theme of [darkTheme, lightTheme]) {
+      for (const width of [100, 60]) {
+        const model = new TranscriptModel()
+        model.appendTool('c1', 'bash', JSON.stringify({ command: 'ls -la' }))
+        model.completeTool('c1', 'a', false)
+        model.appendTool('c2', 'read_file', JSON.stringify({ file_path: 'a.ts' }))
+        model.completeTool('c2', 'x', false)
+        const spans = model
+          .units({ width, expanded: new Set() })
+          .flatMap((unit) => unit.rows.flatMap((row) => row.spans))
+        expect(spans.length).toBeGreaterThan(0)
+        for (const span of spans) {
+          expect(toneColor(span.tone, theme)).toEqual([...theme.muted])
+        }
+      }
+    }
+  })
+
+  it('keeps the expanded command and result body unchanged', () => {
+    const ok = new TranscriptModel()
+    ok.appendTool('c1', 'bash', JSON.stringify({ command: 'echo hi' }))
+    ok.completeTool('c1', 'hi', false)
+    const okSpans = ok
+      .units({ width: 60, expanded: new Set(['tool-c1']) })[0]!
+      .rows.flatMap((row) => row.spans)
+    expect(okSpans.some((span) => span.tone === 'code' && span.text.includes('echo hi'))).toBe(true)
+    expect(okSpans.some((span) => span.tone === 'muted' && span.text === 'hi')).toBe(true)
+
+    const bad = new TranscriptModel()
+    bad.appendTool('c2', 'bash', JSON.stringify({ command: 'false' }))
+    bad.completeTool('c2', 'boom', true)
+    const badSpans = bad
+      .units({ width: 60, expanded: new Set(['tool-c2']) })[0]!
+      .rows.flatMap((row) => row.spans)
+    expect(badSpans.some((span) => span.tone === 'code')).toBe(true)
+    expect(badSpans.some((span) => span.tone === 'danger' && span.text === 'boom')).toBe(true)
   })
 
   it('shows one thinking row while streaming and drops it after commit', () => {

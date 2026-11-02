@@ -10,6 +10,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  assertPermissionArgs,
+  commandArgs,
+  parseCli,
+  resolvePermissionMode,
+} from '../../src/boot/cli.ts'
+import {
   LAST_SESSION_LIMIT,
   lastSessionPath,
   lookupLastSession,
@@ -46,6 +52,46 @@ function fakeOfficial() {
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), 'nano-test-'))
 }
+
+describe('permission CLI', () => {
+  it('does not treat the value of --permission-mode as a subcommand', () => {
+    const args = parseCli(['--permission-mode', 'purge', '--yes'])
+    expect(args.permissionMode).toBe('purge')
+    expect(args.purge).toBe(false)
+    expect(args.yes).toBe(true)
+    expect(commandArgs(['--permission-mode', 'purge', '--yes'])).toEqual(['--yes'])
+    expect(() => assertPermissionArgs(args)).toThrow(/未知权限模式 purge/)
+  })
+
+  it('supports --permission-mode=value and the skip flag', () => {
+    expect(parseCli(['--permission-mode=read-only']).permissionMode).toBe('read-only')
+    const skip = parseCli(['--dangerously-skip-permissions'])
+    expect(skip.dangerouslySkipPermissions).toBe(true)
+    expect(resolvePermissionMode(skip, 'workspace-write')).toBe('danger-full-access')
+  })
+
+  it('rejects missing values, conflicting flags and purge with permission flags', () => {
+    expect(() => assertPermissionArgs(parseCli(['--permission-mode']))).toThrow(/需要一个值/)
+    expect(() =>
+      assertPermissionArgs(
+        parseCli(['--permission-mode', 'read-only', '--dangerously-skip-permissions']),
+      ),
+    ).toThrow(/不能和/)
+    expect(() =>
+      assertPermissionArgs(parseCli(['purge', '--permission-mode', 'read-only'])),
+    ).toThrow(/purge 不能和/)
+  })
+
+  it('resolves CLI > env > default and rejects unknown env values', () => {
+    expect(resolvePermissionMode(parseCli([]), undefined)).toBe('danger-full-access')
+    expect(resolvePermissionMode(parseCli([]), '')).toBe('danger-full-access')
+    expect(resolvePermissionMode(parseCli([]), 'workspace-write')).toBe('workspace-write')
+    expect(
+      resolvePermissionMode(parseCli(['--permission-mode', 'read-only']), 'danger-full-access'),
+    ).toBe('read-only')
+    expect(() => resolvePermissionMode(parseCli([]), 'bogus')).toThrow(/可选值/)
+  })
+})
 
 describe('profile', () => {
   it('initializes the profile and fills cordis.yml', () => {

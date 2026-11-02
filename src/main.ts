@@ -12,7 +12,12 @@ import { createElement } from 'react'
 import { AppExit, AppRestart, NanoApp } from './app/nano-app.ts'
 import { Skeleton } from './app/skeleton.tsx'
 import { type PreparedCore, prepareCore, startCore } from './boot/assemble.ts'
-import { assertLaunchMode, parseCli } from './boot/cli.ts'
+import {
+  assertLaunchMode,
+  assertPermissionArgs,
+  parseCli,
+  resolvePermissionMode,
+} from './boot/cli.ts'
 import { recordLastSession } from './boot/last-session.ts'
 import { loadOfficial, type OfficialModules, PINNED_HARNESS_VERSION } from './boot/official.ts'
 import { type Paths, resolvePaths } from './boot/paths.ts'
@@ -46,6 +51,14 @@ export async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(`nano ${nanoVersion()} (harness ${PINNED_HARNESS_VERSION})\n`)
     return 0
   }
+  try {
+    // purge 之前先拦：`--permission-mode purge` 已把 purge 当值吃掉，
+    // 这里再拒未知 preset，确保不会误删数据根。
+    assertPermissionArgs(args)
+  } catch (error) {
+    reportVisible(message(error))
+    return 1
+  }
   const paths = resolvePaths()
   if (args.purge) {
     // S03 §2.2：普通卸载保留数据根，只有显式 purge 才删；交互确认，--yes 跳过。
@@ -61,6 +74,8 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   try {
     assertLaunchMode(args)
+    // 在 prepareCore 读取 profile patch 之前落定；CLI > 环境 > nano 默认。
+    process.env.DSH_PERMISSION_MODE = resolvePermissionMode(args, process.env.DSH_PERMISSION_MODE)
   } catch (error) {
     reportVisible(message(error))
     return 1
@@ -300,12 +315,15 @@ function helpText(): string {
   return [
     'nano — DeepSeek Harness 的终端界面',
     '',
-    '用法：nano [-c | -r [<id>] | --root <id>] [--help] [--version] [purge [--yes]]',
+    '用法：nano [-c | -r [<id>] | --root <id>] [--permission-mode <preset> | --dangerously-skip-permissions] [--help] [--version] [purge [--yes]]',
     '',
     '  无参数          新建会话（每次启动都是新上下文）',
     '  -c, --continue  续接当前目录最近使用的会话（不存在则报错，不新建）',
     '  -r, --resume    打开会话选择器；-r <id> 精确恢复（不存在则报错）',
     '  --root <id>     使用指定会话身份（不存在则新建；日常续接用 -c / -r）',
+    '  --permission-mode <preset>  设置本次会话的权限模式（默认 danger-full-access）',
+    '                  可选：read-only、workspace-write、danger-full-access',
+    '  --dangerously-skip-permissions  等同 --permission-mode danger-full-access',
     '  --help          显示本帮助与键位表',
     '  --version       显示版本',
     '  purge           删除数据根（含 profile；不可撤销；交互确认）',
