@@ -20,4 +20,4 @@
 
 - 本组是 **PTY 文本证据**，不是窗口截图；与 e2e（`tests/e2e/main-chain.test.mjs`、`cross-surface.test.mjs`）断言同一场景。
 - 未覆盖真实 Ghostty 的像素级观感；视觉终验可在真实窗口按 spec §6 复核。
-- 决策留痕的四种文案由单测覆盖（`tests/unit/approval-card.test.ts`），真终端结算后的行需要按键后才出现，未在本组截取。
+- 决策留痕的三种文案（拒绝/取消/无法回答；允许不产生行）由单测覆盖（`tests/unit/approval-card.test.ts`、`tests/unit/decisions.test.ts`），真终端结算后的行需要按键后才出现，未在本组截取。

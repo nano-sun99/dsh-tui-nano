@@ -1,7 +1,12 @@
 import { createElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { App, type AppSnapshot } from '../../src/app/App.tsx'
-import { buildApprovalCard } from '../../src/app/approval-card.ts'
+import {
+  applyApprovalSettlement,
+  approvalCommandFromArgs,
+  buildApprovalCard,
+  focusScrollOffset,
+} from '../../src/app/approval-card.ts'
 import { DecisionManager } from '../../src/decisions/manager.ts'
 import { Renderer } from '../../src/render/renderer.ts'
 import { darkTheme } from '../../src/theme/theme.ts'
@@ -118,6 +123,37 @@ describe('approval card in the transcript', () => {
   })
 })
 
+describe('approval helpers', () => {
+  it('prefers args.command and truncates the key: value fallback to one line', () => {
+    expect(approvalCommandFromArgs({ command: 'npm test' })).toBe('npm test')
+    const long = 'x'.repeat(400)
+    const fallback = approvalCommandFromArgs({ content: long, file_path: 'a.ts' })
+    expect(fallback?.split('\n').length).toBe(2)
+    expect(fallback?.split('\n')[0]).toContain('content:')
+    expect(fallback?.split('\n')[0]?.endsWith('…')).toBe(true)
+    expect(approvalCommandFromArgs({})).toBeUndefined()
+    expect(approvalCommandFromArgs(undefined)).toBeUndefined()
+  })
+
+  it('keeps the focus row inside the viewport', () => {
+    expect(focusScrollOffset(40, 10, 0, 35)).toBe(0)
+    expect(focusScrollOffset(40, 10, 0, 5)).toBe(25)
+    expect(focusScrollOffset(40, 10, 20, 15)).toBe(20)
+    expect(focusScrollOffset(40, 10, 0, 39)).toBe(0)
+  })
+
+  it('settles on the tool row, or falls back to a notice for unknown calls', () => {
+    const model = new TranscriptModel()
+    model.appendTool('call-1', 'bash', JSON.stringify({ command: 'npm test' }))
+    const known = applyApprovalSettlement(model, { callId: 'call-1' }, 'cancelled')
+    expect(known).toBe(true)
+    expect(flatten(model).some((line) => line.includes('已取消 · 未执行'))).toBe(true)
+    expect(applyApprovalSettlement(model, { callId: 'missing' }, 'rejected')).toBe(false)
+    expect(flatten(model).some((line) => line.includes('已拒绝 · 未执行'))).toBe(true)
+    expect(applyApprovalSettlement(model, { callId: 'call-1' }, 'allowed-once')).toBe(false)
+  })
+})
+
 describe('approval decisions in the transcript', () => {
   it('leaves a decision row for rejected and no row for allowed', async () => {
     const state = await approval()
@@ -136,6 +172,30 @@ describe('approval decisions in the transcript', () => {
     model.markApprovalDecision('read-2', 'cancelled')
     const lines = flatten(model)
     expect(lines.some((line) => line.includes('已拒绝 1 · 已取消 1'))).toBe(true)
+  })
+
+  it('renders cancelled and unavailable rows', () => {
+    const model = new TranscriptModel()
+    model.appendTool('call-1', 'bash', JSON.stringify({ command: 'npm test' }))
+    model.appendTool('call-2', 'write', JSON.stringify({ file_path: 'a.ts' }))
+    model.markApprovalDecision('call-1', 'cancelled')
+    model.markApprovalDecision('call-2', 'unavailable')
+    const lines = flatten(model)
+    expect(lines.some((line) => line.includes('已取消 · 未执行'))).toBe(true)
+    expect(lines.some((line) => line.includes('无法回答 · 按失败关闭处理'))).toBe(true)
+  })
+
+  it('shows each decision under its entry when a read group is expanded', () => {
+    const model = new TranscriptModel()
+    model.appendTool('read-1', 'read', JSON.stringify({ file_path: 'a.ts' }))
+    model.appendTool('read-2', 'read', JSON.stringify({ file_path: 'b.ts' }))
+    model.markApprovalDecision('read-1', 'rejected')
+    model.markApprovalDecision('read-2', 'cancelled')
+    const lines = model
+      .units({ width: 100, expanded: new Set(['group-tool-read-1']) })
+      .flatMap((unit) => unit.rows.map((row) => rowText(row)))
+    expect(lines.filter((line) => line.includes('已拒绝 · 未执行')).length).toBe(1)
+    expect(lines.filter((line) => line.includes('已取消 · 未执行')).length).toBe(1)
   })
 
   it('returns false when the call is unknown so the caller can notify', () => {

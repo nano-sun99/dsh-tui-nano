@@ -18,7 +18,6 @@ import {
   APPROVAL_OPTIONS,
   type ApprovalOutcome,
   type ApprovalPrompt,
-  approvalDecisionText,
   DecisionManager,
 } from '../decisions/manager.ts'
 import { HISTORY_LIMIT, type HistoryStore } from '../input/history.ts'
@@ -39,7 +38,12 @@ import {
   questionActivityCap,
   transcriptBodyHeight,
 } from './App.tsx'
-import { buildApprovalCard } from './approval-card.ts'
+import {
+  applyApprovalSettlement,
+  approvalCommandFromArgs,
+  buildApprovalCard,
+  focusScrollOffset,
+} from './approval-card.ts'
 import { InputModel } from './input-model.ts'
 import { NoticeState, type NoticeTone } from './notice.ts'
 import { buildQuestionCard, questionCardWindow } from './question-card.ts'
@@ -186,11 +190,7 @@ export class NanoApp {
     const { core, conversation, history } = this.options
     this.decisions.register(core.ctx)
     this.decisions.onApprovalSettled((prompt, outcome) => {
-      const text = approvalDecisionText(outcome)
-      if (text === undefined) return
-      const model = this.options.conversation.model
-      if (prompt.callId !== undefined && model.markApprovalDecision(prompt.callId, outcome)) return
-      model.appendNotice(text, 'info')
+      applyApprovalSettlement(this.options.conversation.model, prompt, outcome)
     })
     this.input.setHistory(history.entries().map((entry) => entry.display))
     this.options.terminal.refreshSize()
@@ -648,6 +648,9 @@ export class NanoApp {
   }
 
   private handlePress(id: string): void {
+    // 审批挂起时决策卡拥有焦点：任何非 decision 的点击都不能切走视图，
+    // 否则卡片被隐藏但 ↑/↓/Enter 仍会结算（误 allow）。
+    if (this.decisions.prompt?.kind === 'approval' && !id.startsWith('decision:approval:')) return
     if (
       this.decisions.prompt?.kind === 'question' &&
       (!id.startsWith('decision:') ||
@@ -735,13 +738,7 @@ export class NanoApp {
         ? this.options.conversation.model.toolEntryByCallId(prompt.callId)
         : undefined
     if (entry === undefined) return undefined
-    const args = parseArgs(entry.args)
-    const command = args.command
-    if (typeof command === 'string' && command.trim() !== '') return command
-    const lines = Object.entries(args)
-      .filter(([, value]) => value !== undefined)
-      .map(([key, value]) => `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`)
-    return lines.length > 0 ? lines.join('\n') : undefined
+    return approvalCommandFromArgs(parseArgs(entry.args))
   }
 
   private approvalRowsFor(prompt: ApprovalPrompt): Row[] {
@@ -787,8 +784,12 @@ export class NanoApp {
       expanded: this.expanded,
     })
     const total = lines.length + (approvalRows?.length ?? 0)
-    if (!this.stickBottom && this.lastTotalLines !== undefined && total > this.lastTotalLines) {
-      this.scrollOffset += total - this.lastTotalLines
+    if (!this.stickBottom && this.lastTotalLines !== undefined) {
+      if (total > this.lastTotalLines) this.scrollOffset += total - this.lastTotalLines
+      else if (total < this.lastTotalLines) {
+        this.scrollOffset = Math.max(0, this.scrollOffset - (this.lastTotalLines - total))
+        if (this.scrollOffset === 0) this.stickBottom = true
+      }
     }
     this.lastTotalLines = total
     const contextRatio = occupancyRatio(this.options.core.ctx, this.options.conversation.agent)

@@ -4,7 +4,13 @@
  * The card is appended after the last transcript line, so it shares the
  * transcript's scrolling, paging and pressable rows. It never uses an overlay.
  */
-import { APPROVAL_OPTIONS, type ApprovalPrompt } from '../decisions/manager.ts'
+import {
+  APPROVAL_OPTIONS,
+  type ApprovalOutcome,
+  type ApprovalPrompt,
+  approvalDecisionText,
+} from '../decisions/manager.ts'
+import { truncateText } from '../render/text.ts'
 import { EDGE, NESTED } from '../theme/spacing.ts'
 import { type Row, textSpan, wrapSpans } from '../transcript/spans.ts'
 
@@ -93,4 +99,50 @@ export function buildApprovalCard(
     ),
   )
   return { rows, focusRow }
+}
+
+/** Command block source (spec §3.3): `args.command` first, then one-line key: value. */
+export function approvalCommandFromArgs(
+  args: Record<string, unknown> | undefined,
+): string | undefined {
+  if (args === undefined) return undefined
+  const command = args.command
+  if (typeof command === 'string' && command.trim() !== '') return command
+  const lines: string[] = []
+  for (const [key, value] of Object.entries(args)) {
+    if (value === undefined) continue
+    const text = `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`
+    lines.push(truncateText(text.split('\n')[0] ?? '', 120))
+  }
+  return lines.length > 0 ? lines.join('\n') : undefined
+}
+
+/** Record an approval outcome on the transcript; unknown calls fall back to a notice. */
+export function applyApprovalSettlement(
+  model: {
+    markApprovalDecision(callId: string, outcome: ApprovalOutcome): boolean
+    appendNotice(text: string, tone: 'info'): void
+  },
+  prompt: { readonly callId?: string },
+  outcome: ApprovalOutcome,
+): boolean {
+  const text = approvalDecisionText(outcome)
+  if (text === undefined) return false
+  if (prompt.callId !== undefined && model.markApprovalDecision(prompt.callId, outcome)) return true
+  model.appendNotice(text, 'info')
+  return false
+}
+
+/** Scroll offset that keeps `focus` inside the viewport (same math as the card renderer). */
+export function focusScrollOffset(
+  total: number,
+  height: number,
+  offset: number,
+  focus: number,
+): number {
+  const maxScroll = Math.max(0, total - height)
+  const start = Math.max(0, total - height - offset)
+  if (focus < start) return Math.min(maxScroll, offset + start - focus)
+  if (focus >= start + height) return Math.max(0, offset - (focus - (start + height - 1)))
+  return offset
 }

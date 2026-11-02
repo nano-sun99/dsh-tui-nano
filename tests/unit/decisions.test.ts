@@ -176,3 +176,49 @@ describe('lifecycle', () => {
     expect(report.results[0]?.status).toBe('unknown')
   })
 })
+
+describe('approval settlement', () => {
+  it('reports the enter path exactly once', async () => {
+    const manager = new DecisionManager()
+    const seen: string[] = []
+    manager.onApprovalSettled((_prompt, outcome) => seen.push(outcome))
+    const pending = manager.askApproval({ toolName: 'bash', callId: 'c1' })
+    await tick()
+    manager.move(-1)
+    manager.chooseApproval()
+    await expect(pending).resolves.toBe('allowed-once')
+    expect(seen).toEqual(['allowed-once'])
+  })
+
+  it('reports escape and direct outcomes', async () => {
+    const manager = new DecisionManager()
+    const seen: string[] = []
+    manager.onApprovalSettled((_prompt, outcome) => seen.push(outcome))
+    const first = manager.askApproval({ toolName: 'bash', callId: 'c1' })
+    await tick()
+    manager.escape()
+    await expect(first).resolves.toBe('cancelled')
+    const second = manager.askApproval({ toolName: 'bash', callId: 'c2' })
+    await tick()
+    manager.resolveApproval('unavailable')
+    await expect(second).resolves.toBe('unavailable')
+    expect(seen).toEqual(['cancelled', 'unavailable'])
+  })
+
+  it('reports an official abort as cancelled and does not double settle', async () => {
+    const manager = new DecisionManager()
+    const seen: string[] = []
+    manager.onApprovalSettled((_prompt, outcome) => seen.push(outcome))
+    const controller = new AbortController()
+    const pending = manager.askApproval({
+      toolName: 'bash',
+      callId: 'c1',
+      signal: controller.signal,
+    })
+    await tick()
+    manager.resolveApproval('rejected')
+    controller.abort()
+    await expect(pending).resolves.toBe('rejected')
+    expect(seen).toEqual(['rejected'])
+  })
+})
