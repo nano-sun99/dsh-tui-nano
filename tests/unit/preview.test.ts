@@ -3,6 +3,7 @@ import {
   DEFAULT_PREVIEW_LINES,
   MAX_PREVIEW_LINES,
   MIN_PREVIEW_LINES,
+  previewHasContent,
   previewToolResult,
   resolvePreviewLines,
 } from '../../src/transcript/preview.ts'
@@ -118,5 +119,27 @@ describe('previewToolResult', () => {
     } finally {
       delete process.env.NANO_TOOL_PREVIEW_LINES
     }
+  })
+})
+
+describe('previewHasContent', () => {
+  it('sees ordinary text', () => {
+    expect(previewHasContent('hello')).toBe(true)
+  })
+
+  it('ignores whitespace-only lines', () => {
+    expect(previewHasContent('\n  \n\t\n')).toBe(false)
+  })
+
+  it('ignores the omission marker', () => {
+    expect(previewHasContent('\n… 省略 60 行 …\n')).toBe(false)
+  })
+
+  it('ignores the inline truncation marker on a whitespace-only line', () => {
+    expect(previewHasContent(`${' '.repeat(500)}…（本行已截断）`)).toBe(false)
+  })
+
+  it('sees text next to the markers', () => {
+    expect(previewHasContent('\n… 省略 60 行 …\nvisible\n')).toBe(true)
   })
 })

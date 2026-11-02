@@ -10,7 +10,7 @@ import { graphemes } from '../render/text.ts'
 import { EDGE, INDENT } from '../theme/spacing.ts'
 import { diffsFromMeta, type FileDiff, renderDiffs } from './diff.ts'
 import { renderMarkdown } from './markdown.ts'
-import { previewToolResult } from './preview.ts'
+import { previewHasContent, previewToolResult } from './preview.ts'
 import { type Row, textSpan, wrapSpans } from './spans.ts'
 
 export interface Block {
@@ -554,7 +554,7 @@ function expandedToolRows(entry: ToolEntry, width: number): Row[] {
   }
   const diffs: FileDiff[] | undefined = diffsFromMeta(entry.resultMeta)
   if (diffs) rows.push(...renderDiffs(diffs, width, { expanded: true }))
-  if (entry.resultText && entry.resultText.trim() !== '') {
+  if (entry.resultText !== undefined && previewHasContent(entry.resultText)) {
     const lines = entry.resultText.split('\n')
     const tone = entry.status === 'error' ? 'danger' : 'muted'
     rows.push(...lines.map((line) => ({ spans: [textSpan(line, tone)], indent: EDGE })))

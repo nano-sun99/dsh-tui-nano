@@ -12,6 +12,19 @@ export const PREVIEW_LINE_CHARS = 500
 
 const HEAD_RATIO = 0.6
 const LINE_TRUNCATED = '…（本行已截断）'
+const LINE_OMITTED = /^… 省略 \d+ 行 …$/
+
+/** True when the preview has content beyond whitespace and our own markers. */
+export function previewHasContent(preview: string): boolean {
+  for (const line of preview.split('\n')) {
+    if (LINE_OMITTED.test(line)) continue
+    const content = line.endsWith(LINE_TRUNCATED)
+      ? line.slice(0, line.length - LINE_TRUNCATED.length)
+      : line
+    if (content.trim() !== '') return true
+  }
+  return false
+}
 
 export function resolvePreviewLines(): number {
   const raw = process.env.NANO_TOOL_PREVIEW_LINES

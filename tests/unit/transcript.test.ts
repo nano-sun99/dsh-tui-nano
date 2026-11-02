@@ -241,6 +241,35 @@ describe('tool result projection', () => {
     expect(unit.pressId).toBe('subagent:result:child-9')
   })
 
+  it('skips a preview made only of whitespace and markers', () => {
+    const model = new TranscriptModel()
+    model.appendTool('c1', 'bash', JSON.stringify({ command: 'true' }))
+    model.completeTool('c1', '\n'.repeat(99), false)
+
+    const rows = model.units({ width: 60, expanded: new Set(['tool-c1']) })[0]!.rows
+    const text = rows.map(rowText).join('\n')
+    expect(text).not.toContain('省略')
+    expect(rows).toHaveLength(2)
+  })
+
+  it('skips a whitespace-only line that carries an inline truncation marker', () => {
+    const model = new TranscriptModel()
+    model.appendTool('c1', 'bash', JSON.stringify({ command: 'true' }))
+    model.completeTool('c1', ' '.repeat(600), false)
+
+    const rows = model.units({ width: 60, expanded: new Set(['tool-c1']) })[0]!.rows
+    expect(rows).toHaveLength(2)
+  })
+
+  it('keeps rendering a preview with visible content', () => {
+    const model = new TranscriptModel()
+    model.appendTool('c1', 'bash', JSON.stringify({ command: 'echo hi' }))
+    model.completeTool('c1', `visible\n${'\n'.repeat(99)}`, false)
+
+    const rows = model.units({ width: 60, expanded: new Set(['tool-c1']) })[0]!.rows
+    expect(rows.map(rowText).join('\n')).toContain('visible')
+  })
+
   it('bumps rev for every content change', () => {
     const model = new TranscriptModel()
     model.appendTool('c1', 'bash', JSON.stringify({ command: 'ls' }))
