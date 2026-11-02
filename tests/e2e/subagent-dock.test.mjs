@@ -152,6 +152,7 @@ function spawnScreen({
   root,
   cols = 100,
   rows = 30,
+  cwd,
 }) {
   const args = [
     'tests/e2e/pty-start.py',
@@ -176,6 +177,7 @@ function spawnScreen({
     args.push('--keys', keys, '--keys-wait', String(keysWait ?? 3))
     if (keysUntil) args.push('--keys-until', keysUntil)
   }
+  if (cwd) args.push('--cwd', cwd)
   args.push('--', nodeBin, path.join(repoRoot, 'dist', 'bin.js'), '--root', root)
   return spawnSync('python3', args, {
     cwd: repoRoot,
@@ -185,8 +187,14 @@ function spawnScreen({
   })
 }
 
+// 状态行右侧提示是「有空间才保留，否则让位」（spec 2026-10-30-nano-input-caret-notice §4）。
+// 60 列时左槽 cwd 一长，提示就会被挤掉：仓库检出路径只要在 33–44 字符之间（不触发
+// displayCwd 的 44 字折叠）就会让这条用例随路径翻脸。这里把工作目录钉在家目录下的
+// `p`（显示成 `~/p`），断言才不依赖仓库放在哪。
 test('真实 PTY：60 列下 dock 仍在状态栏之后，不压输入', async () => {
   const frame = runSubagentScreen()
+  const workdir = path.join(frame.home, 'p')
+  mkdirSync(workdir, { recursive: true })
   let mock
   try {
     mock = await startMock('subagent')
@@ -198,6 +206,7 @@ test('真实 PTY：60 列下 dock 仍在状态栏之后，不压输入', async (
       keysWait: 2,
       cols: 60,
       root: 'subagent-dock-60-e2e',
+      cwd: workdir,
     })
     assert.equal(result.status, 0, `pty-start.py 失败：${result.stderr}`)
     const screen = readFileSync(frame.out, 'utf8').replaceAll(frame.home, '<home>')
