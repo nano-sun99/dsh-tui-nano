@@ -61,6 +61,8 @@ export interface NanoAppOptions {
   readonly conversation: ConversationController
   readonly history: HistoryStore
   readonly writeDiagnostic: (line: string) => void
+  /** `-r` 不带 id：首个正式帧后打开会话面板。 */
+  readonly openSessionsPanel?: boolean
   /** 接线接缝（S02 spec §1 接入点例外第 2/3 条）：不传时行为与 α 一致。 */
   readonly features?: FeatureHost
 }
@@ -70,14 +72,18 @@ export interface RestartRequest {
   readonly rootId: string
   readonly reason?: 'root-switch' | 'cold-rename'
   readonly payload?: Record<string, unknown>
+  /** 目标已存在：新进程以 `-r <id>` 拉起，NotFound 不创建。 */
+  readonly resumeOnly?: boolean
 }
 
-/** 受控重启：main 捕获后交回 launcher 以 `--root <rootId>` 重新拉起。 */
+/** 受控重启：main 捕获后交回 launcher 以 `--root` / `-r` 重新拉起。 */
 export class AppRestart extends Error {
   readonly rootId: string
-  constructor(rootId: string) {
+  readonly resumeOnly: boolean
+  constructor(rootId: string, resumeOnly = false) {
     super(`nano: 受控重启到根 ${rootId}`)
     this.rootId = rootId
+    this.resumeOnly = resumeOnly
   }
 }
 
@@ -100,6 +106,8 @@ export interface FeatureContext {
   readonly rootId: string
   readonly dataRoot: string
   readonly cwd: string
+  /** `-r` 不带 id：启动后自动打开会话面板。 */
+  readonly openSessionsPanel?: boolean
   /** 请求重画一帧（S02 自己的状态变化时调用）。 */
   requestRender(): void
   /** 写一行提示到状态栏；传 undefined 清掉。 */
@@ -213,6 +221,7 @@ export class NanoApp {
       rootId: this.options.rootId,
       dataRoot: this.options.dataRoot,
       cwd: this.options.cwd,
+      openSessionsPanel: this.options.openSessionsPanel === true,
       requestRender: () => this.scheduleRender(),
       setNotice: (text, tone) => {
         this.notices.set(text, tone)
@@ -234,7 +243,9 @@ export class NanoApp {
       this.scheduleRender()
     })
     return finish.then((code) => {
-      if (this.pendingRestart) throw new AppRestart(this.pendingRestart.rootId)
+      if (this.pendingRestart) {
+        throw new AppRestart(this.pendingRestart.rootId, this.pendingRestart.resumeOnly === true)
+      }
       throw new AppExit(code)
     })
   }

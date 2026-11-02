@@ -112,7 +112,7 @@ npm uninstall -g dsh-tui-nano
 | `Ctrl+T` | Toggle the terminal panel（Idle / Input / Running） |
 <!-- keymap:end -->
 
-Full keymap and flags: `nano --help`. `!command` runs with your user privileges and is not an agent authorisation; its output is injected as synthetic context but does not wake the model.
+Full keymap and flags: `nano --help`. Startup: `nano` creates a new session; `nano -c` continues the most recent session in this directory; `nano -r` opens the session picker (`-r <id>` restores exactly); `nano --root <id>` pins a session id (creates it if absent). `!command` runs with your user privileges and is not an agent authorisation; its output is injected as synthetic context but does not wake the model.
 
 ## Theme and transparency
 

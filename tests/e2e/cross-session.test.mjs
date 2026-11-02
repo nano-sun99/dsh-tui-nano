@@ -186,7 +186,11 @@ test('同根第二窗口被拒：另一个进程拿不到同一 root', async () 
     await waitForMountLock('same-root')
     const second = runPtySync('same-root', { wait: 4 })
     assert.notEqual(second.code, 0, `第二窗口应失败，实际 ${second.code}`)
-    assert.match(second.screen, /占用|已被/, `第二窗口应说明被占用：${second.screen.slice(-500)}`)
+    assert.match(
+      second.screen,
+      /已在另一个窗口打开|占用|已被/,
+      `第二窗口应说明被占用：${second.screen.slice(-500)}`,
+    )
   } finally {
     first.child.kill('SIGTERM')
     await first.done

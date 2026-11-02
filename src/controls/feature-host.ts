@@ -200,12 +200,14 @@ export class Features implements FeatureHost {
     this.sessions = new SessionsPanel({
       ctx,
       rootId: context.rootId,
+      cwd: context.cwd,
       onChange: () => context.requestRender(),
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
       onSwitch: (rootId) =>
         context.requestRestart({
           rootId,
           reason: 'root-switch',
+          resumeOnly: true,
           payload: { draft: context.input.text },
         }),
       onRename: (rootId, title) => {
@@ -221,6 +223,7 @@ export class Features implements FeatureHost {
           }
           return
         }
+        // 冷改名是 S07 既有路径，不随 `-r` 的跨目录拒绝改变；仍走 `--root`。
         context.requestRestart({
           rootId,
           reason: 'cold-rename',
@@ -235,6 +238,9 @@ export class Features implements FeatureHost {
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
       watch: (jobId, mode) => this.monitor?.watch(jobId, mode),
     })
+
+    // `-r` 不带 id：先去默认新会话，再把现有面板打开；不额外 create。
+    if (context.openSessionsPanel === true) this.sessions.toggle()
 
     // 静态清单是唯一来源（S03 §5）：注册顺序与文档顺序一致。
     this.disposeKeys.push(...FEATURE_KEYBINDINGS.map((binding) => registerKeybinding(binding)))

@@ -14,8 +14,8 @@ import { isGuarded, launchGuarded } from './runtime/fd-guard.ts'
 const argv = process.argv.slice(2)
 
 /**
- * 去掉 `--root <id>` 的值再判断子命令。root id 允许叫 `purge`，
- * 若直接扫原始 argv，`nano --root purge` 会被误当成 purge 子命令。
+ * 去掉 `--root <id>` / `-r <id>` 的值再判断子命令。会话 id 允许叫 `purge`，
+ * 若直接扫原始 argv，`nano --root purge` 或 `nano -r purge` 会被误当成 purge 子命令。
  */
 function commandArgs(args: readonly string[]): string[] {
   const out: string[] = []
@@ -26,6 +26,12 @@ function commandArgs(args: readonly string[]): string[] {
       continue
     }
     if (arg?.startsWith('--root=') === true) continue
+    if (arg === '-r' || arg === '--resume') {
+      const value = args[index + 1]
+      if (value !== undefined && !value.startsWith('-')) index += 1
+      continue
+    }
+    if (arg?.startsWith('--resume=') === true) continue
     if (arg !== undefined) out.push(arg)
   }
   return out
