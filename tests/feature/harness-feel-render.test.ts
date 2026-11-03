@@ -7,7 +7,12 @@ import { displayWidth } from '../../src/render/text.ts'
 import { darkTheme, lightTheme } from '../../src/theme/theme.ts'
 import { TranscriptModel } from '../../src/transcript/model.ts'
 
-function snapshot(model: TranscriptModel, width: number, theme = darkTheme): AppSnapshot {
+function snapshot(
+  model: TranscriptModel,
+  width: number,
+  theme = darkTheme,
+  overrides: Partial<AppSnapshot> = {},
+): AppSnapshot {
   return {
     transcript: model,
     decisions: new DecisionManager(),
@@ -26,6 +31,7 @@ function snapshot(model: TranscriptModel, width: number, theme = darkTheme): App
     stickBottom: true,
     userName: '你',
     activity: { text: '' },
+    ...overrides,
   }
 }
 
@@ -60,7 +66,72 @@ function model(): TranscriptModel {
   return transcript
 }
 
+function render(
+  transcript: TranscriptModel,
+  width: number,
+  overrides: Partial<AppSnapshot> = {},
+): { lines: string[]; output: string } {
+  let output = ''
+  const renderer = new Renderer({
+    width,
+    height: 40,
+    defaultFg: darkTheme.fg,
+    write: (data) => {
+      output += data
+    },
+  })
+  try {
+    renderer.mount(
+      createElement(App, { snapshot: snapshot(transcript, width, darkTheme, overrides) }),
+    )
+    renderer.flushFrame()
+    return { lines: renderer.snapshotLines(), output }
+  } finally {
+    renderer.unmount()
+  }
+}
+
 describe('harness-feel rendered surface', () => {
+  for (const width of [60, 100]) {
+    it(`${width} columns: Update block stays inside the terminal`, () => {
+      const transcript = new TranscriptModel()
+      const longPath = `src/${'very-long-directory/'.repeat(12)}file.ts`
+      const newText = Array.from({ length: 1500 }, (_, index) => `line ${index}`).join('\n')
+      transcript.appendTool('e', 'edit', JSON.stringify({ path: longPath }))
+      transcript.completeTool('e', 'ok', false, {
+        diffs: [{ path: longPath, oldText: null, newText }],
+      })
+      const { lines } = render(transcript, width)
+      const screen = lines.join('\n')
+      expect(screen).toContain('⏺ Update(')
+      expect(screen).toContain('+1500 -0')
+      expect(screen).toContain('┄')
+      for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(width)
+    })
+
+    it(`${width} columns: failed question and notice stay inside the terminal`, () => {
+      const transcript = new TranscriptModel()
+      transcript.appendTool(
+        'q',
+        'ask_user_question',
+        JSON.stringify({ questions: [{ id: 'q1', question: 'Q' }] }),
+      )
+      transcript.completeTool('q', 'boom: tool failed', true)
+      const { lines } = render(transcript, width, {
+        status: 'running',
+        cwd: '/tmp/project',
+        version: '0.2.1',
+        notice: { text: '已发送停止请求（队列保留）', tone: 'info' },
+      })
+      const screen = lines.join('\n')
+      expect(screen).toContain('⏺ 问卷')
+      expect(screen).toContain('boom: tool failed')
+      expect(screen).toContain('v0.2.1 · ')
+      expect(screen).toContain('Esc 停止')
+      for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(width)
+    })
+  }
+
   for (const width of [60, 100]) {
     for (const theme of [darkTheme, lightTheme]) {
       it(`${width} columns / ${theme === darkTheme ? 'dark' : 'light'}: four categories and records`, () => {

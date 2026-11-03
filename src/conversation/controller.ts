@@ -114,6 +114,7 @@ export class ConversationController {
   private readonly liveJobs = new Map<string, string>()
   private readonly liveCalls = new Map<string, string>()
   private readonly liveOffsets = new Map<string, number>()
+  private readonly liveBuffers = new Map<string, string>()
   private readonly liveDirty = new Set<string>()
   private liveTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -343,9 +344,13 @@ export class ConversationController {
       case 'tool/call': {
         this.activity.toolStart(data.callId, data.name, data.turn)
         this.model.appendTool(data.callId, data.name, data.arguments ?? '')
-        // `job/registered` 可能早于 tool/call：那时先记映射，等条目建立再绑。
+        // `job/registered` 可能早于 tool/call：那时先记映射，等条目建立再绑；
+        // 早到的 output 没有被消费，这里补读一次（F7）。
         const jobId = this.liveJobs.get(data.callId)
-        if (jobId !== undefined) this.model.attachLiveJob(data.callId, jobId)
+        if (jobId !== undefined) {
+          this.model.attachLiveJob(data.callId, jobId)
+          this.readLive(jobId)
+        }
         break
       }
       case 'job/registered': {
@@ -360,25 +365,23 @@ export class ConversationController {
         const jobId = typeof data.jobId === 'string' ? data.jobId : undefined
         if (jobId !== undefined) {
           // 结算前的最后一段输出：读一次再清映射，已显示的 5 行不撤回。
-          this.readLive(jobId)
+          this.readLive(jobId, true)
           this.dropLiveJob(jobId)
         }
         break
       }
       case 'tool/result': {
-        this.activity.toolEnd(data.message?.toolCallId ?? data.message?.source?.callId, data.turn)
+        const callId = data.message?.toolCallId ?? data.message?.source?.callId
+        this.activity.toolEnd(callId, data.turn)
         const text = textOf(data.message?.content)
         const isError = data.message?.isError === true || data.error !== undefined
         const reason =
           typeof data.error?.reason === 'string' && data.error.reason !== ''
             ? data.error.reason
             : undefined
-        this.model.completeTool(
-          data.message?.toolCallId ?? data.message?.source?.callId,
-          reason ? `${reason}\n${text}` : text,
-          isError,
-          data.meta,
-        )
+        this.model.completeTool(callId, reason ? `${reason}\n${text}` : text, isError, data.meta)
+        // 前台调用结束（含超时转后台）：补读最后一段并停更，后台输出归任务面板（F2）。
+        if (typeof callId === 'string') this.finalizeLiveJob(callId)
         break
       }
       case 'turn/end':
@@ -419,33 +422,55 @@ export class ConversationController {
     this.liveJobs.set(callId, jobId)
     this.liveCalls.set(jobId, callId)
     if (!this.liveOffsets.has(jobId)) this.liveOffsets.set(jobId, 0)
-    this.model.attachLiveJob(callId, jobId)
+    if (this.model.attachLiveJob(callId, jobId)) this.readLive(jobId)
   }
 
-  /** 读 job 的新增输出并写进工具行；失败只清预览，不向用户报错。 */
-  private readLive(jobId: string): void {
+  /**
+   * 读 job 的新增输出并追加到工具行；失败只清预览，不向用户报错。
+   * 条目还没建立时先不读、不推进 offset，等 tool/call 后补读（F7）。
+   * `final` 为 true 时把不完整的尾行也交给渲染（job 结算 / 调用结束）。
+   */
+  private readLive(jobId: string, final = false): void {
     const callId = this.liveCalls.get(jobId)
     const jobs = this.options.ctx.get('jobs')
     const sessionId = this.agent?.session?.id
     if (callId === undefined || jobs === undefined || sessionId === undefined) return
+    if (this.model.toolEntryByCallId(callId) === undefined) return
     try {
       const read = jobs.readAt(jobId, this.liveOffsets.get(jobId) ?? 0, sessionId) as {
         chunks?: Array<{ text: string }>
         next?: number
       }
       this.liveOffsets.set(jobId, read.next ?? this.liveOffsets.get(jobId) ?? 0)
-      const text = (read.chunks ?? []).map((chunk) => chunk.text).join('')
-      const lines = liveLines(text)
+      const text = sanitizeText((read.chunks ?? []).map((chunk) => chunk.text).join(''))
+      const combined = (this.liveBuffers.get(jobId) ?? '') + text
+      const parts = combined.split('\n')
+      const remainder = parts.pop() ?? ''
+      const lines = parts
+        .map((line) => line.replace(/\r/gu, '').trimEnd())
+        .filter((line) => line.trim() !== '')
+      if (final && remainder.trim() !== '') {
+        lines.push(remainder.replace(/\r/gu, '').trimEnd())
+      }
+      this.liveBuffers.set(jobId, final ? '' : remainder)
       if (lines.length > 0) this.model.setLiveOutput(callId, lines)
     } catch {
       this.dropLiveJob(jobId)
     }
   }
 
+  private finalizeLiveJob(callId: string): void {
+    const jobId = this.liveJobs.get(callId)
+    if (jobId === undefined) return
+    this.readLive(jobId, true)
+    this.dropLiveJob(jobId)
+  }
+
   private dropLiveJob(jobId: string): void {
     const callId = this.liveCalls.get(jobId)
     this.liveCalls.delete(jobId)
     this.liveOffsets.delete(jobId)
+    this.liveBuffers.delete(jobId)
     this.liveDirty.delete(jobId)
     if (callId !== undefined) {
       this.liveJobs.delete(callId)
@@ -709,14 +734,6 @@ export class ConversationController {
       : '模型目录不可用，默认未写入'
     return { ...next, efforts, ...(saveError ? { saveError } : {}) }
   }
-}
-
-/** Bash 增量输出 → 非空行；ANSI / 控制序列统一走 `sanitizeText`。 */
-function liveLines(text: string): string[] {
-  return sanitizeText(text)
-    .split('\n')
-    .map((line) => line.replace(/\r/gu, '').trimEnd())
-    .filter((line) => line.trim() !== '')
 }
 
 function textOf(content: unknown): string {

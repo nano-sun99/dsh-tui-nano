@@ -6,8 +6,9 @@ import { DecisionManager } from '../../src/decisions/manager.ts'
 import { resolveKey } from '../../src/input/keymap.ts'
 import type { Key } from '../../src/input/parser.ts'
 import { Renderer } from '../../src/render/renderer.ts'
-import { graphemeWidth } from '../../src/render/text.ts'
+import { displayWidth, graphemeWidth } from '../../src/render/text.ts'
 import { darkTheme } from '../../src/theme/theme.ts'
+import { renderDiffs } from '../../src/transcript/diff.ts'
 import { type ToolEntry, TranscriptModel } from '../../src/transcript/model.ts'
 import { rowText } from '../../src/transcript/spans.ts'
 
@@ -78,6 +79,22 @@ describe('version in the status line (spec §3.1)', () => {
     expect(status).toContain('/tmp/project')
     expect(status).not.toContain('v0.0.0')
     expect(status.trimStart().startsWith('v')).toBe(false)
+  })
+
+  it('truncates a notice so the right-side hint survives at 60 columns', () => {
+    const model = new TranscriptModel()
+    const lines = screen(model, {
+      width: 60,
+      height: 20,
+      status: 'running',
+      cwd: '/tmp/project',
+      version: '0.2.1',
+      notice: { text: '已发送停止请求（队列保留）', tone: 'info' },
+    })
+    const status = lines.at(-1) ?? ''
+    expect(status).toContain('v0.2.1 · ')
+    expect(status).toContain('Esc 停止')
+    expect(displayWidth(status)).toBeLessThanOrEqual(60)
   })
 })
 
@@ -174,6 +191,32 @@ describe('question record projection (spec §3.3)', () => {
       .join('\n')
     expect(text).toContain('⏺ 问卷')
     expect(text).not.toContain('问答')
+    // 解析失败要退回「标题 + 预览」，展开态能看到原始结果（F3）。
+    const expanded = model
+      .units({ width: 80, expanded: new Set(['tool-q']) })
+      .flatMap((unit) => unit.rows.map(rowText))
+      .join('\n')
+    expect(expanded).toContain('not-json')
+  })
+
+  it('keeps a non-aborted error summary visible after expansion', () => {
+    const model = new TranscriptModel()
+    model.appendTool(
+      'q',
+      'ask_user_question',
+      JSON.stringify({ questions: [{ id: 'q1', question: 'Q' }] }),
+    )
+    model.completeTool('q', 'boom: tool failed', true)
+    const collapsed = model
+      .units({ width: 80, expanded: new Set() })
+      .flatMap((unit) => unit.rows.map(rowText))
+      .join('\n')
+    expect(collapsed).toContain('boom: tool failed')
+    const expanded = model
+      .units({ width: 80, expanded: new Set(['tool-q']) })
+      .flatMap((unit) => unit.rows.map(rowText))
+      .join('\n')
+    expect(expanded).toContain('boom: tool failed')
   })
 
   it('distinguishes a missing answer item from an explicit skip', () => {
@@ -330,6 +373,18 @@ describe('waiting status and four visual marks (spec §3.8 / §3.9)', () => {
 
   it('treats ⏺ as one cell so ⏺ + two spaces stay aligned', () => {
     expect(graphemeWidth('⏺')).toBe(1)
+  })
+
+  it('keeps the Update head inside 60/100 columns with a long path and large counters', () => {
+    const longPath = `src/${'very-long-directory/'.repeat(12)}file.ts`
+    const newText = Array.from({ length: 1500 }, (_, index) => `line ${index}`).join('\n')
+    for (const width of [60, 100]) {
+      const rows = renderDiffs([{ path: longPath, oldText: null, newText }], width)
+      for (const row of rows) {
+        expect((row.indent ?? 0) + displayWidth(rowText(row))).toBeLessThanOrEqual(width)
+      }
+      expect(rows.map(rowText).join('\n')).toContain('+1500')
+    }
   })
 
   it('numbers diff lines and shows +N -M in the Update block', () => {

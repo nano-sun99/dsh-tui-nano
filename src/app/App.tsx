@@ -222,7 +222,9 @@ function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
   const versionWidth = displayWidth(versionPrefix)
   const bodyBudget = Math.max(0, leftBudget - versionWidth)
   const cwdBudget = leftBudget >= 1 ? bodyBudget : Math.max(0, available - versionWidth)
-  const body = snapshot.notice ? snapshot.notice.text : displayCwd(snapshot.cwd, cwdBudget)
+  const body = snapshot.notice
+    ? truncateText(snapshot.notice.text, cwdBudget)
+    : displayCwd(snapshot.cwd, cwdBudget)
   const left = `${versionPrefix}${body}`
   const showRight = displayWidth(left) + rightWidth + 1 <= available
   const finalLeftBudget = showRight ? Math.max(1, leftBudget) : available

@@ -207,7 +207,11 @@ function headRows(
     status === 'error'
       ? `Update ${path} failed`
       : `${status === 'running' || status === 'waiting' ? 'Updating' : 'Updated'} ${path} with ${added} addition${added === 1 ? '' : 's'} and ${removed} removal${removed === 1 ? '' : 's'}`
-  const headBudget = Math.max(1, width - EDGE - 20)
+  const addedText = ` +${added}`
+  const removedText = ` -${removed}`
+  // `⏺ ` + `Update` + 括号 + `+N` + `-M` 都是固定宽度，剩余才给路径（F5）。
+  const fixed = 2 + 'Update'.length + 2 + displayWidth(addedText) + displayWidth(removedText)
+  const headBudget = Math.max(1, width - EDGE - fixed)
   const summaryBudget = Math.max(1, width - displayWidth('  ⎿  '))
   return [
     {
@@ -215,8 +219,8 @@ function headRows(
         textSpan('⏺ ', tone),
         textSpan('Update', 'normal', { bold: true }),
         textSpan(`(${truncateText(path, headBudget)})`, 'muted'),
-        textSpan(` +${added}`, 'diffAdd'),
-        textSpan(` -${removed}`, 'diffDel'),
+        textSpan(addedText, 'diffAdd'),
+        textSpan(removedText, 'diffDel'),
       ],
       indent: EDGE,
     },

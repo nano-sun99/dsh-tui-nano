@@ -283,7 +283,7 @@ export class TranscriptModel {
     return true
   }
 
-  /** 写入前台 Bash 的最后 5 行；后台调用不接预览。 */
+  /** 追加本次增量行，只保留最后 5 行；后台调用不接预览。 */
   setLiveOutput(callId: string, lines: readonly string[]): boolean {
     const index = this.entries.findIndex(
       (entry): entry is ToolEntry => entry.kind === 'tool' && entry.callId === callId,
@@ -291,7 +291,9 @@ export class TranscriptModel {
     if (index < 0) return false
     const entry = this.entries[index] as ToolEntry
     if (parseArgs(entry.args).run_in_background === true) return false
-    const tail = lines.slice(-BASH_TAIL_LINES)
+    // 慢速输出时每次 output 只有一两行；必须追加而不是覆盖，否则「最后 5 行」
+    // 会退化成最后一批（F1）。
+    const tail = [...(entry.liveOutput ?? []), ...lines].slice(-BASH_TAIL_LINES)
     const same =
       entry.liveOutput !== undefined &&
       entry.liveOutput.length === tail.length &&
@@ -604,7 +606,7 @@ export class TranscriptModel {
       if (isBash(entry) && !expanded && entry.status !== 'error') {
         built.push(...liveOutputRows(entry, options.width))
       }
-      if (expanded) built.push(...expandedToolRows(entry, width))
+      if (expanded) built.push(...expandedToolRows(entry))
       return built
     })
     return {
@@ -759,10 +761,11 @@ function isBash(entry: ToolEntry): boolean {
   return entry.name.toLowerCase() === 'bash'
 }
 
-function expandedToolRows(entry: ToolEntry, width: number): Row[] {
+function expandedToolRows(entry: ToolEntry): Row[] {
   const rows: Row[] = []
-  // 问卷的 args 是原始 JSON；题面 / 答案已经投影成决策行，展开不再重复。
-  if (entry.name === 'ask_user_question') return rows
+  // 问卷成功投影后，题面 / 答案已经变成决策行，展开不再重复原始 JSON；
+  // 解析失败 / 运行中 / 报错时保留旧工具行的 args + 预览（F3 / F4）。
+  if (entry.name === 'ask_user_question' && entry.questionOutcome !== undefined) return rows
   const args = parseArgs(entry.args)
   if (typeof args.command === 'string' && args.command !== '') {
     rows.push({ spans: [textSpan(`$ ${args.command}`, 'code')], indent: NESTED })
