@@ -62,6 +62,16 @@ def main() -> int:
     # 找到这个文本所在的屏幕行并点一下（用于展开工具行/差异块）。
     parser.add_argument("--click-marker", default=None)
     parser.add_argument("--click-wait", type=float, default=3.0)
+    # 关掉 master 制造真正的终端挂断（fd 1/2 的后续写入拿到 EIO），取代末尾的 Ctrl+C。
+    parser.add_argument("--hangup", action="store_true")
+    # 不发送 `--wait` 到点后的 Ctrl+C（由用例自己结束进程）。
+    parser.add_argument("--no-interrupt", action="store_true")
+    # 挂断前先让子进程活满这么久（秒）：避免「启动即崩」被当成「挂断后乖乖退出」。
+    parser.add_argument("--min-uptime", type=float, default=0.0)
+    # 等子进程自己退出多久；到点还没退就按下面 `--no-cleanup` 决定是否杀掉。
+    parser.add_argument("--exit-wait", type=float, default=8.0)
+    # 到点没退出也不杀：把「没退出」这件事实留给调用方断言后再清理。
+    parser.add_argument("--no-cleanup", action="store_true")
     # 被测进程的工作目录（默认继承调用方）。
     parser.add_argument("--cwd", default=None)
     parser.add_argument("command", nargs=argparse.REMAINDER)
@@ -81,6 +91,7 @@ def main() -> int:
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", args.rows, args.cols, 0, 0))
 
+    spawned_at = time.time()
     pid = os.fork()
     if pid == 0:
         os.close(master)
@@ -189,19 +200,34 @@ def main() -> int:
         with open(os.path.abspath(args.split_out), "wb") as handle:
             handle.write(bytes(collected))
 
-    try:
-        os.write(master, b"\x03")
-    except OSError:
-        pass
+    if args.min_uptime > 0:
+        remaining = spawned_at + args.min_uptime - time.time()
+        if remaining > 0:
+            drain(None, remaining)
+
+    if args.hangup:
+        # 真正的挂断：关掉 master 让 slave 侧的写入拿到 EIO，而不是只把缓冲写满。
+        os.close(master)
+        master_open = False
+    else:
+        master_open = True
+        if not args.no_interrupt:
+            try:
+                os.write(master, b"\x03")
+            except OSError:
+                pass
 
     # 再给关停一点时间；waitpid 必须带超时：被测进程若卡住，python 不能永久阻塞。
     status = None
-    quiet_deadline = time.time() + 8.0
+    quiet_deadline = time.time() + args.exit_wait
     while time.time() < quiet_deadline:
         done, waited = os.waitpid(pid, os.WNOHANG)
         if done == pid:
             status = waited
             break
+        if not master_open:
+            time.sleep(0.05)
+            continue
         ready, _, _ = select.select([master], [], [], 0.2)
         if not ready:
             continue
@@ -213,7 +239,17 @@ def main() -> int:
             break
         collected.extend(chunk)
 
+    with open(out_path, "wb") as handle:
+        handle.write(bytes(collected))
+    # pid 先于退出码打印：多余的行不打扰既有用例「最后一行是退出码」的解析。
+    print(f"pid={pid}")
+    print(f"exited={1 if status is not None else 0}")
+
     if status is None:
+        if args.no_cleanup:
+            # 调用方要先断言「pid 是否消失」，这里不能替它收拾现场。
+            print(-1)
+            return 0
         # 子进程是 setsid 出来的，pgid == pid；整组杀掉，避免遗留持有挂载锁。
         try:
             os.killpg(pid, signal.SIGKILL)
@@ -225,9 +261,6 @@ def main() -> int:
             status = 0
 
     exit_code = os.waitstatus_to_exitcode(status)
-
-    with open(out_path, "wb") as handle:
-        handle.write(bytes(collected))
     print(exit_code)
     return 0
 

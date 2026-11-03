@@ -10,7 +10,7 @@ NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
 NANO_RELEASE_VERIFY=1 npm run test:e2e
 ```
 
-前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 61 个用例（按文件顶层 `test()` 计数）：安装 17（其中发布验收 1 条默认跳过）+ 视觉 3 + 能力 1 + 交互 6 + 输入 5 + 跨会话 2 + 跨面 8 + 子代理 dock 5 + 会话生命周期 9 + 主链路 3 + Monitor 1 + 调度 1。发布证据运行显式设置了 `NANO_NODE_22` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip；`NANO_RELEASE_VERIFY=1` 只在发布 tag 上复核 version-matrix 哈希时设置。
+前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 62 个用例（按文件顶层 `test()` 计数）：安装 17（其中发布验收 1 条默认跳过）+ 视觉 3 + 能力 1 + 交互 6 + 输入 5 + 跨会话 2 + 跨面 8 + 子代理 dock 5 + 会话生命周期 9 + 主链路 3 + Monitor 1 + 调度 1 + 退出加固 1。发布证据运行显式设置了 `NANO_NODE_22` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip；`NANO_RELEASE_VERIFY=1` 只在发布 tag 上复核 version-matrix 哈希时设置。
 
 ## `release.test.mjs`（17）
 
@@ -100,6 +100,10 @@ boot 两个 root 的官方核心与 nano 调度门面：A 创建任务后，A �
 
 mock 监听随机端口，不触真实网络与真实凭据。
 
+## `exit-hardening.test.mjs`（1）
+
+终端挂断事故回归（issue #164 → #166）：`NANO_GUARDED=1` 跑「无守卫态」（fd 1/2 就是终端 = 事故现场），界面起来后**关掉 pty master 真挂断**，断言 8s 内子进程自己消失。不修时该 pid 稳定 100% CPU 不退，属硬红。守卫态（fd 2 = 日志）挂断本来就干净，拿它做用例必然从红变绿失败，所以不用。
+
 ## `ghostty-visual.py`
 
 真 Ghostty 截图（需要辅助功能与屏幕录制权限）：深/浅、60/100 列、CJK、diff 工具行、0.8 透明度。每个场景用独立 Ghostty 实例，跑完立即结束该实例并清理临时目录；只截取本次窗口。
@@ -111,6 +115,6 @@ python3 tests/e2e/ghostty-visual.py --tarball packaging/dist/dsh-tui-nano-0.2.0.
 ## 隔离与边界
 
 - 使用合成 `HOME` / `DSH_HOME` / `NANO_DATA_ROOT` / npm 安装前缀，并清掉继承的 `DEEPSEEK_API_KEY` 等凭据变量；npm cache 固定在系统临时目录，不写 `~/.npm`。`capability.test.mjs` 在进程内临时改 `process.env`，finally 恢复。
-- 所有 PTY 测试都不开窗口、不抢焦点、不动剪贴板；`pty-start.py` 的 `waitpid` 带超时，卡住时 `killpg` 整组。
+- 所有 PTY 测试都不开窗口、不抢焦点、不动剪贴板；`pty-start.py` 的 `waitpid` 带超时，卡住时 `killpg` 整组。用例要自己判「进程有没有自己退出」时传 `--hangup`（关掉 master 真挂断）+ `--no-cleanup`（不替用例收拾现场）+ `--min-uptime`（先活够再挂），脚本会先打印 `pid=` / `exited=`，最后一行仍是退出码。
 - 「升级」用的 0.2.1 包是从 0.2.0 tarball 解包改版本号重打的，只验证升级安装路径，不是发布物。
 - 需要桌面合成、透明与字体的 Ghostty 视觉验收不在此自动化范围内，按需人工跑并在发布结论里注明证据来源。

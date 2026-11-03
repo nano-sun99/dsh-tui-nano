@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { commandArgs } from './boot/cli.ts'
 import { resolvePaths } from './boot/paths.ts'
 import { main } from './main.ts'
+import { writeDiagnostic } from './runtime/diagnostic.ts'
 import { isGuarded, launchGuarded } from './runtime/fd-guard.ts'
 
 const argv = process.argv.slice(2)
@@ -67,8 +68,8 @@ try {
   const code = await main(argv)
   process.exit(code)
 } catch (error) {
-  process.stderr.write(
-    `nano: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+  writeDiagnostic(
+    `nano: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
   )
   process.exit(1)
 }

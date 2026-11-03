@@ -25,6 +25,7 @@ import { resolveKey } from '../input/keymap.ts'
 import type { InputEvent, Key } from '../input/parser.ts'
 import { INPUT_BYTE_LIMIT } from '../input/segments.ts'
 import type { Renderer } from '../render/renderer.ts'
+import { forceExit } from '../runtime/diagnostic.ts'
 import { writeHandoff } from '../runtime/handoff.ts'
 import { formatShutdownReport, Lifecycle } from '../runtime/lifecycle.ts'
 import type { Terminal } from '../runtime/terminal.ts'
@@ -277,13 +278,19 @@ export class NanoApp {
   private onUncaught = (error: unknown): void => {
     this.exitCode = 1
     this.options.writeDiagnostic(`nano: 未捕获异常：${String(error)}`)
-    void this.shutdown('uncaughtException')
+    void this.shutdown('uncaughtException').then(
+      () => forceExit(this.exitCode),
+      () => forceExit(1),
+    )
   }
 
   private onUnhandledRejection = (reason: unknown): void => {
     this.exitCode = 1
     this.options.writeDiagnostic(`nano: 未处理的 Promise 拒绝：${String(reason)}`)
-    void this.shutdown('unhandledRejection')
+    void this.shutdown('unhandledRejection').then(
+      () => forceExit(this.exitCode),
+      () => forceExit(1),
+    )
   }
 
   handleInput(events: readonly InputEvent[]): void {
@@ -1010,6 +1017,7 @@ export class NanoApp {
     const forceTimer = setTimeout(() => {
       terminal.restore()
       this.exitCode = this.exitCode || 1
+      forceExit(this.exitCode)
     }, 3000)
     const report = await this.lifecycle.requestShutdown(reason)
     clearTimeout(forceTimer)
