@@ -27,11 +27,11 @@
 
 ## 它长什么样
 
-流式思考和执行过程留在转录里：`❯` 用户、`∴` 思考、`⏺` 工具、`⎿` 结果，四类各有自己的标记和强调级别。Bash 运行中显示最后五行输出，跑完不撤回。
+流式思考和执行过程留在转录里：`❯` 用户、`∴` 思考、`⏺` 助手正文与工具行、`⎿` 结果，四类各有自己的标记和强调级别。前台 Bash 运行中显示最后五行输出；未展开且成功时，这五行留在转录里。
 
 ![模型与推理强度面板](docs/media/readme/model-panel.png)
 
-`/model` 换模型和推理强度；切换完成的状态行会给回执（`已选择 deepseek-flash · Max。`）。
+`/model` 换模型和推理强度；切换完成的状态行会给回执（`已选择 deepseek-flash · Max。`）。顶栏写 provider/model id，面板里用显示名，两者是同一个模型。
 
 ![一轮完整回答](docs/media/readme/answer.png)
 
@@ -49,8 +49,10 @@
 ## 快速开始
 
 ```sh
-# 安装 / 升级
-npm install -g dsh-tui-nano
+# 安装 / 升级：registry 尚未发布，先打包再装产物
+npm pack
+npm install -g ./dsh-tui-nano-0.2.2.tgz
+# registry 发布后改回：npm install -g dsh-tui-nano
 
 # 启动：新会话
 nano
@@ -79,6 +81,7 @@ npm uninstall -g dsh-tui-nano
 # 连数据一起删：先 purge（bin 仍在时），再卸载
 nano purge          # 交互确认
 nano purge --yes    # 非交互环境跳过确认
+npm uninstall -g dsh-tui-nano
 ```
 
 普通卸载**保留**数据根与 profile；只有 `nano purge` 会删除 profile、会话、运行时数据与历史。`nano purge` 不依赖 npm 的生命周期脚本（npm v7 起不保证 uninstall 脚本运行），所以顺序必须是「先 purge、后卸载」。首次启动自动初始化应用 profile；升级时逐文件校验，损坏先备份再报错，不覆盖用户 settings。
@@ -122,7 +125,7 @@ nano purge --yes    # 非交互环境跳过确认
 
 </details>
 
-完整键位与参数见 `nano --help`。
+完整键位与参数见 `nano --help`；`nano --root <id>` 指定会话身份（不存在则新建）。
 
 `!command` 以你的用户权限运行，不是 Agent 授权；输出会作为合成上下文注入，但不唤醒模型。
 
@@ -174,7 +177,7 @@ Ghostty
 | `packaging/` | npm 发布与安装说明（仓库内只保留 npm 一条安装路径） |
 | `docs/specs/` | 规格与验收标准 |
 | `docs/release/` | 发布验收、证据与已知限制 |
-| `docs/media/` | README 截图与发布动效素材 |
+| `docs/media/` | README 截图 |
 
 ## 当前状态
 
@@ -214,5 +217,5 @@ MIT，全文见 [`LICENSE`](LICENSE)。
 ## 致谢
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：Agent、模型、工具、会话与持久化。
-- [React](https://react.dev/) / [react-reconciler](https://www.npmjs.com/package/react-reconciler) / [Yoga](https://www.yogajavascript.com/)：UI 树与布局。
+- [React](https://react.dev/) / [react-reconciler](https://www.npmjs.com/package/react-reconciler) / [Yoga](https://www.yogalayout.com/)：UI 树与布局。
 - 设计样稿与真实终端证据的贡献者。

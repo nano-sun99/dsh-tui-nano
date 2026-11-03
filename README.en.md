@@ -27,11 +27,11 @@ Three principles: **reading first, little decoration, never invent facts**. Sess
 
 ## What it looks like
 
-Streaming reasoning and execution stay in the transcript. Four marks carry the reading order — `❯` you, `∴` thinking, `⏺` tools, `⎿` results — each with its own emphasis. A running Bash call shows its last five output lines and does not retract them when it finishes.
+Streaming reasoning and execution stay in the transcript. Four marks carry the reading order — `❯` you, `∴` thinking, `⏺` assistant text and tool rows, `⎿` results — each with its own emphasis. A foreground Bash call shows its last five output lines while running; when collapsed and successful, those lines stay in the transcript.
 
 ![Model and reasoning-effort panel](docs/media/readme/model-panel.png)
 
-`/model` switches model and reasoning effort; the status line gives a receipt (`已选择 deepseek-flash · Max。`).
+`/model` switches model and reasoning effort; the status line gives a receipt (`已选择 deepseek-flash · Max。`). The header shows the provider/model id while the panel uses the display name — same model.
 
 ![A full turn](docs/media/readme/answer.png)
 
@@ -49,8 +49,10 @@ Answers render as Markdown: code blocks, tables and long paragraphs stay structu
 ## Quick start
 
 ```sh
-# install / upgrade
-npm install -g dsh-tui-nano
+# install / upgrade: not on the registry yet — pack, then install the tarball
+npm pack
+npm install -g ./dsh-tui-nano-0.2.2.tgz
+# once published: npm install -g dsh-tui-nano
 
 # start a new session
 nano
@@ -173,7 +175,7 @@ Ghostty
 | `packaging/` | npm publishing and install notes (npm is the only install path in the repo) |
 | `docs/specs/` | specs and acceptance criteria |
 | `docs/release/` | release acceptance, evidence and known limitations |
-| `docs/media/` | README screenshots and release motion assets |
+| `docs/media/` | README screenshots |
 
 ## Status
 
@@ -213,5 +215,5 @@ MIT. See [`LICENSE`](LICENSE).
 ## Acknowledgements
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): agent, models, tools, sessions and persistence.
-- [React](https://react.dev/) / [react-reconciler](https://www.npmjs.com/package/react-reconciler) / [Yoga](https://www.yogajavascript.com/): UI tree and layout.
+- [React](https://react.dev/) / [react-reconciler](https://www.npmjs.com/package/react-reconciler) / [Yoga](https://www.yogalayout.com/): UI tree and layout.
 - Contributors of design mockups and real terminal evidence.
