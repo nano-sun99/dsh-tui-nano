@@ -2,9 +2,9 @@
 
 - 组标识：`2026-11-03-nano-exit-hardening`
 - 角色：单份 spec
-- 状态：**实施版 v5**，待复核/过闸
+- 状态：**实施版 v6**，待复核/过闸
 - Issue：[#164](https://github.com/nano-sun99/dsh-tui-nano/issues/164)
-- 版本沿革：v1–v3「症状 → 对策」→ v4 四条不变量 + sh shim → **v5 去掉 shim，守卫搬进进程内**（依据：第四轮重审的两条高，见 §8）
+- 版本沿革：v1–v3「症状 → 对策」→ v4 四条不变量 + sh shim → v5 去掉 shim、守卫搬进进程内（依据：第四轮重审的两条高，见 §8）→ **v6 加入 I5：终端写不可阻塞**（依据：pty 缓冲实测，见 §2 末行）
 - 上游：
   - 事故与实测：issue #164（83 分钟 100% CPU；4 秒复现；107,244 次未捕获异常）
   - Claude Code 2.1.88（本机归档 `…/ClaudeCode/src`）——**本版的主参照**，逐条见 §9
@@ -21,6 +21,7 @@
 | **I2** | 终端归还先于一切异步收尾；终端可用性是一等状态，只有一个探测者 | `restore` 排在 lifecycle 最后一相；3s 与 13.5s 两个预算互相打架 |
 | **I3** | 进程只有一个退出漏斗，任何路径都经过它，漏斗自己不会被异常穿透 | `bin.ts:55/65/68/72`、`main.ts:152`、nano-app finish、硬超时五条路径各写各的 |
 | **I4** | 能写到屏幕的只有 `Terminal.write`（走 `/dev/tty`）；其余 JS 写一律改道 | 库直写 stdout / stderr 落进 alt-screen，或干脆落进终端 |
+| **I5** | 任何写都不许阻塞事件循环 | `/dev/tty` 阻塞写把整个进程按死（0% CPU），此时**所有**进程内定时器都失效，13.5s 保险丝也救不了 |
 
 ## 2. 事故与关键实测（不重复推导）
 
@@ -31,6 +32,7 @@
 | 首条栈 | `writeDiagnostic → stderr.write → EIO → onUncaught → writeDiagnostic` |
 | pty 挂断后 | `ppid` 立即变 1；`writeSync(2)` 与 `/dev/tty` 零写均抛 EIO；`stdout.writable`/`stdin.readable` 恒 true |
 | 守卫路径（旧双进程） | 挂断后 19ms 干净退出 —— 说明关停逻辑本身没问题 |
+| **pty 缓冲（2026-11-03 实测）** | macOS pty 缓冲只有 **1024 字节**：阻塞模式下 64KB 的第一笔写**永不返回**（1.5s 后仍 0% CPU 卡死）；`O_NONBLOCK` 下第一次写 1024 字节（部分写）、第二次抛 `EAGAIN` 立即返回 |
 
 ## 3. 目标架构（单进程）
 
@@ -108,6 +110,15 @@ export function exit(code: number, reason: string, hooks: ExitHooks = {}): void 
 - **保险丝路径也要 release**：通过 `hooks.release` 传进去，避免锁留盘导致下次启动报「上次异常退出」（审核 #11）。
 - `stopping` 之后 `SIGTERM`/`SIGHUP` 只记一行、不升级 force；force 只留给 SIGINT 第二击。
 
+### R3b 终端写不可阻塞（I5）
+
+- `Terminal.enter()` 打开渲染句柄时改用 `openSync('/dev/tty', constants.O_RDWR | constants.O_NONBLOCK)`（现在是无 flag 的 `'r+'`，`src/runtime/terminal.ts:54`）。
+- `Terminal.write`（`src/runtime/terminal.ts:124-131`）已经是偏移量循环，补两件事：
+  - **`EAGAIN`**：丢弃本帧剩余字节，置 `frameDropped = true`，下一帧全量重绘（`frameDropped` 有读侧：渲染器决定是否做全量 repaint）；
+  - **`EIO` / `EBADF`**：直接把 `ttyFd` 置 `undefined` 并通知 `TtyState = lost`（走 R4 的关停），不再重试。
+- 为什么不是加看门狗：阻塞的入口是**我们自己的同步写**，去掉它比在另一个线程里补救便宜得多；看门狗对 D 状态（NFS hard mount 这类不可中断等待）也无效。
+- 已知边界（不在本单解决）：`writeDiagnostic` 写日志同样是 `writeSync`，本地盘无碍，**NFS / 网络文件系统上仍可能卡死**。
+
 ### R4 孤儿巡检（CC 没覆盖，我们自研）
 
 - 启动时快照 `startPpid`；`setInterval(30_000).unref()` 里判断 `startPpid !== 1 && process.ppid === 1`。
@@ -140,6 +151,7 @@ export function exit(code: number, reason: string, hooks: ExitHooks = {}): void 
 | M4 | 关停硬上限（13.5s `exit('fuse')`） | `requestShutdown` 永不 settle 时仍有终点 | 关停卡住只能人工 `kill -9` |
 | M5 | 孤儿巡检（`ppid` 快照 + `/dev/tty` 零写，30s） | 覆盖「没有 SIGHUP 也失联」「父进程先死」 | 静默失联要等到下一次异常才可能退出（CC 至今没覆盖这条） |
 | M6 | 未捕获异常计数保险（>3 → `exit(70)`） | 防处理器自身重入 | 即使写不抛，处理器也可能互相触发 |
+| M7 | `/dev/tty` 非阻塞打开 + `EAGAIN` 丢帧 | 终端不消费时不再阻塞事件循环 | 一次写就能把进程按死到 0% CPU，保险丝全程无法触发 |
 
 ## 6. 状态与字段（每条都有写者与读侧）
 
@@ -161,6 +173,7 @@ export function exit(code: number, reason: string, hooks: ExitHooks = {}): void 
 5. TUI 里 `console.log('x')` 不上屏，日志出现 `[stdout] x`。
 6. sink 打不开（`NANO_DATA_ROOT` 指向不可写目录）时进程照常启动、不抛。
 7. 关停卡死单测：13.5s `exit()` 被调且带 `release`；正常路径定时器被 clear。
+8. **阻塞回归**：用 pty 且**不读 master** 复现（§2 末行的脚本形态）→ 进程不卡死：能在 1s 内继续响应（心跳日志前进），`EAGAIN` 后 `frameDropped` 为真；不给 `O_NONBLOCK` 时该用例必须失败（防止回归成阻塞写）。
 8. `npm run typecheck && npm run lint && npm run build && npm test` 全绿。
 
 ## 8. 为什么 v4 的 shim 被推翻
@@ -194,7 +207,7 @@ export function exit(code: number, reason: string, hooks: ExitHooks = {}): void 
 | O1 | **真孤儿**：父进程/shell 先死、终端还在 | **完全未覆盖**（全仓无 `ppid` 存活判定；`isProcessRunning(pid≤1)` 这个现成判据只用来挑 IDE） | 30s 巡检 `ppid` 快照比对（M5） | 最坏 30s 空转；容器里 PID 1 启动需靠快照基线排除 |
 | O2 | **终端失联但无 SIGHUP** | 只靠 30s 轮询 `stdout.writable`/`stdin.readable`（Node 语义下恒真，实测） | 换判据：`ppid` + `/dev/tty` 零写探测（实测抛 EIO） | 需要 `ttyFd` getter |
 | O3 | **未捕获异常处理器自身抛错** | 部分：`error.message.slice` 对非 Error 会抛；handler 只记日志**不退出**，进程带病继续跑 | sink 不抛 + 计数保险（M6）+ 处理器内也走关停 | 多一个计数器 |
-| O4 | **事件循环被同步阻塞**（native 卡死、同步 fs 打满） | **未覆盖**：failsafe 与 SIGKILL 都在同一循环里 | **本版不解决**，只留痕：sink 记「关停开始」与最后一条进度；如需硬保证，后续单独开单用 `worker_threads` 看门狗（心跳 5s 未更新 → `process.kill(pid,'SIGKILL')`） | 现在承认这个洞，不做假承诺 |
+| O4 | **事件循环被同步阻塞** | **未覆盖**：failsafe 与 SIGKILL 都在同一循环里 | **拆成两半**：①「终端写阻塞」是本仓自己能控制的主因，用 M7（`O_NONBLOCK` + 丢帧）根治；② 剩下的极端情形（NFS hard mount、native 卡死）**本版不解决**，只留痕（sink 记「关停开始」+ 最后进度）；如需硬保证，另开单用 `worker_threads` 看门狗（心跳 5s 未更新 → `process.kill(pid,'SIGKILL')`，对 D 状态仍无效） | 承认残余洞，不做假承诺 |
 | O5 | **关停期间重复信号会砍断 flush** | CC 的 `shutdownInProgress` 直接吞掉后续信号 | SIGINT 第二击才 force；SIGTERM/SIGHUP 只记一行（**有意与 CC 不同**） | 与 CC 行为有差异，需在 ADR 记 |
 
 ## 10. 迁移 / 回滚 / 兼容 / 风险
@@ -202,7 +215,7 @@ export function exit(code: number, reason: string, hooks: ExitHooks = {}): void 
 - **迁移**：无数据变更。`NANO_GUARDED` 彻底消失（仓内两个消费方：`docs/evidence/.../drive.mjs` 的判断删除；`src/main.ts:250-255 relaunchInto` 不再需要特殊处理——受控重启只是一个普通 spawn，子进程自己 `openSink`）。`NANO_LOG_FILE` 无消费方，从契约里删掉。
 - **回滚**：`git revert` 单个 PR；`bin` 前缀未动，无安装侧影响。
 - **兼容**：`--version` / `--help` / `purge` 行为与退出码不变；信号仍退 0；新增 70（连发 4 次）；日志文件名沿用 `nano-<ts>-<pid>.log`。
-- **风险**：① 改道只覆盖 JS 层，native 直写 fd1 拦不住（CC 同样放弃；phase-0 实测 0 次）。② 同步阻塞卡死仍是洞（O4，已明说）。③ 巡检 30s 粒度（O1）。
+- **风险**：① 改道只覆盖 JS 层，native 直写 fd1 拦不住（CC 同样放弃；phase-0 实测 0 次）。② 终端写阻塞由 M7 解决，但**日志写在 NFS 上仍可能卡死**（O4 残余）。③ 巡检 30s 粒度（O1）。④ `O_NONBLOCK` 下健康终端也可能出现部分写 → 靠现有的偏移量循环重试，极端情况下掉一帧。
 
 ## 11. 自定细节
 
@@ -212,9 +225,19 @@ export function exit(code: number, reason: string, hooks: ExitHooks = {}): void 
 - 漏斗的 `restore` 复用 `terminal.restore()` 的幂等性；`release` 复用现有 `releaseMountClaim`。
 - 删掉 `RESTORE_BUDGET_MS`（同步 restore 使其永远不触发）。
 - 验收 4 里不再保留「purge 不被自己的日志 fd 占住」的说法（macOS 上 open 的文件本就能删，那是 Windows 才有的问题）。
+- `O_NONBLOCK` 只加在**渲染句柄**上；`process.stdin`（终端模拟器给的 fd）一律不动，避免影响输入。
+- `frameDropped` 的读侧是渲染器：为真时下一帧走全量重绘，然后清零。
 
 ## 12. 审核修订记录
 
 本轮（第四轮重审）共 2 份结论：规格符合性 21 条（含硬性缺项「机制清单」）、对抗 14 条（含 2 高：npm 符号链接、prepack 断言）。
 
 处置：**结构性改法（v5）覆盖了绝大多数**——机制清单已补（§5）、shim 相关的 5 条（符号链接 / prepack / PATH / umask / argv 误判）随 shim 一起消失、NANO_LOG_FILE 与 relaunchInto 的连带问题一并消解；逐条落在 R1–R6 与 §10：漏斗 hook 化、`bin.ts:55/65/68/72` 站点补齐、`writeVisible` 保留 stderr 一路、`RESTORE_BUDGET_MS` 删除、保险丝带 release、8s / 14s 分开断言、`os` 字段不加、`terminal.ts` 行号改 `:54`/`:124`、purge 括号删除。
+
+### v6（本轮追加）
+
+| 来源 | 处置 |
+|---|---|
+| 用户提问「事件循环被同步阻塞有没有别的办法」+ 实测 | 新增 I5 / R3b / M7：`/dev/tty` 改 `O_NONBLOCK`，`EAGAIN` 丢帧、`EIO` 判失联；验收加「不读 master 的 pty」阻塞回归用例 |
+| 依据 | Node 文档〈A note on process I/O〉：POSIX 上 tty 写是同步的；本机实测 pty 缓冲 1024 字节、阻塞写永不返回、`O_NONBLOCK` 下 `EAGAIN` 立即返回 |
+| 残余 | 日志写（`writeSync`）在 NFS 上仍可能卡死；native 卡死无解 —— 均在 §9.2 O4 / §10 明写 |
