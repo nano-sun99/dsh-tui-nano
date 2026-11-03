@@ -8,7 +8,7 @@
 - 机制范围：M1–M4（见 §4）
 - 上游：
   - Claude Code 2.1.88 源码（本机归档 `/Users/sunchongsheng/Downloads/归档/06-软件与安装包/ClaudeCode/src`）：
-    `constants/prompts.ts:892-898`（Bias toward action）、`utils/messages.ts:3280-3295`（问卷只用于澄清 / 选方案，不用于计划批准）、`components/Messages.tsx:381-389`/`:714-717`（流式思考可见）、`components/messages/AssistantThinkingMessage.tsx`（折叠态）、`components/messages/UserPromptMessage.tsx`（`❯` + userMessageBackground）、`components/messages/AssistantTextMessage.tsx`（`⏺` + Markdown 2ch）、`components/messages/AssistantToolUseMessage.tsx` + `components/MessageResponse.tsx`（`⏺ Tool(args)` + `  ⎿  ` 分支）、`components/FileEditToolDiff.tsx`（虚线 diff 框）、`components/shell/ShellProgressMessage.tsx`（Bash 运行中最后 5 行）、`tools/BashTool/UI.tsx:131-157`、`tools/AskUserQuestionTool/AskUserQuestionTool.tsx:105-108`（`· 问题 → 答案`）、`keybindings/defaultBindings.ts:66`（`escape: 'chat:cancel'`）。
+    `constants/prompts.ts:892-898`（Bias toward action）、`:366`（工具调用被拒原因不明时可以用 AskUserQuestion）、`utils/messages.ts:3280-3295`（问卷只用于澄清 / 选方案，不用于计划批准）、`components/Messages.tsx:381-389`/`:714-717`（流式思考可见）、`components/messages/AssistantThinkingMessage.tsx`（折叠态）、`components/messages/UserPromptMessage.tsx`（`❯` + userMessageBackground）、`components/messages/AssistantTextMessage.tsx`（`⏺` + Markdown 2ch）、`components/messages/AssistantToolUseMessage.tsx` + `components/MessageResponse.tsx`（`⏺ Tool(args)` + `  ⎿  ` 分支）、`components/FileEditToolDiff.tsx`（虚线 diff 框）、`components/shell/ShellProgressMessage.tsx`（Bash 运行中最后 5 行）、`tools/BashTool/UI.tsx:131-157`、`tools/AskUserQuestionTool/AskUserQuestionTool.tsx:105-108`（`· 问题 → 答案`）、`keybindings/defaultBindings.ts:66`（`escape: 'chat:cancel'`）。
   - 官方文档：[Interactive mode](https://code.claude.com/docs/en/interactive-mode)（Esc 中断、保留已完成工作、队列消息随后发送）、[Handle approvals and user input](https://code.claude.com/docs/en/agent-sdk/user-input)（AskUserQuestion 的触发场景与 Other 输入）。
   - 官方 `@deepseek-ai/dsh` 0.2.1-rc.2：`dsh-tool-ask-user`（legacy 描述、结果 JSON；nano 未传 config，默认 legacy）、`dsh-tool-bash`（jobs 可用时每次调用注册 job）、`dsh-jobs`（session `job/registered` 带 `toolCall`、`output` 事件与 `readAt`）。
 - ADR 检索：按「问卷 / question / 思考 / thinking / Bash / 工具结果 / transcript / 版本 / keymap」检索 `docs/decisions/`。
@@ -19,7 +19,7 @@
   - [ADR-20261103-streaming-process-preview](../../decisions/2026-11-03-streaming-process-preview.md)（修订 ADR-20261028 第 2、3、4 条）
   - [ADR-20261103-question-answer-visible-in-transcript](../../decisions/2026-11-03-question-answer-visible-in-transcript.md)
   - [ADR-20261103-nano-four-visual-categories](../../decisions/2026-11-03-nano-four-visual-categories.md)（四类视觉标记；修订 ADR-20261028 第 4 条标记）
-- 替代关系：局部修订 [2026-10-28-nano-process-display](../../specs/2026-10-28-nano-process-display/README.md) §3.1（组行右侧「等待结果 / 完成」状态词）、§3.2（Bash 成功 0 行 / `+N 行`）、§3.3（`点击展开 / 点击收起` 文字与思考 `▸` / `▾` 标记）与 §3.4（流式思考只显示一行、完成后整行消失；改为最多两行且**完成后保留**，只留最后 1–2 行尾巴；标记改 `∴`）；局部修订 [2026-11-01-nano-question-card-parity](../../specs/2026-11-01-nano-question-card-parity/README.md) §3.2/§3.6 的「未聚焦 Other 仍显示 `直接输入`」一条（改为未聚焦且空值时只显示 `N+1. 其他`）。其余条款沿用，不回写冻结正文。
+- 替代关系：局部修订 [2026-10-28-nano-process-display](../../specs/2026-10-28-nano-process-display/README.md) §3.1（组行右侧「等待结果 / 完成」状态词）、§3.2（Bash 成功 0 行 / `+N 行`）、§3.3（`点击展开 / 点击收起` 文字与思考 `▸` / `▾` 标记）与 §3.4（流式思考只显示一行、完成后整行消失；改为最多两行且**完成后保留**，只留最后 1–2 行尾巴；标记改 `∴`）；局部修订 [2026-11-01-nano-question-card-parity](../../specs/2026-11-01-nano-question-card-parity/README.md) §3.2/§3.6 的「未聚焦 Other 仍显示 `直接输入`」一条（改为未聚焦且空值时只显示 `N+1. 其他`）；局部修订 [2026-10-22-nano-theme-transparency](../../specs/2026-10-22-nano-theme-transparency/README.md) 的用户消息色：正文不再用 accent，新增 `userBg`，不改其他主题 token。其余条款沿用，不回写冻结正文。
 - 下游：无硬依赖。若后续要做后台 job 的实时输出、问卷并发队列或 TUI 内全量 Bash 输出，需另立 spec。
 - 合入前提：单测 + feature 渲染断言全绿；typecheck / lint / build / `keymap:docs -- --check` 退出 0；60 / 100 列真实终端证据；文档检查：本仓无 docs 检查脚本（无入口）。
 
@@ -30,7 +30,7 @@
 1. **版本可见**：左下角状态行常驻 `v<version> · <cwd>`；顶栏和启动通知不加版本；`nano --version` 不变。
 2. **提问纪律**：抄 Claude Code 的「Bias toward action」——能自己判就先做；只有答案会改变做法且代码判不出来时才开问卷卡；不用于确认、计划批准和琐碎实现细节。
 3. **决策留痕**：问卷答完后，正文保留 `· 问题 → 答案`；跳过、取消、多选、自定义答案都要能看见，重开会话也能还原。
-4. **流式过程**：折叠态思考从静态一行改为**最多两行**（标题 + 最新思考尾句），随流更新，**完成后保留**；Bash 运行中 / 完成后显示**最后 5 行输出**；过程行去掉「等待结果」「点击展开 / 点击收起」「+N 行」「完成」文字。
+4. **流式过程**：折叠态思考从静态一行改为**最多两行**（标题 + 最新思考尾句），随流更新，**完成后保留**；Bash 运行中 / 完成后显示**最后 5 行输出**；TS 不新增 `+N 行` / `完成` / `等待结果` 文案，移除当前唯一存在的 ` · 点击展开/点击收起` 后缀；设计稿同步清掉旧文案。
 5. **Other 占位**：未聚焦且空值的「其他」行不再显示 `直接输入`，避免看起来像输入框却敲不进字；聚焦后仍显示占位 + 光标，输入即替换。
 6. **Esc 打断**：运行中按 Esc 停止当前回合（保留队列），提示改为 `Esc 停止`；问卷卡 / 补全 / 面板仍优先消费 Esc。
 7. **四类视觉**：用户记录 `❯` + 底色、思考 `∴`、执行过程 `⏺` + `⎿`、代码变更 `⏺ Update` + 虚线框、正文 `⏺` + 2ch；见 §3.9。
@@ -53,9 +53,9 @@
 | 事实 | 证据 |
 |---|---|
 | 顶栏只渲染 `nano`、模型、状态，没有版本；`StatusLine` 左侧只显示 cwd / notice | `src/app/App.tsx:334-347`、`:194-230` |
-| 版本只在 `--version` 输出；版本号来自已安装包 `package.json` | `src/main.ts:50-52`、`:338-344` |
+| 版本只在 `--version` 输出；版本号来自已安装包 `package.json` | `src/main.ts:50-52`、`:338-346` |
 | 启动通知只列 profile / settings / 层 / 凭据 / 全局指令 | `src/main.ts:190`、`:267-289` |
-| nano 只注册 `nano:delegation-responsiveness` 一条自有提示段；没有提问纪律 | `src/conversation/controller.ts:39-41`、`:135-140` |
+| nano 只注册 `nano:delegation-responsiveness` 一条自有提示段；没有提问纪律 | `src/conversation/controller.ts:39-40`、`:135-140` |
 | 官方 legacy `ask_user_question` 描述鼓励在 confirmation / choice / missing information 时提问 | `node_modules/@deepseek-ai/dsh-tool-ask-user/lib/index.js:217` |
 | Claude Code 的主提示有「Bias toward action」：按最佳判断做，别为确认而问 | 归档 `constants/prompts.ts:892-898` |
 | Claude Code 在 plan mode 明确「AskUserQuestion 只用于澄清需求 / 选方案，不用于计划批准」 | 归档 `utils/messages.ts:3290` |
@@ -107,6 +107,7 @@
     ```
 
 - 不修改官方 `ask_user_question` 的工具描述，不新增频率硬闸、不自动代答、不隐藏卡片。
+- 最后一条「If you do not understand why the user denied a tool call…」来自归档 `constants/prompts.ts:366`（session-specific guidance）；其余来自 892-898 的 Bias toward action。
 - 该段与 `nano:delegation-responsiveness` 一起随 agent 作用域注册、随会话 dispose；不写全局、不影响子代理（子代理沿用各自作用域的提示）。
 - 验收以「提示段已注册且文本一致」为准；模型是否少问是观察项，不进本单硬验收（见 §6）。
 
@@ -120,7 +121,7 @@
   2. 从 `entry.args` 解析 `questions`（id、question、header、options、multiSelect）。
   3. 从原始结果 JSON 解析 `answers` 数组，按 id 映射到问题。
   4. 每个答案的显示值：`selected.join('、')`；有 `custom` 时追加 `、<custom>`（若 selected 为空则只显示 custom）；两者都空 → `（已跳过）`；没有对应答案项 → `（未回答）`。
-  5. `questionOutcome`：有答案且至少一题非空 → `answered`；全部空 → `skipped`；结果 JSON 标记 `pending` → `pending`（**防御性**：nano 默认 legacy，不产生 pending；仅 timed profile 可能出现）；工具错误且文本匹配 `aborted before the user answered` / `ASK_ABORTED` → `cancelled`。
+  5. `questionOutcome` 判定优先级：先 `cancelled`（工具错误且文本匹配 `aborted before the user answered` / `ASK_ABORTED`）→ `pending`（结果 JSON 标记；**防御性**：nano 默认 legacy，不产生 pending，仅 timed profile 可能出现）→ `answered`（至少一题非空）→ `skipped`（全部空）。
   6. 成功解析后，`resultText` 置空（原始 JSON 不留在 UI 模型，符合 ADR-20261102）；`cancelled` 也置空并跳过 `failureRows`，避免红色错误摘要；解析失败时保留现有 `previewToolResult` 行为，不抛错。
 - 渲染（`toolUnit`，单条工具行）：
   - 标题：`⏺ 问卷`（特判 `toolTitle`，不再显示 `ask_user_question`）；`⏺` 按工具状态着色（成功 `success`；取消按现有错误色或 `muted`，决策行始终 `muted`）。
@@ -138,7 +139,7 @@
   - 第 2 行：取 `preview.reasoning` 最后一个非空行，去掉行首尾空白、把连续空白压成一个空格；按显示宽度从**左侧**截断（保留尾部），前缀 `…`；`faint`、缩进 `EDGE`、`wrap={false}`。没有非空行时不加第 2 行。
   - 最多 2 行；不换行、不新增行数。
 - 展开态：沿用现有 `renderMarkdown(preview.reasoning, ...)` 全文；不显示尾巴行。
-- 思考结束后：**保留该 2 行块，不撤回**。标题从「进行中… · 3s」变为「思考」；最后一句尾巴保留。完整思考正文不保留，点击展开只显示保留的最后 1–2 个非空行（避免长会话内存增长）；不做全文回看。
+- 思考结束后：**保留该 2 行块，不撤回**。标题从「思考中」变为「思考」；最后一句尾巴保留。完整思考正文不保留，点击展开只显示保留的最后 1–2 个非空行（避免长会话内存增长）；不做全文回看。
 - 实现：`assistant/message` 到达时，controller 收集 reasoning block 文本，调用 `model.appendThinking(seq, text)`（只存最后 1–2 个非空行）；`appendAssistant` 只接收 text blocks，**丢弃 reasoning blocks**，不再把完整思考存进 `AssistantEntry`。`replay()` 与 `src/subagents/detail.ts` 的 replay / fold 走同一规则。`ThinkingEntry` 随 transcript 滚动 / 回放，`previewUnit` 只负责流式；完成后由 `ThinkingEntry` 接管。
 - 更新频率：随 `preview.revision` 更新，沿用现有渲染调度；不做额外动画/计时器。
 - 标记：统一用 `∴`（`muted` + italic）；`THINKING_MARK` 从 `▸` / `▾` 改为 `∴`；展开 / 收起靠整行点击，不再用箭头。
@@ -190,7 +191,7 @@
 
 ### 3.8 过程行提示收敛
 
-- 工具行不再渲染 ` · 点击展开` / ` · 点击收起` 文字后缀（`src/transcript/model.ts:389`），也不再显示 `+N 行` 与 `完成` 文字；整行点击保持不变。
+- 移除当前 TS 唯一存在的 ` · 点击展开` / ` · 点击收起` 文字后缀（`src/transcript/model.ts:389`）；TS 当前没有 `+N 行` / `完成` / `等待结果` 文案，不新增；设计稿同步清掉这些历史文案。整行点击保持不变。
 - 工具行用 `⏺` 标记，按状态着色（running `muted` / ok `success` / error `danger` / waiting `warning`）；`Read` 组行与 `Bash` 行下方用 `  ⎿  ` 分支显示提示 / 输出。不再用 `▸` / `▾` 作为过程行标记。
 - 运行中的工具行不显示「等待结果」之类重复状态；运行状态由活动行（`正在运行…`）表达，工具行只留标题、状态 mark 和输出。
 - `Read` 组行折叠态显示一行 `  ⎿  ` 提示（最后读取目标）；展开后隐藏该提示，展开体显示每次调用。
@@ -205,15 +206,15 @@
 | 思考 | `∴`（`muted` + italic） | 标题与正文 2ch；完成后保留；尾巴 2ch |
 | 执行过程 | `⏺`（running `muted` / ok `success` / error `danger` / waiting `warning`） | 工具名 2ch 加粗；结果走 `  ⎿  ` 分支（第一行 `⎿`，正文 5ch）；不显示 `+N` / `完成` / `点击展开` |
 | 代码变更 | `⏺ Update(path)`（`success`） | `  ⎿  ` 摘要 5ch；diff 上下 `┄` 虚线框；行号 gutter + `+` / `-` 行色 |
-| 正文输出 | `⏺`（`text`） | Markdown 2ch；标题 bold；列表 `-`；段落 1 行间隔 |
+| 正文输出 | `⏺`（`text`） | Markdown 2ch；标题 `normal` + bold（不用 accent）；列表 `-`；段落 1 行间隔 |
 
 - **标记常量**：`USER_MARK = '❯'`、`ASSISTANT_MARK = '⏺'`、`THINKING_MARK = '∴'`、`BRANCH_MARK = '  ⎿  '`。全部是文本字符，不新增图标库；`⏺` 在非 macOS 可回退 `●`（nano 当前只支持 macOS arm64，先固定 `⏺`）。`⏺` 在 `src/render/text.ts` 加 **1ch 宽度 override**（`string-width` 实测为 2），否则 `⏺ ` + 2ch 会错位。
 - **用户行底色**：新增主题 token `userBg`（dark `#23262d` / light `#e9e7e2`）；`Row` 增加可选 `background?: 'userBg'`，`RowView` 用它铺满整行。不改变现有 theme token 语义。
 - **用户行**：`❯` 在 `muted`；文本用 `normal`，不再用 `user` tone；不加粗、不用 accent。整行底色是唯一的内容块底色。
-- **助手正文**：第一行与 `⏺` 同排（`⏺ ` + 第一行 Markdown）；后续行 2ch；列表 `-` 与正文同左缘，不额外缩进；若首行是空行或块级元素，`⏺` 单独占一行，正文从下一行 2ch 开始。
+- **助手正文**：第一行与 `⏺` 同排（`⏺ ` + 第一行 Markdown）；后续行 2ch；标题 `normal` + bold（去掉现有 accent）；列表 `-` 与正文同左缘，不额外缩进；若首行是空行或块级元素，`⏺` 单独占一行，正文从下一行 2ch 开始。
 - **思考**：`∴` 在 `muted` + italic；标题 / 正文 / 尾巴统一 2ch；不再用 `▸` / `▾`，展开 / 收起靠整行点击。
-- **过程**：`⏺` 的状态色只改标记，不改工具名 / 参数；结果分支 `  ⎿  ` 的 `⎿` 在 2ch，正文 5ch（`NESTED + INLINE = 4 + 1`，不写裸 5）；分支只承载结果 / 提示，不画框。`waiting` 由审批 prompt 的 `callId` 映射到 `ToolEntry.status = 'waiting'`（`NanoApp` 在 prompt 出现 / 结算时设置），没有 callId 时保持 running。
-- **代码变更**：头部 `⏺ Update(path)` + `+N -M`；下一行 `  ⎿  ` 摘要；diff 内容用上下 `┄` 虚线框，左右不封口；行号与 `+N -M` 由 `diffLines` 计算（meta 不提供行号），行色沿用。
+- **过程**：`⏺` 的状态色只改标记，不改工具名 / 参数；结果分支 `  ⎿  ` 的 `⎿` 在 2ch，正文 5ch（`NESTED + INLINE = 4 + 1`，不写裸 5）；分支只承载结果 / 提示，不画框。`waiting` 由审批 prompt 的 `callId` 映射：`NanoApp` 调 `model.markWaiting(callId, waiting: boolean)`；prompt 出现 true，结算 false → 回 `running`，等 `tool/result` 再定 `ok` / `error`；没有 callId 时不动。
+- **代码变更**：头部 `⏺ Update(path)` + `+N -M`；下一行 `  ⎿  ` 摘要；diff 内容用上下 `┄` 虚线框，左右不封口；行号与 `+N -M` 由 `diffLines` 计算（meta 不提供行号）：`-` 行取旧文件行号，`+` 与上下文行取新文件行号，gutter 单列（如 20,21,22,22,23,24），行色沿用。
 - **ANSI**：复用 `src/render/text.ts` 的 `sanitizeText`（已有 CSI / OSC / DCS / 单字节 ESC 防护），不新增第二份 `stripAnsi`。
 - **不新增**：除用户行底色与 diff 虚线框外，不加边框、圆角、阴影、图标或第二层底色；四类之间 1 行留白。
 - 设计稿 `docs/design/2026-10-17-dsh-tui-ux-research/preview/` 已按此表更新；实现以设计稿为准。决策记录见 [ADR-20261103-nano-four-visual-categories](../../decisions/2026-11-03-nano-four-visual-categories.md)。
@@ -234,7 +235,7 @@
 | 文件 | 改动 |
 |---|---|
 | `src/main.ts` | `nanoVersion()` 改为 `string \| undefined`（读不到 package.json 时返回 undefined，不再回退 `'0.0.0'`）；传给 `NanoApp`；启动通知不追加版本行 |
-| `src/app/nano-app.ts` | `NanoAppOptions` / `AppSnapshot` 增加 `version`；快照透传；审批 prompt 出现 / 结算时按 `callId` 调 `model.markWaiting()`；不改键位路由 |
+| `src/app/nano-app.ts` | `NanoAppOptions` / `AppSnapshot` 增加 `version`；快照透传；审批 prompt 出现 / 结算时按 `callId` 调 `model.markWaiting(callId, true/false)`；不改键位路由 |
 | `src/app/App.tsx` | `StatusLine` 左侧渲染 `v<version> · <cwd/notice>`；`RUNNING_HINT` 改 `Enter 插话 · Esc 停止`；`RowView` 支持 `Row.background` 整行底色 |
 | `src/app/question-card.ts` | Other 行未聚焦且空值时去掉 `直接输入` |
 | `src/input/keymap.ts` | `conversation.cancel` 增加 Escape（描述已是「停止当前回合（保留队列）」，不改文案） |
@@ -242,8 +243,8 @@
 | `src/transcript/spans.ts` | `Row` 增加可选 `background?: 'userBg'` |
 | `src/conversation/controller.ts` | 注册 `nano:question-discipline`；`handleSessionEvent` 处理 `job/registered` / `job/settled` 建/清 `callId → jobId`；订阅 jobs `output` 维护 Bash live；`assistant/message` / `replay` 收集 reasoning 调 `appendThinking`，`appendAssistant` 只传 text blocks |
 | `src/transcript/model.ts` | 新增 `ThinkingEntry` / `appendThinking`（只存最后 1–2 个非空行）；`appendAssistant` 丢弃 reasoning blocks；`ToolEntry.status` 增加 `'waiting'`；`questionAnswers` / `questionOutcome` / `liveOutput` / `liveJobId`；`completeTool` 投影问卷 JSON；`previewUnit` 加思考尾巴；`toolUnit` 加 live 输出与问卷记录；`toolTitle` 特判 `ask_user_question`；移除 ` · 点击展开/点击收起` 后缀；四类视觉标记（`❯` / `⏺` / `∴` / `⎿`）与用户行底色；`THINKING_MARK` 改 `∴` |
-| `src/transcript/diff.ts` | 由 `diffLines` 计算行号与 `+N -M` 统计；`⏺ Update(path)` 头 + `  ⎿  ` 摘要 + 上下 `┄` 虚线框；作为独立代码变更块渲染，不改行色 |
-| `src/transcript/markdown.ts` | 列表符号改为 `-`；标题沿用 bold（不改成 accent） |
+| `src/transcript/diff.ts` | 由 `diffLines` 计算行号（`-` 旧号，`+`/上下文新号）与 `+N -M` 统计；`⏺ Update(path)` 头 + `  ⎿  ` 摘要 + 上下 `┄` 虚线框；作为独立代码变更块渲染，不改行色 |
+| `src/transcript/markdown.ts` | 列表符号改为 `-`；标题从 accent + bold 改为 `normal` + bold（去 accent） |
 | `src/render/text.ts` | 复用现有 `sanitizeText`（不新增 `stripAnsi`）；`⏺`（U+23FA）加 1ch 宽度 override，避免 `string-width` 按 2 格计算 |
 | `src/subagents/detail.ts` | `replaySessionMessages` / `foldSessionEvent` 的 reasoning 走 `appendThinking`，`appendAssistant` 只传 text |
 | `src/transcript/question-answers.ts`（新） | 问卷 args + result JSON → `QuestionAnswerLine[]` 的纯函数 |
@@ -258,7 +259,7 @@
 - [ ] TS 工具行不新增 `+N 行` / `完成` / `等待结果` 文案；移除当前唯一存在的 ` · 点击展开 /  · 点击收起` 后缀；整行点击仍可展开 / 收起。设计稿同步清掉旧文案。
 - [ ] 四类视觉标记：用户行 `❯` + `userBg` 整行底色；助手正文 `⏺` + 2ch；思考 `∴`；工具行 `⏺` 状态色变化（running → ok / error / waiting）+ `  ⎿  ` 分支 5ch；diff `⏺ Update(path)` + `  ⎿  ` 摘要 + 上下虚线框 + `diffLines` 计算的行号 / `+N -M`。
 - [ ] `⏺` 在 `src/render/text.ts` 按 1ch 计宽；60 / 100 列下四类标记、2ch / 5ch 缩进、用户底色与 diff 虚线框不溢出、不折行。
-- [ ] `waiting` 状态由审批 prompt 的 `callId` 映射到 `ToolEntry.status`；没有 callId 时保持 running。
+- [ ] `waiting` 状态由审批 prompt 的 `callId` 映射到 `ToolEntry.status`：出现 true，结算 false 回 `running`；没有 callId 时不动。
 - [ ] `nano:question-discipline` 提示段已注册，文本与 §3.2 一致；官方 `ask_user_question` 工具描述未改。
 - [ ] 问卷单选 / 多选 / 自定义 / 跳过 / 取消都能在正文产生对应记录；重开会话后仍可见；非法 JSON 退回现有工具行且不抛错。`pending` 为防御性分支（nano 默认 legacy，不产生），不作为本单验收。
 - [ ] 流式思考折叠态最多 2 行，第 2 行随 revision 更新、左截断、不折行；思考期间展开显示全文，完成后展开只显示保留的最后 1–2 行；**完成后保留该 2 行块，不撤回**。
@@ -302,4 +303,6 @@
 | M8 | 中 | 替代关系章节号对不上旧 spec | 按旧 §3.1/§3.2/§3.3/§3.4 实际内容重写 |
 | M9 | 中 | `⏺` 命中 `\p{Extended_Pictographic}`，verify 必失败；`verification.json` 旧 | 检查允许 `⏺` 状态标记；重跑 144 项，0 fail；`verification.json` 更新 |
 | M10 | 中 | `nanoVersion()` 失败返回 `'0.0.0'`，无法区分缺失 | §3.1 / §5 / §7 改为 `string \| undefined`，缺失只显示 cwd |
-| L1–L16 | 低 | timed 证据 / 行号漂移 / TS 无 `+N`/`完成`/`等待结果` / markdown 列表 / theme 源表 / ADR 检索 / 设计 README / 样稿单题计数与取消行 / 子代理过程行 / 思考标题 3s / `∴` italic / ADR `▸` 文案 / 4 题上限 / job 配置判定 / ADR-20261028 frontmatter / 5ch token | 逐条修正；完整清单见 PR 评论 |
+| M11 | 中 | `markdown.ts` 标题现状 accent+bold，设计稿 fg+bold；spec 写“沿用 bold”会保留 accent | §3.9 / §5 改为 `normal` + bold（去 accent） |
+| M12 | 中 | 新增 `userBg` / 正文改 normal 没落到主题源表 | 替代关系写明局部修订 `2026-10-22-nano-theme-transparency` 的用户消息色；不改其他 token |
+| L1–L16 | 低 | timed 证据 / 行号漂移 / TS 无 `+N`/`完成`/`等待结果` / markdown 列表 / theme 源表 / ADR 检索 / 设计 README / 样稿单题计数与取消行 / 子代理过程行 / 思考标题 3s / `∴` italic / ADR `▸` 文案 / 4 题上限 / job 配置判定 / ADR-20261028 frontmatter / 5ch token | 逐条修正；复核残留 L2/L3/L4/L5/L10 已补；完整清单见两轮 PR 评论 |

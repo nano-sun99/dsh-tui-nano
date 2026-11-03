@@ -465,6 +465,10 @@
       "passed": true
     },
     {
+      "check": "single question record has no count",
+      "passed": true
+    },
+    {
       "check": "multi-select Enter submits checked items without adding the focused item",
       "passed": true
     },
@@ -494,6 +498,10 @@
     },
     {
       "check": "Escape cancels without fabricating answered results",
+      "passed": true
+    },
+    {
+      "check": "cancelled question record has a body line",
       "passed": true
     },
     {

@@ -72,6 +72,7 @@
     .disclose[data-status="running"] { color:var(--muted); }
     .disclose[data-status="error"] { color:var(--error); }
     .disclose[data-status="waiting"] { color:var(--warning); }
+    .disclose[data-status="muted"] { color:var(--muted); }
     .summary-kind { flex:none; color:var(--muted); }
     .summary-kind.tool-kind { color:var(--fg); font-weight:700; }
     .summary-kind.thinking-kind { font-style:italic; }
@@ -588,7 +589,7 @@
     const result = choicePreview.result
     if (!result) return ''
     if (result.kind === 'cancelled') {
-      return `<section class="turn question-record" data-key="question-record"><div class="process"><span class="record-mark cancelled">⏺</span> <span class="summary-name">问卷</span></div><div class="group-result question-answer">${cells('· 已取消，未提交答案')}</div></section>`
+      return `<section class="turn question-record" data-key="question-record"><div class="process"><span class="record-mark cancelled">⏺</span> <span class="summary-kind tool-kind">问卷</span></div><div class="group-result question-answer">${cells('· 已取消，未提交答案')}</div></section>`
     }
     if (result.kind !== 'answered') return ''
     const lines = result.answers.map(answer => {
@@ -596,7 +597,7 @@
       return `<div class="group-result question-answer">${cells(`· ${answer.question ?? answer.header} → ${text}`)}</div>`
     }).join('')
     const count = result.answers.length > 1 ? ` · 已回答 ${result.answers.length} 题` : ''
-    return `<section class="turn question-record" data-key="question-record"><div class="process"><span class="record-mark">⏺</span> <span class="summary-name">问卷</span><span class="summary-meta">${cells(count)}</span></div>${lines}</section>`
+    return `<section class="turn question-record" data-key="question-record"><div class="process"><span class="record-mark">⏺</span> <span class="summary-kind tool-kind">问卷</span><span class="summary-meta">${cells(count)}</span></div>${lines}</section>`
   }
   function draw(options = {}) {
     const stick = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 4
