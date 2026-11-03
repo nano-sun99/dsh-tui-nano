@@ -3,6 +3,7 @@
  * three context lines, an eight-line budget when collapsed, and no invented
  * line numbers (the metadata carries none).
  */
+import { displayWidth, truncateText } from '../render/text.ts'
 import { EDGE } from '../theme/spacing.ts'
 import { type Row, type Span, textSpan, wrapSpans } from './spans.ts'
 
@@ -140,33 +141,128 @@ function backtrack(
   return ops.reverse()
 }
 
-/** Rows for one file's diff; collapsed output is capped at the 8-line budget. */
+export type DiffStatus = 'running' | 'ok' | 'error' | 'waiting'
+
+export interface DiffRenderOptions {
+  readonly expanded?: boolean
+  readonly budget?: number
+  readonly status?: DiffStatus
+}
+
+interface NumberedLine extends DiffLine {
+  /** 旧文件行号（`-`）或新文件行号（`+` / 上下文）。 */
+  readonly lineNo: number
+}
+
+/**
+ * 代码变更块（ADR-20261103 §4）：`⏺ Update(path)` 头 + `  ⎿  ` 摘要 +
+ * 上下 `┄` 虚线框；行号与 `+N -M` 由 `diffLines` 计算（meta 不带行号）。
+ * 折叠态按 8 行预算裁剪，展开态显示完整 diff。
+ */
 export function renderDiffs(
   diffs: readonly FileDiff[],
   width: number,
-  options: { expanded?: boolean; budget?: number } = {},
+  options: DiffRenderOptions = {},
 ): Row[] {
   const rows: Row[] = []
   for (const diff of diffs) {
-    rows.push({ spans: [textSpan(diff.path, 'accent', { bold: true })] })
-    const lines = diffLines(diff.oldText, diff.newText)
+    const lines = numberLines(diffLines(diff.oldText, diff.newText))
+    const added = lines.filter((line) => line.op === '+').length
+    const removed = lines.filter((line) => line.op === '-').length
+    rows.push(...headRows(diff.path, added, removed, width, options.status ?? 'ok'))
     const { visible, hidden } =
       options.expanded === true
         ? { visible: lines, hidden: 0 }
         : collapseContext(lines, options.budget ?? DIFF_LINE_BUDGET)
-    for (const line of visible) rows.push(...diffRows(line, width))
+    const rule = '┄'.repeat(Math.max(1, width - EDGE))
+    rows.push({ spans: [textSpan(rule, 'faint')], indent: EDGE })
+    for (const line of visible) rows.push(...diffRows(line, width, gutter(lines)))
     if (hidden > 0) {
-      rows.push({ spans: [textSpan(`… 还有 ${hidden} 行（点击展开）`, 'faint')] })
+      rows.push({
+        spans: [textSpan(`… 还有 ${hidden} 行（点击展开）`, 'faint')],
+        indent: EDGE,
+      })
     }
+    rows.push({ spans: [textSpan(rule, 'faint')], indent: EDGE })
   }
   return rows
 }
 
+function headRows(
+  path: string,
+  added: number,
+  removed: number,
+  width: number,
+  status: DiffStatus,
+): Row[] {
+  const tone: Span['tone'] =
+    status === 'error'
+      ? 'danger'
+      : status === 'waiting'
+        ? 'warning'
+        : status === 'running'
+          ? 'muted'
+          : 'success'
+  const summary =
+    status === 'error'
+      ? `Update ${path} failed`
+      : `${status === 'running' || status === 'waiting' ? 'Updating' : 'Updated'} ${path} with ${added} addition${added === 1 ? '' : 's'} and ${removed} removal${removed === 1 ? '' : 's'}`
+  const headBudget = Math.max(1, width - EDGE - 20)
+  const summaryBudget = Math.max(1, width - displayWidth('  ⎿  '))
+  return [
+    {
+      spans: [
+        textSpan('⏺ ', tone),
+        textSpan('Update', 'normal', { bold: true }),
+        textSpan(`(${truncateText(path, headBudget)})`, 'muted'),
+        textSpan(` +${added}`, 'diffAdd'),
+        textSpan(` -${removed}`, 'diffDel'),
+      ],
+      indent: EDGE,
+    },
+    {
+      spans: [textSpan('  ⎿  ', 'muted'), textSpan(truncateText(summary, summaryBudget), 'faint')],
+      indent: 0,
+    },
+  ]
+}
+
+/** 单列 gutter：`-` 取旧号，`+` / 上下文取新号。 */
+function numberLines(lines: readonly DiffLine[]): NumberedLine[] {
+  let oldNo = 1
+  let newNo = 1
+  return lines.map((line) => {
+    if (line.op === '-') {
+      const lineNo = oldNo++
+      return { ...line, lineNo }
+    }
+    if (line.op === '+') {
+      const lineNo = newNo++
+      return { ...line, lineNo }
+    }
+    const lineNo = newNo++
+    oldNo++
+    return { ...line, lineNo }
+  })
+}
+
+function gutter(lines: readonly NumberedLine[]): number {
+  return Math.max(1, String(lines.reduce((max, line) => Math.max(max, line.lineNo), 1)).length)
+}
+
+function diffRows(line: NumberedLine, width: number, gutterWidth: number): Row[] {
+  const tone: Span['tone'] = line.op === '+' ? 'diffAdd' : line.op === '-' ? 'diffDel' : 'muted'
+  const mark = line.op === ' ' ? ' ' : line.op
+  const prefix = `${String(line.lineNo).padStart(gutterWidth)} ${mark} `
+  const spans: Span[] = [textSpan(prefix, tone), textSpan(line.text, tone)]
+  return wrapSpans(spans, Math.max(1, width - EDGE)).map((row) => ({ ...row, indent: EDGE }))
+}
+
 /** Keep changed lines plus context, hiding lines beyond the budget. */
-function collapseContext(
-  lines: readonly DiffLine[],
+function collapseContext<T extends DiffLine>(
+  lines: readonly T[],
   budget: number,
-): { visible: DiffLine[]; hidden: number } {
+): { visible: T[]; hidden: number } {
   const changed = lines
     .map((line, index) => (line.op === ' ' ? -1 : index))
     .filter((index) => index >= 0)
@@ -180,19 +276,12 @@ function collapseContext(
       if (i >= 0 && i < lines.length) keep.add(i)
     }
   }
-  const visible: DiffLine[] = []
+  const visible: T[] = []
   let hidden = 0
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] as DiffLine
+    const line = lines[i] as T
     if (keep.has(i) && visible.length < budget) visible.push(line)
     else hidden++
   }
   return { visible, hidden }
-}
-
-function diffRows(line: DiffLine, width: number): Row[] {
-  const tone: Span['tone'] = line.op === '+' ? 'diffAdd' : line.op === '-' ? 'diffDel' : 'muted'
-  const prefix = line.op === ' ' ? '  ' : `${line.op} `
-  const spans: Span[] = [textSpan(prefix, tone), textSpan(line.text, tone)]
-  return wrapSpans(spans, Math.max(1, width - EDGE)).map((row) => ({ ...row, indent: EDGE }))
 }

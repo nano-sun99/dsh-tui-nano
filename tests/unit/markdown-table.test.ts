@@ -311,6 +311,6 @@ describe('Markdown tables', () => {
       'after',
     ])
     expect(lines('before\n\n```\nx\n```\nafter')).toEqual(['before', '', 'x', '', 'after'])
-    expect(lines('- a\n  - b\n\n> **quoted**')).toEqual(['• a', '• b', '', '│ quoted'])
+    expect(lines('- a\n  - b\n\n> **quoted**')).toEqual(['- a', '- b', '', '│ quoted'])
   })
 })

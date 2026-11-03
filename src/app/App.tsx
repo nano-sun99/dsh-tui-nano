@@ -35,6 +35,8 @@ export interface AppSnapshot {
   readonly activity?: Activity
   readonly activityOwned?: boolean
   readonly cwd?: string
+  /** 已安装包版本；读不到时不显示 `v` 前缀（spec §3.1）。 */
+  readonly version?: string
   readonly expanded: ReadonlySet<string>
   readonly scrollOffset: number
   readonly stickBottom: boolean
@@ -107,7 +109,12 @@ function RowView(props: { row: Row; theme: Theme; width: number }) {
   const { row, theme, width } = props
   const indent = row.indent ?? 0
   return (
-    <Box flexDirection="row" width={width} {...(row.pressId ? { onPress: row.pressId } : {})}>
+    <Box
+      flexDirection="row"
+      width={width}
+      {...(row.background === 'userBg' ? { backgroundColor: theme.userBg } : {})}
+      {...(row.pressId ? { onPress: row.pressId } : {})}
+    >
       {indent > 0 ? <Box width={indent} /> : null}
       {row.spans.map((span, index) => {
         const key = `${row.pressId ?? 'row'}-${index}`
@@ -189,7 +196,7 @@ function Transcript(props: { snapshot: AppSnapshot; bodyHeight: number; width: n
   )
 }
 
-export const RUNNING_HINT = 'Enter 插话 · Ctrl+C 停止'
+export const RUNNING_HINT = 'Enter 插话 · Esc 停止'
 
 function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
   const { snapshot } = props
@@ -210,8 +217,13 @@ function StatusLine(props: { snapshot: AppSnapshot; width: number }) {
   // 提示放得下才给它留位置；放不下就让位，cwd 用满 available。
   // 不能先按 1 列预算把 cwd 截掉，再发现提示其实也放不下。
   const leftBudget = available - rightWidth - 1
-  const cwdBudget = leftBudget >= 1 ? leftBudget : available
-  const left = snapshot.notice ? snapshot.notice.text : displayCwd(snapshot.cwd, cwdBudget)
+  // 版本前缀与分隔符先扣掉，剩余的预算才给 cwd / notice（spec §3.1）。
+  const versionPrefix = snapshot.version !== undefined ? `v${snapshot.version} · ` : ''
+  const versionWidth = displayWidth(versionPrefix)
+  const bodyBudget = Math.max(0, leftBudget - versionWidth)
+  const cwdBudget = leftBudget >= 1 ? bodyBudget : Math.max(0, available - versionWidth)
+  const body = snapshot.notice ? snapshot.notice.text : displayCwd(snapshot.cwd, cwdBudget)
+  const left = `${versionPrefix}${body}`
   const showRight = displayWidth(left) + rightWidth + 1 <= available
   const finalLeftBudget = showRight ? Math.max(1, leftBudget) : available
   return (
@@ -358,6 +370,7 @@ function shortenHome(cwd: string | undefined): string {
  * `max` 必须由 StatusLine 按状态行预算传入，不要退回固定常量。
  */
 function displayCwd(cwd: string | undefined, max: number): string {
+  if (max <= 0) return ''
   const short = shortenHome(cwd)
   if (displayWidth(short) <= max) return short
   // 折叠串本身以 … 开头，预算 ≤2 时再截断会得到 ……。

@@ -85,7 +85,7 @@ npm uninstall -g dsh-tui-nano
 | --- | --- |
 | `Enter` | Submit the input（Input） |
 | `Shift+Enter / Ctrl+Enter / Alt+Enter` | Insert a newline（Input） |
-| `Ctrl+C` | Stop the current turn (keep the queue)（Running） |
+| `Ctrl+C / Esc` | Stop the current turn (keep the queue)（Running） |
 | `Ctrl+S` | Steer the current turn (applies at the next step)（Running） |
 | `Ctrl+X` | Stop the current turn and clear the queue（Running / Idle） |
 | `Ctrl+C / Ctrl+D` | Exit Nano（Idle） |

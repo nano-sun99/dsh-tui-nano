@@ -21,13 +21,38 @@ import { type Row, rowText, type Span, textSpan, wrapSpans } from './spans.ts'
 
 export interface MarkdownOptions {
   readonly indent?: number
+  /** 首行前置标记（正文的 `⏺ `）；首元素是块级元素时标记独占一行。 */
+  readonly lead?: Span
 }
 
 export function renderMarkdown(text: string, width: number, options: MarkdownOptions = {}): Row[] {
   const indent = options.indent ?? 0
   const tokens = new Lexer({ gfm: true }).lex(text)
-  const rows = renderBlocks(tokens, Math.max(1, width - indent))
-  return trimBlankRows(rows).map((row) => ({ ...row, indent: (row.indent ?? 0) + indent }))
+  const rows = trimBlankRows(renderBlocks(tokens, Math.max(1, width - indent))).map((row) => ({
+    ...row,
+    indent: (row.indent ?? 0) + indent,
+  }))
+  if (options.lead === undefined) return rows
+  return leadRows(rows, tokens, options.lead, indent)
+}
+
+/**
+ * 正文首行与 `⏺ ` 同排；段落 / 标题 / 纯文本之外的首元素（代码块、列表、
+ * 表格、引用、分隔线）按块级处理，标记单独占一行（ADR-20261103 §5）。
+ */
+function leadRows(rows: Row[], tokens: readonly Token[], lead: Span, indent: number): Row[] {
+  // 标记比正文左移一档：正文 2ch 时标记回到行首，正文 4ch 时标记在 2ch。
+  const leadIndent = Math.max(0, indent - 2)
+  if (rows.length === 0) return [{ spans: [lead], indent: leadIndent }]
+  const first = tokens.find((token) => token.type !== 'space')
+  const inlineFirst =
+    first !== undefined &&
+    (first.type === 'paragraph' || first.type === 'heading' || first.type === 'text')
+  const firstRow = rows[0] as Row
+  if (!inlineFirst || rowText(firstRow) === '') {
+    return [{ spans: [lead], indent: leadIndent }, ...rows]
+  }
+  return [{ ...firstRow, spans: [lead, ...firstRow.spans], indent: leadIndent }, ...rows.slice(1)]
 }
 
 function renderBlocks(tokens: Token[], width: number): Row[] {
@@ -39,7 +64,7 @@ function renderBlocks(tokens: Token[], width: number): Row[] {
         break
       case 'heading': {
         const heading = token as Tokens.Heading
-        const spans = inlineSpans(heading.tokens, { bold: true, tone: 'accent' })
+        const spans = inlineSpans(heading.tokens, { bold: true })
         rows.push(...wrapSpans(spans, width))
         rows.push(blank())
         break
@@ -74,7 +99,7 @@ function renderBlocks(tokens: Token[], width: number): Row[] {
         const list = token as Tokens.List
         for (let i = 0; i < list.items.length; i++) {
           const item = list.items[i] as Tokens.ListItem
-          const marker = list.ordered ? `${(Number(list.start) || 1) + i}. ` : '• '
+          const marker = list.ordered ? `${(Number(list.start) || 1) + i}. ` : '- '
           const itemRows = renderBlocks(item.tokens, Math.max(1, width - marker.length))
           if (itemRows.length === 0) {
             rows.push({ spans: [textSpan(marker, 'muted')] })
