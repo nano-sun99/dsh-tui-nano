@@ -12,7 +12,7 @@
 
 1. **不重定向 fd、不加 shim、不 re-exec**：`package.json` 的 `bin` 保持 `dist/bin.js`。守卫改为**进程内 sink**——启动时用 `openSync(path, 'a', 0o600)` 打开日志文件，所有诊断 `writeSync` 进去，失败即熔断。
 2. **写改道**：TUI 路径下把 `process.stdout.write` / `process.stderr.write` / `console.*` 指到 sink（带重入保护）。`--version` / `--help` / `purge` 不装改道，输出照旧。`plain` 判定只在 JS 里做一份（`src/bin.ts:20-22`）。
-3. **终端只有一个写入者，且该写入不可阻塞**：`Terminal.write` 走 `/dev/tty`（改道之后的 stdout/stderr 不再能上屏）；渲染句柄用 `O_RDWR | O_NONBLOCK` 打开，`EAGAIN` 丢帧、`EIO` 判失联。**任何写都不许阻塞事件循环**——阻塞时所有进程内定时器（含 13.5s 保险丝）同时失效。
+3. **终端只有一个写入者，且该写入不可阻塞、可丢与必达分开**：`Terminal.write` 走 `/dev/tty`（改道之后的 stdout/stderr 不再能上屏）；句柄用 `O_RDWR | O_NONBLOCK` 打开。写分两类：`frame` 遇 `EAGAIN` 丢本帧剩余，`lifecycle`（7 条归还序列、探测、`writeVisible`）逐条有界重试（300ms，跨 `setImmediate`）；**`EAGAIN` 永不判失联**（XOFF 会让健康 tty 持续 EAGAIN），`EIO/ENXIO/ENODEV/EBADF/EPIPE` 才置 `lost`；`writeSync` 返回 `<= 0` 一律按 `EAGAIN` 处理（否则死循环）。**任何终端写都不许阻塞事件循环**——阻塞时所有进程内定时器（含 13.5s 保险丝）同时失效。
 4. **退出收敛为单一漏斗** `exit(code, reason, hooks)`：`restore` → `release` → 记一行 → `process.exit` → 失败则 `SIGKILL`；`src/` 内除该文件外零 `process.exit(`。`restore` / `release` 由调用方以 hook 注入，漏斗不认识 `NanoApp`。
 5. **终端归还排关停第一步**；只保留一个预算 `SHUTDOWN_BUDGET_MS = max(5000, TOTAL_BUDGET_MS + 3500) = 13.5s`（到点 `exit('fuse')` 且带 `release`）。不再保留 3s 强制恢复定时器。
 6. **孤儿巡检**：30s 比对 `ppid` 快照（父进程先死）+ `/dev/tty` 零写探测（终端失联无 SIGHUP）；命中即走既有 `shutdown`。
@@ -41,7 +41,8 @@
 - **native 直写 fd1 拦不住**：改道只在 JS 层。phase-0 实测 0 次，CC 同样放弃这条。若将来引入 native 渲染库，需重开本 ADR。
 - **同步阻塞卡死仍是洞**：failsafe 与 SIGKILL 都跑在同一个事件循环里。本 ADR 明确不承诺；如需硬保证，另开单用 `worker_threads` 看门狗。
 - 孤儿巡检 30s 粒度，最坏空转 30s（CC 是永远发现不了）。
-- `O_NONBLOCK` 下健康终端也可能出现部分写：靠既有偏移量循环重试，极端情况掉一帧（下一帧全量重绘自愈）。
+- `O_NONBLOCK` 下健康终端也可能出现部分写：`frame` 靠既有偏移量循环重试、极端情况掉一帧（下一帧全量重绘自愈）；`lifecycle` 序列最多重试 300ms，仍失败会落 `ttyRestoreFailed`，靠下次启动的 reset 提示兜底。
+- 归还序列在极端拥塞下仍可能送不出去（300ms 预算），此时终端可能停在 alt-screen —— 由 `ttyRestoreFailed` 提示用户 `nano reset`。
 - **日志写仍是同步 `writeSync`**：本地盘无碍，NFS / 网络文件系统上可能卡死——本 ADR 不解决，作为已知边界记录。
 - 日志文件名沿用 `nano-<ts>-<pid>.log`，与历史一致；`NANO_LOG_FILE` 从契约中删除（零消费方）。
 - 与 CC 在「关停期间重复信号」上行为不同：我们允许 SIGINT 第二击强制，CC 直接吞掉后续信号。
@@ -55,6 +56,6 @@
 
 ## 关联
 
-- Spec：`docs/specs/2026-11-03-nano-exit-hardening/README.md`（v5）
+- Spec：`docs/specs/2026-11-03-nano-exit-hardening/README.md`（v7）
 - Issue：[#164](https://github.com/nano-sun99/dsh-tui-nano/issues/164)
 - 被取代：[ADR-20261029-single-process-fd-guard](2026-10-29-single-process-fd-guard.md)（仅 launcher re-exec 与 3s 强制恢复两条；其「终端单写入者」「150ms 信号去重」继续有效）
