@@ -48,3 +48,4 @@
 - 证据：PR #89（合并后 `docs/evidence/2026-10-28-nano-ts/alpha/README.md` §8/§9）
 - 实施：issue #86、PR #89
 - 并行生效：[ADR-20261103-exit-failsafe](2026-11-03-exit-failsafe.md)——新增 13.5s 硬退出上限；本 ADR 的 3s 强制恢复定时器原样保留，两者互补，不改本 ADR 的决定
+- 职责扩展（非变更）：该 ADR 给 launcher 加了失联巡检与兜底退出（`SIGTERM` → 等 ≈15s → `forceExit(129)`）。launcher 仍不持有会话、不连官方服务，与上条「只负责拉起、转发信号与回收退出码」不冲突。
