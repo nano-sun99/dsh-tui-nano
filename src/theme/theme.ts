@@ -32,6 +32,8 @@ export interface Theme {
   readonly diffDelBg: Rgb
   readonly selectionBg: Rgb
   readonly focusBg: Rgb
+  /** 用户消息整行底色（ADR-20261103-nano-four-visual-categories）。 */
+  readonly userBg: Rgb
   readonly rule: Rgb
   /** `/model` 强度条：High / XHigh / Max 的档位色与动效端点。 */
   readonly effortHigh: Rgb
@@ -62,6 +64,7 @@ const dark: Theme = {
   diffDelBg: [56, 37, 42], // #38252a
   selectionBg: [59, 74, 102], // #3b4a66
   focusBg: [36, 43, 53], // #242b35
+  userBg: [35, 38, 45], // #23262d
   rule: [66, 73, 83], // #424953
   effortHigh: [129, 144, 168], // #8190a8
   effortXhigh: [93, 127, 173], // #5d7fad
@@ -91,6 +94,7 @@ const light: Theme = {
   diffDelBg: [241, 220, 223], // #f1dcdf
   selectionBg: [213, 222, 242], // #d5def2
   focusBg: [232, 232, 229], // #e8e8e5
+  userBg: [233, 231, 226], // #e9e7e2
   rule: [196, 198, 201], // #c4c6c9
   // 设计稿的强度色按固定 RGB 给出，深浅主题共用同一组。
   effortHigh: [129, 144, 168], // #8190a8

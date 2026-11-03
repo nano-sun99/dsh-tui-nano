@@ -58,14 +58,16 @@ export function replaySessionMessages(model: TranscriptModel, messages: readonly
     }
     if (message.role === 'assistant') {
       const blocks: Block[] = []
+      const reasoning: string[] = []
       const calls: Array<{ id: string; name: string; arguments?: string }> = []
       for (const block of message.content ?? []) {
         if (block.type === 'text') blocks.push({ type: 'text', text: block.text })
-        else if (block.type === 'reasoning') blocks.push({ type: 'reasoning', text: block.text })
+        else if (block.type === 'reasoning') reasoning.push(block.text)
         else if (block.type === 'tool-call')
           calls.push({ id: block.id, name: block.name, arguments: block.arguments })
       }
-      if (blocks.some((block) => block.type === 'text')) model.appendAssistant(-seq, blocks)
+      if (reasoning.length > 0) model.appendThinking(-seq, reasoning.join('\n'))
+      if (blocks.length > 0) model.appendAssistant(-seq, blocks)
       for (const call of calls) model.appendTool(call.id, call.name, call.arguments ?? '')
       continue
     }
@@ -100,10 +102,12 @@ export function foldSessionEvent(model: TranscriptModel, event: any): void {
     }
     case 'assistant/message': {
       const blocks: Block[] = []
+      const reasoning: string[] = []
       for (const block of data.message?.content ?? []) {
         if (block.type === 'text') blocks.push({ type: 'text', text: block.text })
-        else if (block.type === 'reasoning') blocks.push({ type: 'reasoning', text: block.text })
+        else if (block.type === 'reasoning') reasoning.push(block.text)
       }
+      if (reasoning.length > 0) model.appendThinking(event.seq, reasoning.join('\n'))
       model.appendAssistant(event.seq, blocks)
       break
     }

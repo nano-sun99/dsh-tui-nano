@@ -57,6 +57,8 @@ export interface NanoAppOptions {
   readonly claim: MountClaim
   readonly dataRoot: string
   readonly cwd: string
+  /** 已安装包版本；缺失时状态行只显示 cwd（spec §3.1）。 */
+  readonly version?: string
   readonly rootId: string
   readonly conversation: ConversationController
   readonly history: HistoryStore
@@ -183,6 +185,7 @@ export class NanoApp {
   private finishResolve: ((code: number) => void) | undefined
   private coreDisposed = false
   private pendingRestart: RestartRequest | undefined
+  private waitingCallId: string | undefined
 
   constructor(options: NanoAppOptions) {
     this.options = options
@@ -236,10 +239,12 @@ export class NanoApp {
     void conversation.model.onChange(() => this.scheduleRender())
     void conversation.onChange(() => this.scheduleRender())
     let approvalOpen = this.decisions.prompt?.kind === 'approval'
+    this.syncWaitingCall()
     this.decisions.onChange(() => {
       const open = this.decisions.prompt?.kind === 'approval'
       if (open && !approvalOpen) this.options.features?.resetToMain?.()
       approvalOpen = open
+      this.syncWaitingCall()
       this.scheduleRender()
     })
     return finish.then((code) => {
@@ -745,6 +750,18 @@ export class NanoApp {
     }
   }
 
+  /** 审批卡出现 / 结算时按 callId 把工具行标成 waiting / 回 running。 */
+  private syncWaitingCall(): void {
+    const prompt = this.decisions.prompt
+    const next = prompt?.kind === 'approval' ? prompt.callId : undefined
+    if (next === this.waitingCallId) return
+    if (this.waitingCallId !== undefined) {
+      this.options.conversation.model.markWaiting(this.waitingCallId, false)
+    }
+    if (next !== undefined) this.options.conversation.model.markWaiting(next, true)
+    this.waitingCallId = next
+  }
+
   /** Root input surface owns the activity line; takeover surfaces suppress it. */
   private activityOwnedNow(): boolean {
     if (this.options.features?.replacesTranscript?.() === true) return false
@@ -825,6 +842,7 @@ export class NanoApp {
       rootId: this.options.rootId,
       modelLabel: this.options.conversation.selectionInfo,
       cwd: this.options.cwd,
+      ...(this.options.version !== undefined ? { version: this.options.version } : {}),
       status: this.options.conversation.status,
       activity,
       activityOwned,

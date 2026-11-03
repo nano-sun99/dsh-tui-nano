@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { ActivityState } from '../activity/state.ts'
 import type { OfficialModules } from '../boot/official.ts'
 import type { HistoryStore } from '../input/history.ts'
+import { sanitizeText } from '../render/text.ts'
 import { type Block, TranscriptModel } from '../transcript/model.ts'
 
 export interface ConversationOptions {
@@ -38,6 +39,19 @@ export function deliveryNotice(delivery: SubmitResult['delivery']): string | und
 /** 根 agent 的委派纪律；与官方 tool:jobs 的措辞先例一致。 */
 const DELEGATION_GUIDANCE =
   "Delegated subagents run in the background. The runtime notifies you when one finishes; do not sleep, poll `list_agents`, or read a subagent's output file to check its progress. If you have no useful work left while they run, end your turn — the user can keep talking to you, and the completion notice will wake you in a later turn."
+
+/** 提问纪律（ADR-20261103-question-trigger-discipline），与 Claude Code 同义。 */
+const QUESTION_DISCIPLINE = `# Bias toward action
+Act on your best judgment rather than asking for confirmation.
+- Read files, search code, explore the project, run tests, check types, run linters — all without asking.
+- If you're unsure between two reasonable approaches, pick one and go. You can always course-correct.
+- Use ask_user_question only when the answer changes what gets built and cannot be derived from the code, config, or defaults.
+- Do not use ask_user_question for confirmations ("Should I proceed?"), plan approval, or trivial implementation details. If you already asked, don't ask again.
+- Prefer stating a recommendation and proceeding over asking.
+- If you do not understand why the user denied a tool call, use ask_user_question to ask them.`
+
+/** Bash live 预览合并窗口（spec §3.5）。 */
+const LIVE_OUTPUT_MERGE_MS = 120
 
 /** 有序提交内容（spec §1 第 5 条接缝）：官方 content 段 + 阅读面显示文字。 */
 export interface PromptContent {
@@ -96,6 +110,13 @@ export class ConversationController {
     | undefined
   private disposers: Array<() => void> = []
   private disposed = false
+  /** callId → jobId（session `job/registered` 建立）与反向映射。 */
+  private readonly liveJobs = new Map<string, string>()
+  private readonly liveCalls = new Map<string, string>()
+  private readonly liveOffsets = new Map<string, number>()
+  private readonly liveBuffers = new Map<string, string>()
+  private readonly liveDirty = new Set<string>()
+  private liveTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor(options: ConversationOptions) {
     this.options = options
@@ -132,6 +153,13 @@ export class ConversationController {
     }
     const setup = (agentCtx: any) => {
       official.agent.installModelSelection(agentCtx, this.selectionRef)
+      const disposeQuestion = agentCtx.systemPrompt.section({
+        name: 'nano:question-discipline',
+        order: 10145,
+        interpolate: false,
+        text: QUESTION_DISCIPLINE,
+      })
+      if (typeof disposeQuestion === 'function') this.disposers.push(disposeQuestion)
       const disposeSection = agentCtx.systemPrompt.section({
         name: 'nano:delegation-responsiveness',
         order: 10150,
@@ -185,13 +213,15 @@ export class ConversationController {
       }
       if (message.role === 'assistant') {
         const blocks: Block[] = []
+        const reasoning: string[] = []
         for (const block of message.content ?? []) {
           if (block.type === 'text') blocks.push({ type: 'text', text: block.text })
-          else if (block.type === 'reasoning') blocks.push({ type: 'reasoning', text: block.text })
+          else if (block.type === 'reasoning') reasoning.push(block.text)
           else if (block.type === 'tool-call')
             this.model.appendTool(block.id, block.name, block.arguments)
         }
-        if (blocks.some((block) => block.type === 'text')) this.model.appendAssistant(-seq, blocks)
+        if (reasoning.length > 0) this.model.appendThinking(-seq, reasoning.join('\n'))
+        if (blocks.length > 0) this.model.appendAssistant(-seq, blocks)
         continue
       }
       if (message.role === 'tool') {
@@ -244,6 +274,13 @@ export class ConversationController {
     ctx.on('agent/assistant-stream', onStream)
     ctx.on('agent/status', onStatus)
     ctx.on('agent/error', onError)
+    const jobs = ctx.get('jobs')
+    if (typeof jobs?.events?.subscribe === 'function') {
+      const off = jobs.events.subscribe({ owner: session.id }, (event: any) =>
+        this.handleJobEvent(event),
+      )
+      if (typeof off === 'function') this.disposers.push(off)
+    }
     this.disposers.push(
       () => ctx.off?.('session/event', onSessionEvent),
       () => ctx.off?.('agent/assistant-stream', onStream),
@@ -288,12 +325,14 @@ export class ConversationController {
       }
       case 'assistant/message': {
         const blocks: Block[] = []
+        const reasoning: string[] = []
         for (const block of data.message?.content ?? []) {
           if (block.type === 'text') blocks.push({ type: 'text', text: block.text })
-          else if (block.type === 'reasoning') blocks.push({ type: 'reasoning', text: block.text })
+          else if (block.type === 'reasoning') reasoning.push(block.text)
         }
         // Latch visibility across preview -> durable message; end is emitted after this append.
         for (const block of blocks) if (block.type === 'text') this.activity.body(block.text)
+        if (reasoning.length > 0) this.model.appendThinking(event.seq, reasoning.join('\n'))
         this.model.appendAssistant(event.seq, blocks)
         break
       }
@@ -302,24 +341,47 @@ export class ConversationController {
         if (!data.interrupted)
           this.model.appendNotice('本次回复未确认（没有产生可见消息）。', 'warning')
         break
-      case 'tool/call':
+      case 'tool/call': {
         this.activity.toolStart(data.callId, data.name, data.turn)
         this.model.appendTool(data.callId, data.name, data.arguments ?? '')
+        // `job/registered` 可能早于 tool/call：那时先记映射，等条目建立再绑；
+        // 早到的 output 没有被消费，这里补读一次（F7）。
+        const jobId = this.liveJobs.get(data.callId)
+        if (jobId !== undefined) {
+          this.model.attachLiveJob(data.callId, jobId)
+          this.readLive(jobId)
+        }
         break
+      }
+      case 'job/registered': {
+        const jobId = typeof data.jobId === 'string' ? data.jobId : undefined
+        const callId = data.toolCall?.callId
+        if (jobId !== undefined && typeof callId === 'string') {
+          this.bindLiveJob(callId, jobId)
+        }
+        break
+      }
+      case 'job/settled': {
+        const jobId = typeof data.jobId === 'string' ? data.jobId : undefined
+        if (jobId !== undefined) {
+          // 结算前的最后一段输出：读一次再清映射，已显示的 5 行不撤回。
+          this.readLive(jobId, true)
+          this.dropLiveJob(jobId)
+        }
+        break
+      }
       case 'tool/result': {
-        this.activity.toolEnd(data.message?.toolCallId ?? data.message?.source?.callId, data.turn)
+        const callId = data.message?.toolCallId ?? data.message?.source?.callId
+        this.activity.toolEnd(callId, data.turn)
         const text = textOf(data.message?.content)
         const isError = data.message?.isError === true || data.error !== undefined
         const reason =
           typeof data.error?.reason === 'string' && data.error.reason !== ''
             ? data.error.reason
             : undefined
-        this.model.completeTool(
-          data.message?.toolCallId ?? data.message?.source?.callId,
-          reason ? `${reason}\n${text}` : text,
-          isError,
-          data.meta,
-        )
+        this.model.completeTool(callId, reason ? `${reason}\n${text}` : text, isError, data.meta)
+        // 前台调用结束（含超时转后台）：补读最后一段并停更，后台输出归任务面板（F2）。
+        if (typeof callId === 'string') this.finalizeLiveJob(callId)
         break
       }
       case 'turn/end':
@@ -334,6 +396,86 @@ export class ConversationController {
         break
     }
     this.notifyStatus()
+  }
+
+  private handleJobEvent(event: any): void {
+    if (event?.type !== 'output') return
+    const jobId = String(event.id)
+    if (!this.liveCalls.has(jobId)) return
+    this.liveDirty.add(jobId)
+    this.scheduleLiveFlush()
+  }
+
+  private scheduleLiveFlush(): void {
+    if (this.liveTimer !== undefined) return
+    this.liveTimer = setTimeout(() => {
+      this.liveTimer = undefined
+      for (const jobId of [...this.liveDirty]) {
+        this.liveDirty.delete(jobId)
+        this.readLive(jobId)
+      }
+    }, LIVE_OUTPUT_MERGE_MS)
+    this.liveTimer.unref?.()
+  }
+
+  private bindLiveJob(callId: string, jobId: string): void {
+    this.liveJobs.set(callId, jobId)
+    this.liveCalls.set(jobId, callId)
+    if (!this.liveOffsets.has(jobId)) this.liveOffsets.set(jobId, 0)
+    if (this.model.attachLiveJob(callId, jobId)) this.readLive(jobId)
+  }
+
+  /**
+   * 读 job 的新增输出并追加到工具行；失败只清预览，不向用户报错。
+   * 条目还没建立时先不读、不推进 offset，等 tool/call 后补读（F7）。
+   * `final` 为 true 时把不完整的尾行也交给渲染（job 结算 / 调用结束）。
+   */
+  private readLive(jobId: string, final = false): void {
+    const callId = this.liveCalls.get(jobId)
+    const jobs = this.options.ctx.get('jobs')
+    const sessionId = this.agent?.session?.id
+    if (callId === undefined || jobs === undefined || sessionId === undefined) return
+    if (this.model.toolEntryByCallId(callId) === undefined) return
+    try {
+      const read = jobs.readAt(jobId, this.liveOffsets.get(jobId) ?? 0, sessionId) as {
+        chunks?: Array<{ text: string }>
+        next?: number
+      }
+      this.liveOffsets.set(jobId, read.next ?? this.liveOffsets.get(jobId) ?? 0)
+      const text = sanitizeText((read.chunks ?? []).map((chunk) => chunk.text).join(''))
+      const combined = (this.liveBuffers.get(jobId) ?? '') + text
+      const parts = combined.split('\n')
+      const remainder = parts.pop() ?? ''
+      const lines = parts
+        .map((line) => line.replace(/\r/gu, '').trimEnd())
+        .filter((line) => line.trim() !== '')
+      if (final && remainder.trim() !== '') {
+        lines.push(remainder.replace(/\r/gu, '').trimEnd())
+      }
+      this.liveBuffers.set(jobId, final ? '' : remainder)
+      if (lines.length > 0) this.model.setLiveOutput(callId, lines)
+    } catch {
+      this.dropLiveJob(jobId)
+    }
+  }
+
+  private finalizeLiveJob(callId: string): void {
+    const jobId = this.liveJobs.get(callId)
+    if (jobId === undefined) return
+    this.readLive(jobId, true)
+    this.dropLiveJob(jobId)
+  }
+
+  private dropLiveJob(jobId: string): void {
+    const callId = this.liveCalls.get(jobId)
+    this.liveCalls.delete(jobId)
+    this.liveOffsets.delete(jobId)
+    this.liveBuffers.delete(jobId)
+    this.liveDirty.delete(jobId)
+    if (callId !== undefined) {
+      this.liveJobs.delete(callId)
+      this.model.clearLiveJob(callId)
+    }
   }
 
   private handleStreamFrame(frame: any): void {
@@ -468,6 +610,10 @@ export class ConversationController {
   async dispose(): Promise<void> {
     if (this.disposed) return
     this.disposed = true
+    if (this.liveTimer !== undefined) {
+      clearTimeout(this.liveTimer)
+      this.liveTimer = undefined
+    }
     this.activity.endTurn()
     for (const dispose of this.disposers) dispose()
     this.disposers = []

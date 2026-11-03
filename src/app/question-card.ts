@@ -157,19 +157,21 @@ function optionRows(prompt: QuestionPrompt, width: number): { rows: Row[]; focus
   const focused = prompt.focusedOption === options.length
   const custom = draft?.custom ?? ''
   const tone = focused ? 'accent' : custom.trim() ? 'success' : 'muted'
+  const label = `${focused ? '>' : ' '} ${options.length + 1}. 其他`
+  // 未聚焦且空值时不渲染「直接输入」：它看起来像输入框，却敲不进字（spec §3.6）。
+  const showPlaceholder = focused || custom !== ''
   const prefix = [
-    textSpan(`${focused ? '>' : ' '} ${options.length + 1}. 其他：`, tone, {
+    textSpan(showPlaceholder ? `${label}：` : label, tone, {
       bold: focused || Boolean(custom.trim()),
     }),
   ]
-  const customRows = prefixed(
-    prefix,
-    [
-      textSpan(custom || '直接输入', tone, { bold: focused }),
-      ...(focused ? [textSpan('▏', 'accent', { caret: true })] : []),
-    ],
-    width,
-  )
+  const content = showPlaceholder
+    ? [
+        textSpan(custom || '直接输入', tone, { bold: focused }),
+        ...(focused ? [textSpan('▏', 'accent', { caret: true })] : []),
+      ]
+    : []
+  const customRows = prefixed(prefix, content, width)
   if (focused) focus = rows.length + customRows.length - 1
   rows.push(...customRows.map((row) => ({ ...row, pressId: 'decision:custom' })))
   return { rows, focus }

@@ -37,6 +37,8 @@ export interface Row {
   readonly spans: readonly Span[]
   readonly indent?: number
   readonly pressId?: string
+  /** Whole-row surface token; only the user record uses one (ADR-20261103). */
+  readonly background?: 'userBg'
 }
 
 export function textSpan(text: string, tone: Tone = 'normal', extra: Partial<Span> = {}): Span {

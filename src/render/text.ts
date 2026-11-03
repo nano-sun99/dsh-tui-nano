@@ -15,7 +15,12 @@ const widthCache = new Map<string, number>()
  * while terminals and the design treat it as a 1ch pointer. Keep the terminal
  * grid aligned with the design instead of letting the row shift after it.
  */
-const WIDTH_OVERRIDES: Readonly<Record<string, number>> = { '▶': 1 }
+const WIDTH_OVERRIDES: Readonly<Record<string, number>> = {
+  '▶': 1,
+  // `string-width` also classifies the black circle U+23FA as 2 cells; the
+  // four-category transcript treats it as a 1ch mark (ADR-20261103).
+  '⏺': 1,
+}
 
 /**
  * Split text into user-perceived characters (grapheme clusters). Emoji ZWJ

@@ -92,7 +92,7 @@ registerKeybinding({
 })
 registerKeybinding({
   id: 'conversation.cancel',
-  keys: [{ name: 'char', text: 'c', ctrl: true }],
+  keys: [{ name: 'char', text: 'c', ctrl: true }, { name: 'escape' }],
   scopes: ['running'],
   description: '停止当前回合（保留队列）',
   descriptionEn: 'Stop the current turn (keep the queue)',

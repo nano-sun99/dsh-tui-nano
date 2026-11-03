@@ -43,12 +43,14 @@ import { activeTheme } from './theme/theme.ts'
 
 export async function main(argv: readonly string[]): Promise<number> {
   const args = parseCli(argv)
+  // 状态行与 `--version` 共用同一份读取结果，避免两次读盘结果不一致。
+  const version = nanoVersion()
   if (args.help) {
     process.stdout.write(helpText())
     return 0
   }
   if (args.version) {
-    process.stdout.write(`nano ${nanoVersion()} (harness ${PINNED_HARNESS_VERSION})\n`)
+    process.stdout.write(`nano ${version ?? 'unknown'} (harness ${PINNED_HARNESS_VERSION})\n`)
     return 0
   }
   try {
@@ -207,6 +209,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       rootId,
       conversation,
       history,
+      ...(version !== undefined ? { version } : {}),
       openSessionsPanel: startup.openSessionsPanel,
       writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
       features: new Features(),
@@ -334,15 +337,18 @@ function helpText(): string {
   ].join('\n')
 }
 
-/** 版本号来自已安装包自己的 package.json，升级后 `--version` 才会跟着变。 */
-function nanoVersion(): string {
+/**
+ * 版本号来自已安装包自己的 package.json，升级后 `--version` 与状态行才会跟着变。
+ * 读不到时返回 undefined：状态行只显示 cwd，不显示假版本（spec §3.1）。
+ */
+function nanoVersion(): string | undefined {
   try {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
       version?: string
     }
-    return pkg.version ?? '0.0.0'
+    return typeof pkg.version === 'string' && pkg.version !== '' ? pkg.version : undefined
   } catch {
-    return '0.0.0'
+    return undefined
   }
 }
 

@@ -85,7 +85,7 @@ npm uninstall -g dsh-tui-nano
 | --- | --- |
 | `Enter` | 提交输入（输入） |
 | `Shift+Enter / Ctrl+Enter / Alt+Enter` | 输入换行（输入） |
-| `Ctrl+C` | 停止当前回合（保留队列）（运行中） |
+| `Ctrl+C / Esc` | 停止当前回合（保留队列）（运行中） |
 | `Ctrl+S` | 引导当前回合（下一 step 生效）（运行中） |
 | `Ctrl+X` | 停止当前回合并清空队列（运行中 / 空闲） |
 | `Ctrl+C / Ctrl+D` | 退出 Nano（空闲） |

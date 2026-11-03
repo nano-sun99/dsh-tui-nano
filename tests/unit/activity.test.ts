@@ -386,7 +386,9 @@ describe('controller event wiring', () => {
     })
     const replay = (c as unknown as { replay: (session: unknown) => void }).replay.bind(c)
     replay({
-      deriveMessages: () => [{ role: 'assistant', content: [{ type: 'text', text: 'old answer' }] }],
+      deriveMessages: () => [
+        { role: 'assistant', content: [{ type: 'text', text: 'old answer' }] },
+      ],
     })
     expect(c.activity.project()).toEqual({ text: '' })
   })

@@ -75,15 +75,15 @@ describe('process display', () => {
     expect(badRows).toHaveLength(4)
   })
 
-  it('renders collapsed process rows muted, keeping failures in danger', () => {
+  it('colors the process mark by status, keeping failures in danger', () => {
     const ok = new TranscriptModel()
     ok.appendTool('c1', 'bash', JSON.stringify({ command: 'ls' }))
     ok.completeTool('c1', 'a', false)
     const okSpans = ok
       .units({ width: 60, expanded: new Set() })[0]!
       .rows.flatMap((row) => row.spans)
-    expect(okSpans.some((span) => span.tone === 'muted')).toBe(true)
-    expect(okSpans.some((span) => span.tone === 'success' || span.tone === 'tool')).toBe(false)
+    expect(okSpans.some((span) => span.tone === 'success' && span.text === '⏺ ')).toBe(true)
+    expect(okSpans.some((span) => span.tone === 'danger')).toBe(false)
 
     const reads = new TranscriptModel()
     reads.appendTool('c2', 'read_file', JSON.stringify({ file_path: 'a.ts' }))
@@ -91,7 +91,7 @@ describe('process display', () => {
     const readSpans = reads
       .units({ width: 60, expanded: new Set() })[0]!
       .rows.flatMap((row) => row.spans)
-    expect(readSpans.some((span) => span.tone === 'tool')).toBe(false)
+    expect(readSpans.some((span) => span.tone === 'success' && span.text === '⏺ ')).toBe(true)
 
     const bad = new TranscriptModel()
     bad.appendTool('c3', 'bash', JSON.stringify({ command: 'false' }))
@@ -99,24 +99,33 @@ describe('process display', () => {
     const badSpans = bad
       .units({ width: 60, expanded: new Set() })[0]!
       .rows.flatMap((row) => row.spans)
-    expect(badSpans.some((span) => span.tone === 'danger')).toBe(true)
+    expect(badSpans.some((span) => span.tone === 'danger' && span.text === '⏺ ')).toBe(true)
   })
 
-  it('keeps collapsed process rows on the muted color in both themes and widths', () => {
+  it('maps status marks to the theme success / danger colors in both themes and widths', () => {
     for (const theme of [darkTheme, lightTheme]) {
       for (const width of [100, 60]) {
         const model = new TranscriptModel()
         model.appendTool('c1', 'bash', JSON.stringify({ command: 'ls -la' }))
         model.completeTool('c1', 'a', false)
-        model.appendTool('c2', 'read_file', JSON.stringify({ file_path: 'a.ts' }))
-        model.completeTool('c2', 'x', false)
+        model.appendTool('c2', 'bash', JSON.stringify({ command: 'false' }))
+        model.completeTool('c2', 'boom', true)
         const spans = model
           .units({ width, expanded: new Set() })
           .flatMap((unit) => unit.rows.flatMap((row) => row.spans))
-        expect(spans.length).toBeGreaterThan(0)
-        for (const span of spans) {
-          expect(toneColor(span.tone, theme)).toEqual([...theme.muted])
-        }
+        expect(
+          spans.some(
+            (span) =>
+              span.tone === 'success' &&
+              toneColor(span.tone, theme).join() === theme.success.join(),
+          ),
+        ).toBe(true)
+        expect(
+          spans.some(
+            (span) =>
+              span.tone === 'danger' && toneColor(span.tone, theme).join() === theme.danger.join(),
+          ),
+        ).toBe(true)
       }
     }
   })
@@ -141,20 +150,22 @@ describe('process display', () => {
     expect(badSpans.some((span) => span.tone === 'danger' && span.text === 'boom')).toBe(true)
   })
 
-  it('shows one thinking row while streaming and drops it after commit', () => {
+  it('shows a two-row thinking tail while streaming and keeps it after commit', () => {
     const model = new TranscriptModel()
     model.setPreview({ attemptId: 'a1', revision: 1, reasoning: 'step one\nstep two', text: '' })
     const units = model.units({ width: 60, expanded: new Set() })
     expect(units).toHaveLength(1)
-    expect(units[0]!.rows).toHaveLength(1)
+    expect(units[0]!.rows).toHaveLength(2)
+    expect(rowText(units[0]!.rows[0]!)).toContain('∴ 思考中')
+    expect(rowText(units[0]!.rows[1]!)).toContain('step two')
 
-    model.appendAssistant(1, [
-      { type: 'reasoning', text: 'step one\nstep two' },
-      { type: 'text', text: 'answer' },
-    ])
+    model.appendThinking(1, 'step one\nstep two')
+    model.appendAssistant(1, [{ type: 'text', text: 'answer' }])
     const committed = model.units({ width: 60, expanded: new Set() })
     const text = committed.flatMap((unit) => unit.rows.map(rowText)).join('\n')
     expect(text).toContain('answer')
+    expect(text).toContain('∴ 思考')
+    expect(text).toContain('step two')
     expect(text).not.toContain('step one')
   })
 

@@ -218,8 +218,8 @@ describe('ConversationController delivery', () => {
     expect(deliveryNotice('followup')).toBeUndefined()
   })
 
-  it('运行中状态行提示插话', () => {
-    expect(RUNNING_HINT).toBe('Enter 插话 · Ctrl+C 停止')
+  it('运行中状态行提示 Esc 停止', () => {
+    expect(RUNNING_HINT).toBe('Enter 插话 · Esc 停止')
   })
 
   it('投递失败时透传原错误并写 danger notice', async () => {
@@ -250,17 +250,26 @@ describe('ConversationController delivery', () => {
     expect(notice?.kind === 'notice' ? notice.text : '').toContain('提交失败：bad content')
   })
 
-  it('在根 agent 作用域注册委派纪律段', async () => {
+  it('在根 agent 作用域注册提问纪律与委派纪律段', async () => {
     const harness = makeHarness('idle')
     await harness.controller.start()
 
-    expect(harness.sections).toHaveLength(1)
+    expect(harness.sections).toHaveLength(2)
     expect(harness.sections[0]).toMatchObject({
+      name: 'nano:question-discipline',
+      order: 10145,
+      interpolate: false,
+    })
+    expect(harness.sections[0].text).toContain('# Bias toward action')
+    expect(harness.sections[0].text).toContain(
+      'Use ask_user_question only when the answer changes what gets built and cannot be derived from the code, config, or defaults.',
+    )
+    expect(harness.sections[1]).toMatchObject({
       name: 'nano:delegation-responsiveness',
       order: 10150,
       interpolate: false,
     })
-    expect(harness.sections[0].text).toBe(
+    expect(harness.sections[1].text).toBe(
       "Delegated subagents run in the background. The runtime notifies you when one finishes; do not sleep, poll `list_agents`, or read a subagent's output file to check its progress. If you have no useful work left while they run, end your turn — the user can keep talking to you, and the completion notice will wake you in a later turn.",
     )
   })
