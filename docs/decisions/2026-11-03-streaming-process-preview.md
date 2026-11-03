@@ -17,7 +17,8 @@
    - 没有非空行时不加第 2 行；空思考不渲染。
    - 思考结束后**保留该 2 行块，不撤回**；标题从「进行中…」变为「思考」。完整思考正文不保留，点击展开只显示保留的最后 1–2 个非空行；不做全文回看（避免长会话内存增长）。
 2. **前台 Bash 运行中 / 完成后显示最后 5 行输出**：
-   - 用官方 `jobs` 服务的 `registered` / `output` / `settled` 事件；`output` 时用 `readAt` 按绝对偏移读取，不推进模型游标。
+   - **映射走 session 事件**：`job/registered` 的 `JobRegisteredData` 带 `toolCall.callId`，`job/settled` 清映射；`JobView` 不投影 `toolCall`，不能用 job event 的 `registered`。
+   - **输出走 job 事件**：订阅 `jobs.events` 的 `output`，用 `readAt` 按绝对偏移读取，不推进模型游标；复用 `sanitizeText`（`src/render/text.ts`），不新增 `stripAnsi`。
    - 去 ANSI、去空行、去 `\r`、单行截断；最多保留 5 行；不显示 `+N 行`。
    - **完成后保留最后 5 行，不撤回**；失败仍保留现有 3 行失败摘要，不显示 `liveOutput`。
    - 只处理前台 job；超时转后台后，工具结果到达即停止更新，后台 job 由任务面板负责。
@@ -30,7 +31,7 @@
 - Claude Code 的流式思考在正文里用 `AssistantThinkingMessage` 且 `isTranscriptMode={true}`，即**流式期间显示完整思考 Markdown**；结束后 `streamingThinking` 再保留 30 秒，然后折叠为 `∴ Thinking`（`components/Messages.tsx:381-389`、`:714-717`；`components/messages/AssistantThinkingMessage.tsx`）。
 - Claude Code 的 Bash 运行中由 `ShellProgressMessage` 显示最后 5 行非空输出、`+N lines` / `~N lines`、耗时和字节；无输出时显示 `Running…` 与计时（`components/shell/ShellProgressMessage.tsx`、`tools/BashTool/UI.tsx:131-157`）。
 - 用户明确要求「在折叠节省空间的前提下」有流式感，因此不照搬 Claude Code 的全量思考显示，改为最多两行的尾巴。
-- 官方 dsh 的每个 Bash 调用在 `jobs` 可用的 profile 下都会注册 job，job 记录 `toolCall.callId`，并有 `output` 事件与 `readAt` 绝对偏移读取（`node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js:385-410`；`node_modules/@deepseek-ai/dsh-jobs/lib/types/types.d.ts:238-261`；`lib/types/index.d.ts:94-105`）。nano 的会话控制器目前没有订阅这些事件（`src/conversation/controller.ts:219-255`、`:270-335`）。
+- 官方 dsh 在 `jobs` 可用的 profile 下会为 Bash 调用注册 job；session `job/registered` 的 `JobRegisteredData` 记录 `toolCall.callId`（`JobView` 不投影），并有 `output` 事件与 `readAt` 绝对偏移读取（`node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js:385-410`；`node_modules/@deepseek-ai/dsh-jobs/lib/types/types.d.ts:20-32`、`:238-261`；`lib/types/index.d.ts:94-105`）。nano 的会话控制器目前没有订阅这些事件（`src/conversation/controller.ts:219-255`、`:270-335`）。
 - ADR-20261028 当前的流式思考规则是「默认只显示一行标题」（第 3 条）；用户 2026-11-03 明确要求改变，故本条修订该款。
 
 ## 否决了什么
@@ -48,7 +49,7 @@
 - 思考正文只保留最后 1–2 行，可能断章取义；完整思考不回看，想看全文只能在流式期间展开。
 - Bash 只保留 5 行，完整输出需要去 session/log 或任务面板查；完成后保留 5 行会比原来的 0 行多占屏幕。
 - 依赖官方 jobs 服务；服务不可用时 Bash 预览退化为静态命令行，不影响执行。
-- 过程行去掉文字提示后，可发现性下降；设计稿保留行首 `▸` / `▾`，实际 TUI 依赖整行点击。若后续实测用户不知道可展开，再单独评估图标方案。
+- 过程行去掉文字提示后，可发现性下降；行首 `⏺` / `∴` 是状态标记，实际 TUI 依赖整行点击。若后续实测用户不知道可展开，再单独评估图标方案。
 - 运行中的工具行不再显示「等待结果」，状态由活动行承担；活动行被其他内容占满时，用户需要看状态 mark 或展开详情。
 
 ## 允许重开的条件

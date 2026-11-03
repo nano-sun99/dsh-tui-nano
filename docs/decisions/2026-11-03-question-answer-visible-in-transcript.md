@@ -6,7 +6,7 @@
 - 适用范围：`ask_user_question` 工具行在 transcript 中的显示与 UI 留存；不适用于官方 session log、模型可见结果、问卷卡本身的交互
 - 取代：无
 - 被取代：无
-- 决策来源：用户 2026-11-03 原话「选项选过决策记录就丢了，在正文一点展示都没有，请你看看 claude code是怎么做的」；Claude Code 2.1.88 `tools/AskUserQuestionTool/AskUserQuestionTool.tsx:83-97`（`· 问题 → 答案`）；沿用 [ADR-20261101-approval-decision-visible-in-transcript](2026-11-01-approval-decision-visible-in-transcript.md) 的「决策行挂 `ToolEntry`」模式
+- 决策来源：用户 2026-11-03 原话「选项选过决策记录就丢了，在正文一点展示都没有，请你看看 claude code是怎么做的」；Claude Code 2.1.88 `tools/AskUserQuestionTool/AskUserQuestionTool.tsx:105-108`（`· 问题 → 答案`）；沿用 [ADR-20261101-approval-decision-visible-in-transcript](2026-11-01-approval-decision-visible-in-transcript.md) 的「决策行挂 `ToolEntry`」模式
 - 相关：[spec](../../specs/2026-11-03-nano-harness-feel/README.md)
 
 ## 决定
@@ -21,9 +21,9 @@
 
 ## 依据
 
-- Claude Code 的 `AskUserQuestionResultMessage` 在正文渲染 `User answered Claude's questions:` 与每组 `· questionText → answer`（`tools/AskUserQuestionTool/AskUserQuestionTool.tsx:83-97`）。
-- nano 的问卷结果是 JSON 文本：`dsh-tool-ask-user` 的 `render` 返回 `JSON.stringify(value)`（`node_modules/@deepseek-ai/dsh-tool-ask-user/lib/index.js:175-178`），结果里有 `answers` 数组（`:52-58`）；`textOf` 能取到这段文本，但折叠工具行只显示标题，所以用户看不到（`src/transcript/model.ts:381-457`）。
-- 问卷请求带 `wait.callId`（同包 `:195-205`；`dsh-user-questions/lib/types/types.d.ts:112-124`），工具行的 `callId` 能对应上；本次投影按 args 里的问题 id 映射，不依赖 `wait.callId`，但 `callId` 仍可用于未来把记录挂到指定条目。
+- Claude Code 的 `AskUserQuestionResultMessage` 在正文渲染 `User answered Claude's questions:` 与每组 `· questionText → answer`（`tools/AskUserQuestionTool/AskUserQuestionTool.tsx:105-108`）。
+- 问卷的 legacy `ask_user_question` 结果就是 JSON 文本（`node_modules/@deepseek-ai/dsh-tool-ask-user/lib/index.js:299-301`；`answerResult` 在 `:52-58`），结果里有 `answers` 数组；`textOf` 能取到这段文本，但折叠工具行只显示标题，所以用户看不到（`src/transcript/model.ts:381-457`）。
+- legacy `execute` 不传 `wait.callId`（`node_modules/@deepseek-ai/dsh-tool-ask-user/lib/index.js:296-305`）；本次投影按 args 里的问题 id 与 result 的答案 id 映射，不依赖 callId。
 - 审批决策行已经采用「挂 `ToolEntry`、不新增 entry」的模式（ADR-20261101-approval-decision-visible-in-transcript）；问卷答案沿用，避免两套记录机制。
 - 原始 JSON 属于「UI 永远用不到的载荷」，不应进 `resultText`；ADR-20261102 已确立显示投影原则。
 
@@ -36,9 +36,9 @@
 
 ## 接受的代价
 
-- 一次最多 4 题 → 最多 4 行记录；问题文本过长时会被单行截断。
+- Claude Code 的 AskUserQuestion 上限是 4 题；nano 的 dsh schema 没有 maxItems（只校验至少 1 题，`node_modules/@deepseek-ai/dsh-user-questions/lib/index.js:670`），题数可超过 4，记录行按实际题数渲染并由 transcript 滚动承载。
 - 取消时工具结果本身是 `ASK_ABORTED` 错误，工具行 mark 可能仍是错误色；决策行用 `muted` 说明「已取消，未提交答案」。
-- 旧会话如果没有可解析的 JSON（例如 timed pending 或人工改过的日志），只能退回标题，不保证所有历史记录都能还原。
+- 旧会话如果没有可解析的 JSON（例如 timed pending 或人工改过的日志），只能退回标题，不保证所有历史记录都能还原。pending 是防御性分支：nano 默认 legacy，不产生 pending。
 - 不记录用户作答耗时、focus 轨迹等过程信息。
 
 ## 允许重开的条件
@@ -53,4 +53,4 @@
 - [ADR-20261101-approval-decision-visible-in-transcript](2026-11-01-approval-decision-visible-in-transcript.md)：决策行挂 `ToolEntry` 的既有模式
 - [ADR-20261102-transcript-display-projection](2026-11-02-transcript-display-projection.md)：工具结果只保留显示投影
 - [ADR-20261101-question-card-cancel](2026-11-01-question-card-cancel.md)：Esc 取消整次提问的语义
-- Claude Code 2.1.88：`tools/AskUserQuestionTool/AskUserQuestionTool.tsx:83-97`
+- Claude Code 2.1.88：`tools/AskUserQuestionTool/AskUserQuestionTool.tsx:105-108`

@@ -5,7 +5,7 @@
 - 决策人：用户
 - 适用范围：Nano transcript 的过程块默认显示、结果行预算、思考可见性与展开入口
 - 取代：无
-- 被取代：无
+- 被取代：无（第 2/3 条被 ADR-20261103-streaming-process-preview 局部修订，第 4 条标记被 ADR-20261103-nano-four-visual-categories 局部修订；见修订记录）
 - 决策来源：2026-10-28 用户看完交互稿后原话「ok 完全采纳，请你出spec」；交互稿见 `docs/design/2026-10-17-dsh-tui-ux-research/preview/index.html`，spec 见 `docs/specs/2026-10-28-nano-process-display/README.md`
 
 ## 决定

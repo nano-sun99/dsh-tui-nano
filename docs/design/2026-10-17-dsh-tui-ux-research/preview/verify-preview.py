@@ -115,7 +115,7 @@ with tempfile.TemporaryDirectory(prefix='dsh-ui-browser-') as browser_dir:
             devtools.settle()
 
             check('default details collapsed', devtools.js('document.querySelectorAll("details[open]").length === 0'))
-            check('terminal has no pictographic emoji', devtools.js('!(/\\p{Extended_Pictographic}/u.test(document.querySelector("#terminal").textContent))'))
+            check('terminal has no decorative pictographic emoji', devtools.js('!(/\\p{Extended_Pictographic}/u.test(document.querySelector("#terminal").textContent.replace(/⏺/g,"")))'))
             check('footer shows version and working directory, not model/context/keys', devtools.js('!document.querySelector(".status").textContent.includes("DeepSeek") && !document.querySelector(".status").textContent.includes("上下文") && !document.querySelector(".status").textContent.includes("Ctrl+O") && document.querySelector(".status").textContent.includes("v0.2.1") && document.querySelector(".status").textContent.includes("~/code/dsh-TUI")'))
             check('context occupancy is visible as a partial pair of input borders', devtools.js('(() => { const composer=document.querySelector(".composer"), top=getComputedStyle(composer,"::before"), bottom=getComputedStyle(composer,"::after"); return parseFloat(top.width)>0 && parseFloat(top.width)<composer.getBoundingClientRect().width && top.borderTopColor===bottom.borderTopColor; })()'))
 
@@ -156,7 +156,7 @@ with tempfile.TemporaryDirectory(prefix='dsh-ui-browser-') as browser_dir:
             devtools.click('#toggle-all')
             devtools.click('#toggle-all')
             check('global expansion can be closed', devtools.js('document.querySelectorAll("details[open]").length === 0'))
-            check('running thinking starts collapsed', devtools.js('(() => { const d=document.querySelector("[data-detail=thinking-live]"); return Boolean(d) && !d.open && d.textContent.includes("进行中") && !document.querySelector("[data-detail=thinking]"); })()'))
+            check('running thinking starts collapsed', devtools.js('(() => { const d=document.querySelector("[data-detail=thinking-live]"); return Boolean(d) && !d.open && d.textContent.includes("思考中") && !document.querySelector("[data-detail=thinking]"); })()'))
             devtools.js('document.querySelector("[data-detail=thinking-live] summary").scrollIntoView({block:"center"})')
             devtools.settle()
             drag = devtools.js('''(() => { const r=document.querySelector('[data-detail="thinking-live"] summary').getBoundingClientRect(); return {x:r.left+8,y:r.top+2}; })()''')
@@ -222,16 +222,16 @@ with tempfile.TemporaryDirectory(prefix='dsh-ui-browser-') as browser_dir:
                 terminalFits:document.querySelector('#terminal').scrollWidth<=document.querySelector('#terminal').clientWidth,
                 transcriptFits:transcript.scrollWidth<=transcript.clientWidth,
                 summariesOneRow:[...document.querySelectorAll('summary')].every(el=>el.getBoundingClientRect().height===22),
-                noEmoji:!(/\\p{Extended_Pictographic}/u.test(document.querySelector('#terminal').textContent)),
+                noEmoji:!(/\\p{Extended_Pictographic}/u.test(document.querySelector('#terminal').textContent.replace(/⏺/g,''))),
                 viewportWidth:document.querySelector('#terminal').getBoundingClientRect().width,
                 contrast:[...['--fg','--muted','--accent','--error','--warning','--bg']].map(k=>[k,getComputedStyle(document.querySelector('#terminal')).getPropertyValue(k).trim()])
               }
             })()''')
             check('60-column transcript does not overflow horizontally', checks['terminalFits'] and checks['transcriptFits'])
             check('60-column compact command headers stay one row', checks['summariesOneRow'])
-            check('60-column terminal still contains no pictographic emoji', checks['noEmoji'])
+            check('60-column terminal still contains no decorative pictographic emoji', checks['noEmoji'])
             devtools.click('[data-scene="edit"]')
-            check('edit block has a file path and exact change counts', devtools.js('document.querySelector(".diff-path").textContent === "src/config-reader.ts" && document.querySelector(".diff-stat").textContent === "+2 -1"'))
+            check('edit block has a file path and exact change counts', devtools.js('document.querySelector(".diff-path").textContent === "(src/config-reader.ts)" && document.querySelector(".diff-stat").textContent === "+2 -1"'))
             check('removed and added code have distinct full-row backgrounds', devtools.js('getComputedStyle(document.querySelector(".diff-line.del")).backgroundColor !== getComputedStyle(document.querySelector(".diff-line.add")).backgroundColor && getComputedStyle(document.querySelector(".diff-line.add")).backgroundColor !== "rgba(0, 0, 0, 0)"'))
             check('word highlights differ from their line backgrounds', devtools.js('[...document.querySelectorAll(".diff-word")].every(el => getComputedStyle(el).backgroundColor !== getComputedStyle(el.closest(".diff-line")).backgroundColor)'))
             check('line coordinates come from the sample patch', devtools.js('[...document.querySelectorAll(".diff-no")].map(el=>el.textContent).join(",") === "20,21,22,22,23,24"'))
@@ -246,14 +246,14 @@ with tempfile.TemporaryDirectory(prefix='dsh-ui-browser-') as browser_dir:
             devtools.settle()
             devtools.capture('edit-100-dark.png')
             devtools.click('#diff-status')
-            check('unapplied edit is labelled as a preview', devtools.js('document.querySelector(".diff-state").textContent.includes("尚未应用") && document.querySelector(".answer .lead").textContent.includes("准备")'))
+            check('unapplied edit is labelled as a preview', devtools.js('document.querySelector(".diff-block .result-branch").textContent.includes("Will update") && document.querySelector(".answer .lead").textContent.includes("准备")'))
             devtools.capture('edit-pending-100-dark.png')
             devtools.click('#diff-status')
             devtools.js('document.querySelector("#diff-example").value="long";document.querySelector("#diff-example").dispatchEvent(new Event("change"))')
             devtools.settle()
             check('long diff is capped to at most eight visual rows', devtools.js('document.querySelector(".diff-body").getBoundingClientRect().height <= 176 && Number(document.querySelector(".diff-body").dataset.hiddenRows)>0'))
             check('long diff preserves all-file change totals', devtools.js('document.querySelector(".diff-stat").textContent === "+14 -13"'))
-            check('long diff has a count and whole-block affordance', devtools.js('document.querySelector(".diff-block").dataset.foldable==="true" && document.querySelector(".diff-fold-note").textContent.includes("点击此块展开")'))
+            check('long diff has a count and whole-block affordance', devtools.js('document.querySelector(".diff-block").dataset.foldable==="true" && document.querySelector(".diff-fold-note").textContent.includes("还有")'))
             devtools.capture('edit-long-100-dark.png')
             heading_before=devtools.js('document.querySelector(".diff-head").getBoundingClientRect().top')
             devtools.click('.diff-line.del .diff-code')
@@ -279,7 +279,7 @@ with tempfile.TemporaryDirectory(prefix='dsh-ui-browser-') as browser_dir:
             devtools.capture('edit-long-line-60-dark.png')
             devtools.click('.diff-line.add .diff-code')
             check('explicit expansion preserves the tail of a long line', devtools.js('document.querySelector(".diff-body").textContent.includes("feature_48") && document.querySelector(".diff-body").getBoundingClientRect().height>176'))
-            check('edit specimen contains no pictographic emoji', devtools.js('!(/\\p{Extended_Pictographic}/u.test(document.querySelector("#terminal").textContent))'))
+            check('edit specimen contains no decorative pictographic emoji', devtools.js('!(/\\p{Extended_Pictographic}/u.test(document.querySelector("#terminal").textContent.replace(/⏺/g,"")))'))
             devtools.js('document.querySelector("#width").value="100";document.querySelector("#width").dispatchEvent(new Event("change"))')
             devtools.click('[data-scene="subagents"]')
             check('the parent dock contains only four child entries and overflow, never a main-agent entry', devtools.js('document.querySelectorAll("#subagent-dock [data-agent]").length===5 && !document.querySelector("[data-agent=main]") && !document.querySelector("#terminal").textContent.includes("主代理") && previewSnapshot().subagents.visible.length===4 && previewSnapshot().subagents.extra===2'))

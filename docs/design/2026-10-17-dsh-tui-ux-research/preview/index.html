@@ -75,6 +75,7 @@
     .summary-kind { flex:none; color:var(--muted); }
     .summary-kind.tool-kind { color:var(--fg); font-weight:700; }
     .summary-kind.thinking-kind { font-style:italic; }
+    .disclose[data-mark="∴"] { font-style:italic; }
     .summary-name { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; flex:1; }
     .summary-meta { flex:none; white-space:nowrap; }
     .result-branch { display:flex; align-items:flex-start; }
@@ -258,7 +259,6 @@
     .diff-stat { flex:none; white-space:nowrap; }
     .diff-add-count { color:#a1c8aa; }
     .diff-del-count { color:#e2a0aa; }
-    .diff-state { color:var(--muted); margin:5px 0; }
     .diff-line { display:flex; min-height:var(--line); }
     .diff-no { width:4ch; padding-right:1ch; flex:none; text-align:right; color:var(--muted); user-select:none; }
     .diff-mark { width:2ch; flex:none; text-align:center; color:var(--muted); user-select:none; }
@@ -588,14 +588,15 @@
     const result = choicePreview.result
     if (!result) return ''
     if (result.kind === 'cancelled') {
-      return `<section class="turn question-record" data-key="question-record"><div class="process"><span class="record-mark cancelled">⏺</span> <span class="summary-name">问卷</span><span class="summary-meta"> · 已取消，未提交答案</span></div></section>`
+      return `<section class="turn question-record" data-key="question-record"><div class="process"><span class="record-mark cancelled">⏺</span> <span class="summary-name">问卷</span></div><div class="group-result question-answer">${cells('· 已取消，未提交答案')}</div></section>`
     }
     if (result.kind !== 'answered') return ''
     const lines = result.answers.map(answer => {
       const text = [...answer.selected, answer.custom].filter(Boolean).join('、') || '（已跳过）'
       return `<div class="group-result question-answer">${cells(`· ${answer.question ?? answer.header} → ${text}`)}</div>`
     }).join('')
-    return `<section class="turn question-record" data-key="question-record"><div class="process"><span class="record-mark">⏺</span> <span class="summary-name">问卷</span><span class="summary-meta"> · 已回答 ${result.answers.length} 题</span></div>${lines}</section>`
+    const count = result.answers.length > 1 ? ` · 已回答 ${result.answers.length} 题` : ''
+    return `<section class="turn question-record" data-key="question-record"><div class="process"><span class="record-mark">⏺</span> <span class="summary-name">问卷</span><span class="summary-meta">${cells(count)}</span></div>${lines}</section>`
   }
   function draw(options = {}) {
     const stick = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 4
@@ -637,9 +638,8 @@
     </div>` : ''
     // 运行中和完成后都保留最后状态：思考尾句与 Bash 最后 5 行不撤回，避免闪烁。
     const showThinking = running || state.scene === 'done'
-    const thinkingMeta = running ? '进行中… · 3s' : ''
     const thinkingTail = showThinking && !state.expanded.has('thinking-live') ? `<div class="thinking-tail">${cells('…确认检查命令覆盖这两个边界。')}</div>` : ''
-    const liveThinking = showThinking ? `<div class="thinking-live">${detail('thinking-live', '思考', thinkingMeta, '', `<div class="thinking-body">${cells('核对空配置与 JSON 解析失败的返回方式。')}</div>
+    const liveThinking = showThinking ? `<div class="thinking-live">${detail('thinking-live', running ? '思考中' : '思考', '', '', `<div class="thinking-body">${cells('核对空配置与 JSON 解析失败的返回方式。')}</div>
       <div class="thinking-body">${cells('确认检查命令覆盖这两个边界。')}</div>`, {mark:'∴', kindClass:'thinking-kind'})}${thinkingTail}</div>` : ''
     const showBashTail = running || state.scene === 'done'
     const bashTailLines = running ? logs.slice(0, 2 + state.outputIndex).slice(-5) : logs.slice(-5)
