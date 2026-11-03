@@ -5,11 +5,11 @@
       "passed": true
     },
     {
-      "check": "terminal has no pictographic emoji",
+      "check": "terminal has no decorative pictographic emoji",
       "passed": true
     },
     {
-      "check": "footer is reduced to permission and working directory",
+      "check": "footer shows version and working directory, not model/context/keys",
       "passed": true
     },
     {
@@ -81,7 +81,7 @@
       "passed": true
     },
     {
-      "check": "running tool card hides raw output rows",
+      "check": "running tool card shows up to five live output rows",
       "passed": true
     },
     {
@@ -109,7 +109,15 @@
       "passed": true
     },
     {
-      "check": "approval includes full command before any decision",
+      "check": "approval card lives in the transcript with the composer visible",
+      "passed": true
+    },
+    {
+      "check": "approval shows eight command lines plus overflow hint",
+      "passed": true
+    },
+    {
+      "check": "approval defaults focus to reject",
       "passed": true
     },
     {
@@ -117,7 +125,7 @@
       "passed": true
     },
     {
-      "check": "completed thinking row is gone",
+      "check": "completed thinking row stays visible",
       "passed": true
     },
     {
@@ -137,7 +145,7 @@
       "passed": true
     },
     {
-      "check": "60-column terminal still contains no pictographic emoji",
+      "check": "60-column terminal still contains no decorative pictographic emoji",
       "passed": true
     },
     {
@@ -217,7 +225,7 @@
       "passed": true
     },
     {
-      "check": "edit specimen contains no pictographic emoji",
+      "check": "edit specimen contains no decorative pictographic emoji",
       "passed": true
     },
     {
@@ -457,6 +465,10 @@
       "passed": true
     },
     {
+      "check": "single question record has no count",
+      "passed": true
+    },
+    {
       "check": "multi-select Enter submits checked items without adding the focused item",
       "passed": true
     },
@@ -486,6 +498,10 @@
     },
     {
       "check": "Escape cancels without fabricating answered results",
+      "passed": true
+    },
+    {
+      "check": "cancelled question record has a body line",
       "passed": true
     },
     {

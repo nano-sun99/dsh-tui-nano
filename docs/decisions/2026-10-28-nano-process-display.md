@@ -5,7 +5,7 @@
 - 决策人：用户
 - 适用范围：Nano transcript 的过程块默认显示、结果行预算、思考可见性与展开入口
 - 取代：无
-- 被取代：无
+- 被取代：无（第 2/3 条被 ADR-20261103-streaming-process-preview 局部修订，第 4 条标记被 ADR-20261103-nano-four-visual-categories 局部修订；见修订记录）
 - 决策来源：2026-10-28 用户看完交互稿后原话「ok 完全采纳，请你出spec」；交互稿见 `docs/design/2026-10-17-dsh-tui-ux-research/preview/index.html`，spec 见 `docs/specs/2026-10-28-nano-process-display/README.md`
 
 ## 决定
@@ -51,6 +51,7 @@ Nano 的默认屏幕只留「结论 + 一行过程摘要 + 可点开的入口」
 ## 修订记录
 
 - 2026-10-28：用户试用后要求流式思考默认收起；决定第 3 条改为「默认一行、点击展开」，提交后仍整行消失；代价更新为「看正文多一次点击」。同批把第 4 条收窄到组行 / Bash / 通用工具行，思考行只用 `▸` / `▾` 标记。
+- 2026-11-03：第 2 条的「成功 Bash 默认 0 行结果」、第 3 条的「流式思考只显示一行 / 提交后整行消失」、第 4 条的过程行「点击展开 / 点击收起」文字提示，均被 [ADR-20261103-streaming-process-preview](2026-11-03-streaming-process-preview.md) 修订：思考最多两行且完成后保留（只保留最后 1–2 行尾巴），Bash 运行中 / 完成后保留最后 5 行，过程行去掉文字提示。第 4 条的思考标记 `▸` / `▾` 同时被 [ADR-20261103-nano-four-visual-categories](2026-11-03-nano-four-visual-categories.md) 改为 `∴`，过程行改为 `⏺` / `⎿`。其余条款继续生效。
 
 ## 关联
 

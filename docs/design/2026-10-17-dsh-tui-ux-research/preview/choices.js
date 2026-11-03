@@ -84,7 +84,7 @@
     question() { return this.questions[this.index] }
     current() { return this.states[this.index] }
     valid(item) { return item.selected.length>0 || Boolean(item.other.trim()) }
-    answers() { return this.questions.map((question,i)=>({id:question.id,header:question.header,selected:this.states[i].selected.map(j=>question.options[j].label),custom:this.states[i].other})) }
+    answers() { return this.questions.map((question,i)=>({id:question.id,header:question.header,question:question.question,selected:this.states[i].selected.map(j=>question.options[j].label),custom:this.states[i].other})) }
     finish(result) { this.pending=false;this.result=result;this.paint() }
     advance() {
       this.error=''
@@ -225,6 +225,7 @@
         this.onChange(this);return
       }
       if(this.kind==='approval') { this.onChange(this);return }
+      if(this.result && this.kind==='question') { this.host.hidden=true; this.host.innerHTML=''; this.onChange(this); return }
       this.host.hidden=false
       if(this.result){this.host.innerHTML=this.receipt();this.onChange(this);return}
       const submit=this.index===this.questions.length
@@ -240,9 +241,15 @@
       } else {
         const question=this.question(),state=this.current()
         title=question.question
+        const otherFocused=state.focus===question.options.length
+        const otherText=state.draft||state.other
+        const otherLabel=otherFocused||otherText?'其他：':'其他'
+        const otherControl=otherFocused
+          ? `<input data-other-input aria-label="其他答案" value="${esc(state.draft)}" placeholder="直接输入" autocomplete="off">`
+          : otherText?`<span class="choice-text">${this.cells(otherText)}</span>`:''
         body=`<div class="choice-options" role="listbox" aria-multiselectable="${question.multi}">${question.options.map((option,index)=>this.optionRow(index,option.label,option.description,{focused:state.focus===index,selected:state.selected.includes(index),multi:question.multi})).join('')}
-          <div class="choice-row choice-other" data-question-option="${question.options.length}" data-focused="${state.focus===question.options.length}" data-selected="${Boolean(state.other)}" role="option" aria-selected="${Boolean(state.other)}">
-            <div class="choice-label"><span class="choice-pointer" aria-hidden="true">${state.focus===question.options.length?'&gt;':' '}</span><span class="choice-number">${question.options.length+1}.</span><span>${this.cells('其他：')}</span><input data-other-input aria-label="其他答案" value="${esc(state.draft)}" placeholder="直接输入" autocomplete="off"></div>
+          <div class="choice-row choice-other" data-question-option="${question.options.length}" data-focused="${otherFocused}" data-selected="${Boolean(otherText)}" role="option" aria-selected="${Boolean(otherText)}">
+            <div class="choice-label"><span class="choice-pointer" aria-hidden="true">${otherFocused?'&gt;':' '}</span><span class="choice-number">${question.options.length+1}.</span><span>${this.cells(otherLabel)}</span>${otherControl}</div>
           </div>
         </div>${question.multi?`<button class="choice-confirm" data-question-confirm>${this.cells(this.questions.length===1?'确认已选项':'下一题')}</button>`:''}`
         footer=question.multi?'↑↓ 移动 · 空格勾选 · Enter 确认':'↑↓ 移动 · Enter 选择 · 数字直选'
