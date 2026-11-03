@@ -31,14 +31,14 @@
     .stage { min-width:0; }
     .terminal-wrap { overflow-x:auto; padding:3px; margin:-3px; }
     .terminal {
-      --cols:100; --line:22px; --bg:#17191d; --fg:#e8e6e0; --muted:#8d95a6; --accent:#7da1de; --error:#da8a93; --warning:#d8b270; --rule:#424953; --hover:#242b35; --selected:#3b4a66;
+      --cols:100; --line:22px; --bg:#17191d; --fg:#e8e6e0; --muted:#8d95a6; --accent:#7da1de; --error:#da8a93; --warning:#d8b270; --rule:#424953; --hover:#242b35; --selected:#3b4a66; --user-bg:#23262d; --success:#9ac4a6;
       width:calc(var(--cols) * 1ch + 4ch + 2px); max-width:100%; height:704px; margin:0;
       display:flex; flex-direction:column; overflow:hidden;
       border:1px solid var(--rule); border-radius:3px; background:var(--bg); color:var(--fg);
       font:14px/var(--line) "SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
       font-variant-numeric:tabular-nums; --focus:var(--accent);
     }
-    .terminal.light { --bg:#f6f3ed; --fg:#343945; --muted:#626978; --accent:#365f9d; --error:#a33e4c; --warning:#855b18; --rule:#c4c6c9; --hover:#e8e8e5; --selected:#d5def2; }
+    .terminal.light { --bg:#f6f3ed; --fg:#343945; --muted:#626978; --accent:#365f9d; --error:#a33e4c; --warning:#855b18; --rule:#c4c6c9; --hover:#e8e8e5; --selected:#d5def2; --user-bg:#e9e7e2; --success:#315f3e; }
     .terminal ::selection { background:var(--selected); color:var(--fg); }
     .terminal * { font-size:inherit; line-height:inherit; }
     .terminal-head { flex:none; padding:var(--line) 2ch 0; display:flex; gap:2ch; }
@@ -52,8 +52,14 @@
     .transcript:focus { outline:none; }
     .term-row { min-height:var(--line); white-space:pre-wrap; overflow-wrap:anywhere; }
     .cjk { display:inline-block; width:2ch; text-align:center; }
-    .user { color:var(--accent); font-weight:700; padding-bottom:var(--line); }
-    .narration { margin:0 0 var(--line); }
+    .user { color:var(--fg); font-weight:400; padding:0 2ch; margin-left:-2ch; margin-right:-2ch; background:var(--user-bg); }
+    .user-pointer { color:var(--muted); }
+    .narration { margin:0; }
+    .assistant-row { display:flex; align-items:flex-start; margin:var(--line) 0; }
+    .assistant-mark { width:2ch; flex:none; color:var(--fg); }
+    .assistant-body { min-width:0; flex:1; }
+    .assistant-body > :first-child { margin-top:0; }
+    .assistant-body > :last-child { margin-bottom:0; }
     .process { color:var(--muted); margin:0 0 var(--line); }
     details { padding:0; }
     summary { list-style:none; cursor:pointer; display:flex; align-items:baseline; gap:1ch; width:100%; min-height:var(--line); }
@@ -61,26 +67,37 @@
     summary:hover { background:var(--hover); color:var(--fg); }
     summary:focus-visible { outline:1px solid var(--accent); outline-offset:1px; }
     .disclose { width:1ch; flex:none; text-align:center; color:var(--muted); user-select:none; }
-    .disclose::before { content:"▸"; }
-    details[open] > summary .disclose::before { content:"▾"; }
-    .summary-count { flex:none; color:var(--muted); white-space:nowrap; }
+    .disclose::before { content:attr(data-mark); }
+    .disclose[data-status="ok"] { color:var(--success); }
+    .disclose[data-status="running"] { color:var(--muted); }
+    .disclose[data-status="error"] { color:var(--error); }
+    .disclose[data-status="waiting"] { color:var(--warning); }
     .summary-kind { flex:none; color:var(--muted); }
+    .summary-kind.tool-kind { color:var(--fg); font-weight:700; }
+    .summary-kind.thinking-kind { font-style:italic; }
     .summary-name { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; flex:1; }
     .summary-meta { flex:none; white-space:nowrap; }
+    .result-branch { display:flex; align-items:flex-start; }
+    .branch-mark { width:5ch; flex:none; color:var(--muted); white-space:pre; }
+    .branch-body { min-width:0; flex:1; }
     .detail { padding:var(--line) 0 var(--line) 2ch; color:var(--fg); }
     .detail-title { color:var(--muted); margin-bottom:0; }
     pre { margin:0; font:inherit; white-space:pre-wrap; overflow-wrap:anywhere; }
     .body-section { margin-top:var(--line); }
     .copy-command { background:transparent; border:0; color:var(--accent); padding:0; margin-top:var(--line); text-decoration:underline; text-underline-offset:3px; }
     .tool-note { margin-left:2ch; color:var(--muted); }
-    .live-tail { margin-left:2ch; color:var(--muted); height:calc(var(--line) * 2); overflow:hidden; }
+    .live-tail { color:var(--muted); max-height:calc(var(--line) * 5); overflow:hidden; }
     .live-line { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .thinking-tail { margin-left:2ch; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .question-record .record-mark { color:var(--success); }
+    .question-record .record-mark.cancelled { color:var(--muted); }
+    .question-record .question-answer { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .thinking-live { margin:0 0 var(--line); color:var(--muted); }
     .thinking-body { padding-left:2ch; }
     .group-result { padding-left:2ch; color:var(--muted); }
     .failure-tail { margin-left:2ch; color:var(--muted); }
     .error-line { margin-left:2ch; color:var(--error); }
-    .answer { margin-top:var(--line); }
+    .answer { margin-top:0; }
     .answer p { margin:0 0 var(--line); }
     .answer h2 { margin:var(--line) 0 0; font-size:inherit; font-weight:700; }
     .answer ul { margin:0; padding:0; list-style:none; }
@@ -138,9 +155,8 @@
     .input-placeholder { color:var(--muted); }
     .status { flex:none; padding:11px 2ch; display:flex; flex-direction:column; color:var(--muted); }
     .status-row { display:flex; justify-content:space-between; gap:2ch; white-space:nowrap; }
-    .status-extra { min-width:0; overflow:hidden; text-overflow:ellipsis; }
-    .status-mode { color:var(--muted); }
-    .status-mode.waiting { color:var(--warning); }
+    .status-left { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+    .status-hint { color:var(--muted); white-space:nowrap; }
     .choice-host { flex:none; max-height:484px; min-height:0; margin:0 2ch; border-top:1px solid var(--accent); padding:11px 0; overflow:hidden; }
     .choice-panel { display:flex; flex-direction:column; max-height:460px; outline:none; }
     /* 审批卡住在正文流末尾：随 transcript 滚动，输入块保持原位。 */
@@ -229,14 +245,16 @@
     .diff-block { margin:var(--line) 0; color:var(--fg); }
     .diff-block[data-foldable="true"], .tool-block { cursor:default; }
     .diff-block:focus-visible { outline:1px solid var(--accent); outline-offset:2px; }
-    .diff-head { display:flex; gap:1ch; align-items:baseline; width:100%; padding:0 0 5px; border:0; border-bottom:1px solid var(--rule); background:transparent; color:inherit; text-align:left; font:inherit; }
-    .diff-block[data-foldable="true"]:hover .diff-arrow { color:var(--accent); }
-    .diff-body { max-height:calc(var(--line) * 8); overflow:hidden; }
+    .diff-head { display:flex; gap:1ch; align-items:baseline; width:100%; padding:0; border:0; background:transparent; color:inherit; text-align:left; font:inherit; }
+    .diff-head-mark { width:1ch; flex:none; text-align:center; color:var(--success); }
+    .diff-head-tool { flex:none; font-weight:700; }
+    .diff-block[data-foldable="true"]:hover .diff-head-tool { color:var(--accent); }
+    .diff-body { max-height:calc(var(--line) * 8); overflow:hidden; border-top:1px dashed var(--rule); border-bottom:1px dashed var(--rule); margin-top:5px; }
     .diff-body.expanded { max-height:none; }
-    .diff-fold-note { color:var(--muted); border-bottom:1px solid var(--rule); }
+    .diff-fold-note { color:var(--muted); border-bottom:1px dashed var(--rule); }
     .diff-fold-note[hidden] { display:none; }
     .diff-separator { min-height:var(--line); color:var(--muted); }
-    .diff-path { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-weight:700; }
+    .diff-path { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--muted); font-weight:400; }
     .diff-stat { flex:none; white-space:nowrap; }
     .diff-add-count { color:#a1c8aa; }
     .diff-del-count { color:#e2a0aa; }
@@ -316,7 +334,7 @@
     <section class="stage" aria-label="终端样稿">
       <div class="terminal-wrap">
         <div class="terminal" id="terminal">
-          <div class="terminal-head"><span class="app-name">dsh-tui</span><span class="muted">~/code/dsh-TUI</span></div>
+          <div class="terminal-head"><span class="app-name">nano</span><span class="muted">deepseek-official/deepseek-flash · <span id="header-state">空闲</span></span></div>
           <div class="subagent-context" id="subagent-context" hidden>
             <button type="button" class="agent-icon" id="subagent-back" aria-label="退出子代理" title="退出子代理">←</button>
             <span class="muted">子代理</span><strong id="subagent-title"></strong><span class="subagent-status" id="subagent-view-status"></span>
@@ -338,7 +356,7 @@
             </form>
           </div>
           <footer class="status">
-            <div class="status-row"><span class="status-mode" id="permission">权限：工作区写入</span><span class="status-extra">~/code/dsh-TUI</span></div>
+            <div class="status-row"><span class="status-left" id="status-left">v0.2.1 · ~/code/dsh-TUI</span><span class="status-hint" id="status-hint">Enter 发送 · Ctrl+C 退出</span></div>
           </footer>
           <div class="subagent-dock" id="subagent-dock" hidden></div>
         </div>
@@ -350,11 +368,12 @@
       <dl>
         <dt>先读回答</dt><dd>正文保持正常亮度。结论与小标题加粗，段落间隔一行。</dd>
         <dt>随手展开，再点收起</dt><dd>代码块和 Bash 整块都可单击开关，原位完成。拖动仍然选择文字，正文不跟着折叠。</dd>
-        <dt>状态明确</dt><dd>运行、失败、等待确认直接写明。已完成记录静止，不使用装饰性 emoji。</dd>
+        <dt>状态明确</dt><dd>过程行只留标题和最后状态/输出，不显示行数、完成或展开提示；运行中和完成后不撤回尾句与 Bash 输出，避免闪烁。已完成记录静止，不使用装饰性 emoji。</dd>
         <dt>代码独立成块</dt><dd>文件名与增删统计在顶部，红绿底色标记改动行，行内变化进一步强调。</dd>
         <dt>键盘直接选择</dt><dd>沿用 Pi 选项卡：单列编号，焦点和已选分开，多选空格勾选，其他答案行内填写。</dd>
+        <dt>提问不抢戏</dt><dd>模型先按最佳判断做；只有答案会改变做法、代码又判不出来时才弹选项卡。卡片形态和键位不变。</dd>
         <dt>输入框就是容量线</dt><dd>上下边框左侧着色段表示上下文占用；底部不再重复显示模型、百分比或快捷键提示。</dd>
-        <dt>窄屏有预算</dt><dd>命令标题一行；成功与运行中输出 0 行；失败保留 3 行摘要。错误原因独立显示，避免被省略。</dd>
+        <dt>窄屏有预算</dt><dd>命令标题一行；运行中 / 完成后显示最后 5 行；失败保留 3 行摘要。错误原因独立显示，避免被省略。</dd>
       </dl>
       <div class="review-actions">
         <button id="toggle-all" class="plain-button">展开所有详情</button>
@@ -389,6 +408,7 @@
     questionMode:['single','multi','batch'].includes(parameters.get('question')) ? parameters.get('question') : 'single',
     choiceEpoch:0,
   }
+  let lastQuestionResult
   const choicePreview = new window.TuiChoicePreview({host:$('#choice-host'),cells,onChange:picker=>{
     // 审批卡住在正文流里，输入框保持可见；只有问卷卡仍占用输入位。
     $('.composer').hidden=picker.kind==='question'&&picker.pending
@@ -396,7 +416,11 @@
     if(placeholder) placeholder.textContent=picker.kind==='approval'&&picker.pending?'等待你处理上面的确认…':'继续提问…'
     if(picker.pending) $('#activity').textContent=picker.kind==='approval'?'等待你的授权':'等待你的选择'
     else if(state.scene==='questions'||state.scene==='approval') $('#activity').textContent=''
-    if(picker.result?.kind==='permission') {state.decision=picker.result.decision;$('#permission').classList.remove('waiting')}
+    if(picker.result?.kind==='permission') state.decision=picker.result.decision
+    if(picker.kind==='question' && picker.result!==lastQuestionResult) {
+      lastQuestionResult=picker.result
+      if(picker.result) setTimeout(()=>draw({bottom:true}),0)
+    }
   }})
   const modelPreview = new window.TuiModelPreview({host:$('#choice-host'),cells,onChange:picker=>{
     $('.composer').hidden=picker.pending
@@ -437,24 +461,34 @@
       ? `<span class="cjk">${escape(c)}</span>` : escape(c)).join('')
   }
   function detail(id, kind, name, meta, body, options = {}) {
-    const hint = options.hint ? ` · ${state.expanded.has(id) ? '点击收起' : '点击展开'}` : ''
+    const label = [kind, name, meta].filter(Boolean).join('，')
+    const mark = options.mark ?? '⏺'
+    const status = options.status ?? ''
+    const kindClass = options.kindClass ?? 'tool-kind'
     return `<details data-key="${id}" data-detail="${id}"${state.expanded.has(id) ? ' open' : ''}>
-      <summary aria-label="${escape(`${kind} ${name}，${meta}，展开或收起详情`)}">
-        <span class="disclose" aria-hidden="true"></span>
-        <span class="summary-kind">${cells(kind)}</span>
+      <summary aria-label="${escape(`${label}，展开或收起详情`)}">
+        <span class="disclose" data-mark="${mark}" data-status="${status}" aria-hidden="true"></span>
+        <span class="summary-kind ${kindClass}">${cells(kind)}</span>
         <span class="summary-name">${cells(name)}</span>
-        ${options.hiddenLines ? `<span class="summary-count">${cells(`+${options.hiddenLines} 行`)}</span>` : ''}
-        <span class="summary-meta${options.error ? ' error-line' : ''}">${cells(meta + hint)}</span>
+        <span class="summary-meta${options.error ? ' error-line' : ''}">${cells(meta)}</span>
       </summary>
       <div class="detail">${body}</div>
     </details>`
   }
+  function userLine(text, key = '') {
+    return `<div class="term-row user"${key ? ` data-key="${key}"` : ''}><span class="user-pointer">❯</span> ${cells(text)}</div>`
+  }
+  function assistantBlock(html, key = '') {
+    return `<div class="assistant-row"${key ? ` data-key="${key}"` : ''}><span class="assistant-mark">⏺</span><div class="assistant-body">${html}</div></div>`
+  }
+  function branch(html) {
+    return `<div class="result-branch"><span class="branch-mark">  ⎿  </span><div class="branch-body">${html}</div></div>`
+  }
   function history() {
     if (!state.long) return ''
     return Array.from({length:10}, (_, i) => `<section class="history-turn" data-key="history-${i}">
-      <div class="term-row user">${cells(`> 示例问题 ${i+1}：检查配置读取的一个边界。`)}</div>
-      <p>${cells('已核对这一步的输入和返回值。完整检查记录可以在对应工具行展开查看。')}</p>
-      <p class="muted">${cells('这段历史用于演示阅读位置，所有内容均为虚构。')}</p>
+      ${userLine(`示例问题 ${i+1}：检查配置读取的一个边界。`)}
+      ${assistantBlock(`<p>${cells('已核对这一步的输入和返回值。完整检查记录可以在对应工具行展开查看。')}</p><p class="muted">${cells('这段历史用于演示阅读位置，所有内容均为虚构。')}</p>`)}
     </section>`).join('')
   }
   function editFixture() {
@@ -488,9 +522,10 @@
     const added = rows.filter(row=>row.kind==='add').length
     const removed = rows.filter(row=>row.kind==='del').length
     const open = state.expanded.has('edit')
+    const branchText = `${state.editPending ? 'Will update' : 'Updated'} src/config-reader.ts with ${added} addition${added===1?'':'s'} and ${removed} removal${removed===1?'':'s'}`
     return `<section class="diff-block" data-card="edit" data-key="edit-block" role="button" tabindex="0" aria-expanded="${open}" aria-label="单击代码变更块展开，再次单击收起">
-      <div class="diff-head" aria-expanded="${open}"><span class="diff-arrow muted" aria-hidden="true">${open?'▾':'▸'}</span><span class="muted">Edit</span><span class="diff-path">src/config-reader.ts</span><span class="diff-stat"><span class="diff-add-count">+${added}</span> <span class="diff-del-count">-${removed}</span></span></div>
-      <div class="diff-state">${cells(state.editPending ? '修改预览 · 尚未应用' : '已应用 · 0.2s')}</div>
+      <div class="diff-head" aria-expanded="${open}"><span class="diff-head-mark" aria-hidden="true">⏺</span><span class="diff-head-tool">Update</span><span class="diff-path">(src/config-reader.ts)</span><span class="diff-stat"><span class="diff-add-count">+${added}</span> <span class="diff-del-count">-${removed}</span></span></div>
+      ${branch(cells(branchText))}
       <div class="diff-body${open?' expanded':''}">${rows.map(row=>row.kind==='separator' ? `<div class="diff-separator">${cells(row.code)}</div>` : `<div class="diff-line ${row.kind}"><span class="diff-no">${row.no}</span><span class="diff-mark">${row.kind==='del'?'-':row.kind==='add'?'+':' '}</span><span class="diff-code">${row.code}</span></div>`).join('')}</div>
       <div class="diff-fold-note" hidden></div>
     </section>`
@@ -512,12 +547,11 @@
     body.style.maxHeight = open ? 'none' : `${budget*22}px`
     const note = $('.diff-fold-note')
     note.hidden = hidden===0
-    note.innerHTML = cells(open ? `已展开 ${total} 行 · 再点此块收起` : `… 还有 ${hidden} 行未显示 · 点击此块展开`)
+    note.innerHTML = cells(open ? `已展开 ${total} 行` : `… 还有 ${hidden} 行未显示`)
     const block = $('.diff-block')
     block.dataset.foldable = String(hidden>0)
     block.setAttribute('aria-disabled', String(hidden===0))
     block.tabIndex = hidden===0 ? -1 : 0
-    $('.diff-arrow').style.visibility = hidden===0 ? 'hidden' : 'visible'
     body.dataset.totalRows = total
     body.dataset.hiddenRows = open ? 0 : hidden
   }
@@ -549,6 +583,20 @@
     $('#question-reset').hidden=state.scene!=='questions'
     $('#question-mode').value=state.questionMode
   }
+  function questionRecord() {
+    if (state.scene !== 'questions') return ''
+    const result = choicePreview.result
+    if (!result) return ''
+    if (result.kind === 'cancelled') {
+      return `<section class="turn question-record" data-key="question-record"><div class="process"><span class="record-mark cancelled">⏺</span> <span class="summary-name">问卷</span><span class="summary-meta"> · 已取消，未提交答案</span></div></section>`
+    }
+    if (result.kind !== 'answered') return ''
+    const lines = result.answers.map(answer => {
+      const text = [...answer.selected, answer.custom].filter(Boolean).join('、') || '（已跳过）'
+      return `<div class="group-result question-answer">${cells(`· ${answer.question ?? answer.header} → ${text}`)}</div>`
+    }).join('')
+    return `<section class="turn question-record" data-key="question-record"><div class="process"><span class="record-mark">⏺</span> <span class="summary-name">问卷</span><span class="summary-meta"> · 已回答 ${result.answers.length} 题</span></div>${lines}</section>`
+  }
   function draw(options = {}) {
     const stick = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 4
     const previousTop = transcript.scrollTop
@@ -579,11 +627,6 @@
       ? "Error: fixture file was not found\nThe requested test input could not be read.\nProcess exited with code 1."
       : logs.join('\n')
     const commandBody = `<div class="detail-title">${cells('完整脚本 · 11 行')}</div><pre>${cells(command)}</pre><button class="copy-command" data-copy>${cells('复制脚本')}</button><div class="body-section"><div class="detail-title">${cells('输出')}</div><pre>${cells(waiting ? '等待允许，尚未执行。' : running ? logs.slice(0, 2 + state.outputIndex).join('\n') : output)}</pre></div>`
-    // 过程块默认不露出结果：隐藏行数 = 未显示的命令行 + 未显示的输出行。
-    // 失败卡仍露出 3 行输出；其余状态 0 行。
-    const outputRowCount = waiting ? 0 : running ? logs.slice(0, 2 + state.outputIndex).length : failed ? 3 : logs.length
-    const shownFailureRows = failed && !state.expanded.has('bash') ? Math.min(3, outputRowCount) : 0
-    const bashHidden = command.split('\n').length - 1 + outputRowCount - shownFailureRows
     const groupBody = `<div class="detail-title">${cells('读取与搜索 · 3 次')}</div>
       <div>Read src/tuiSettingsFile.ts</div><pre class="group-result">${cells('export function readValues(raw) { … }')}</pre>
       <div>Read src/config-reader.ts</div><pre class="group-result">${cells('export function readValues(raw) { … }')}</pre>
@@ -592,25 +635,33 @@
       ${!state.expanded.has('bash') ? `<pre>${cells(output.split('\n').slice(0, 3).join('\n'))}</pre>` : ''}
       <div class="error-line">${cells('退出码 1')}</div>
     </div>` : ''
-    // 思考在流式时默认收起，点击展开；完成后整行消失，不保留可点入口。
-    const liveThinking = running ? `<div class="thinking-live">${detail('thinking-live', '思考', '进行中… · 3s', '', `<div class="thinking-body">${cells('核对空配置与 JSON 解析失败的返回方式。')}</div>
-      <div class="thinking-body">${cells('确认检查命令覆盖这两个边界。')}</div>`)}</div>` : ''
-    transcript.innerHTML = state.scene==='subagents' ? history() + subagentPreview.mainTranscriptHtml() : history() + (state.scene==='questions' ? `<section class="turn"><div class="term-row user">${cells('> 请先确认验证方式和需要覆盖的终端场景。')}</div><p>${cells('我会按你选择的范围准备验证。')}</p></section>` : `<section class="turn" data-key="current-turn">
-      <div class="term-row user" data-key="prompt">${cells('> 检查配置读取，修复空配置报错，再跑验证。')}</div>
-      <p class="narration" data-key="narration">${cells('我会先核对读取入口，再检查空配置和解析失败两条路径。')}</p>
-      ${state.scene === 'edit' ? `<div class="process">${detail('group', 'Read', 'src/config-reader.ts', '完成', readBody, {hint:true})}</div>${editBlock()}` : `<section class="process" aria-label="过程记录">
+    // 运行中和完成后都保留最后状态：思考尾句与 Bash 最后 5 行不撤回，避免闪烁。
+    const showThinking = running || state.scene === 'done'
+    const thinkingMeta = running ? '进行中… · 3s' : ''
+    const thinkingTail = showThinking && !state.expanded.has('thinking-live') ? `<div class="thinking-tail">${cells('…确认检查命令覆盖这两个边界。')}</div>` : ''
+    const liveThinking = showThinking ? `<div class="thinking-live">${detail('thinking-live', '思考', thinkingMeta, '', `<div class="thinking-body">${cells('核对空配置与 JSON 解析失败的返回方式。')}</div>
+      <div class="thinking-body">${cells('确认检查命令覆盖这两个边界。')}</div>`, {mark:'∴', kindClass:'thinking-kind'})}${thinkingTail}</div>` : ''
+    const showBashTail = running || state.scene === 'done'
+    const bashTailLines = running ? logs.slice(0, 2 + state.outputIndex).slice(-5) : logs.slice(-5)
+    const bashStatus = waiting ? 'waiting' : failed ? 'error' : running ? 'running' : 'ok'
+    const groupStatus = failed ? 'error' : running ? 'running' : 'ok'
+    transcript.innerHTML = state.scene==='subagents' ? history() + subagentPreview.mainTranscriptHtml() : history() + (state.scene==='questions' ? `<section class="turn">${userLine('请先确认验证方式和需要覆盖的终端场景。')}${assistantBlock(`<p>${cells('模型已先核对读取入口；验收范围和终端场景会改变做法，先请你确认。')}</p>`)}</section>${questionRecord()}` : `<section class="turn" data-key="current-turn">
+      ${userLine('检查配置读取，修复空配置报错，再跑验证。', 'prompt')}
+      ${assistantBlock(`<p class="narration">${cells('我会先核对读取入口，再检查空配置和解析失败两条路径。')}</p>`, 'narration')}
+      ${state.scene === 'edit' ? `<div class="process">${detail('group', 'Read', '(src/config-reader.ts)', '', readBody, {mark:'⏺', status:'ok'})}</div>${editBlock()}` : `<section class="process" aria-label="过程记录">
         ${liveThinking}
-        ${detail('group', 'Read', '2 个文件 · Grep 1 次', running ? '等待结果' : '完成', groupBody, {hint:true})}
-        <div class="tool-block" data-card="bash">${detail('bash', 'Bash', command.split('\n')[0], waiting ? '等待确认' : running ? '等待结果' : failed ? '失败' : '完成', commandBody, {error:failed,hiddenLines:bashHidden,hint:true})}${failureBlock}</div>
+        ${detail('group', 'Read', '2 个文件 · Grep 1 次', '', groupBody, {mark:'⏺', status:groupStatus})}${!state.expanded.has('group') ? branch(cells('src/config-reader.ts')) : ''}
+        <div class="tool-block" data-card="bash">${detail('bash', 'Bash', `(${command.split('\n')[0]})`, waiting ? '等待确认' : failed ? '失败' : '', commandBody, {error:failed, mark:'⏺', status:bashStatus})}${showBashTail && !state.expanded.has('bash') ? branch(`<div class="live-tail" data-key="bash-live">${bashTailLines.map(line => `<div class="live-line">${cells(line)}</div>`).join('')}</div>`) : ''}${failureBlock}</div>
       </section>`}
-      ${answer()}
+      ${assistantBlock(answer())}
     </section>`)
     if(state.scene==='approval') choicePreview.mountApproval(transcript)
     $('#activity').innerHTML = running
       ? `<span class="activity-glyph" aria-hidden="true">-</span>${cells('正在运行检查 · Esc 可停止')}`
       : waiting && !state.decision ? cells('等待你的确认') : ''
-    $('#permission').classList.toggle('waiting', waiting && !state.decision)
-    $('#permission').textContent = waiting && !state.decision ? '权限：逐次确认（演示）' : '权限：工作区写入'
+    $('#status-left').textContent = 'v0.2.1 · ~/code/dsh-TUI'
+    $('#header-state').textContent = running ? '运行中' : '空闲'
+    $('#status-hint').textContent = running ? 'Enter 插话 · Esc 停止' : 'Enter 发送 · Ctrl+C 退出'
     $('#append').disabled = !running
     $('#diff-status').hidden = state.scene !== 'edit'
     $('#diff-example-control').hidden = state.scene !== 'edit'

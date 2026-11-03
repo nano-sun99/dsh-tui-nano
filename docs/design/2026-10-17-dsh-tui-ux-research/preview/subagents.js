@@ -119,10 +119,10 @@
       this.paintFocus()
     }
     mainTranscriptHtml() {
-      return `<section class="turn" data-key="subagent-main"><div class="term-row user">${this.cells('> 检查配置读取、界面样式和窄终端布局。')}</div><p>${this.cells('已分派检查。配置依赖、窄终端布局和完整构建仍在进行，其他结果如下。')}</p><div class="agent-results">${this.rows.filter(settled).map(row => `<div class="agent-result"><button type="button" class="agent-result-link" data-agent="${row.id}">${this.cells(row.name)}</button><span class="subagent-status ${statusClass(row)}">${this.cells(row.statusText)}</span><div class="muted">${this.cells(row.lines.join(' '))}</div></div>`).join('')}</div>${this.messageHtml('main')}</section>`
+      return `<section class="turn" data-key="subagent-main"><div class="term-row user"><span class="user-pointer">❯</span> ${this.cells('检查配置读取、界面样式和窄终端布局。')}</div><div class="assistant-row"><span class="assistant-mark">⏺</span><div class="assistant-body"><p>${this.cells('已分派检查。配置依赖、窄终端布局和完整构建仍在进行，其他结果如下。')}</p></div></div><div class="agent-results">${this.rows.filter(settled).map(row => `<div class="agent-result"><button type="button" class="agent-result-link" data-agent="${row.id}">${this.cells(row.name)}</button><span class="subagent-status ${statusClass(row)}">${this.cells(row.statusText)}</span><div class="muted">${this.cells(row.lines.join(' '))}</div></div>`).join('')}</div>${this.messageHtml('main')}</section>`
     }
     messageHtml(id,messages = this.messages.get(id) ?? []) {
-      return messages.map(message => `<div class="agent-message ${message.role}" data-local-message="${message.role}">${this.cells(message.role === 'user' ? `> ${message.text}` : message.text)}</div>`).join('')
+      return messages.map(message => `<div class="agent-message ${message.role}" data-local-message="${message.role}">${message.role === 'user' ? `<span class="user-pointer">❯</span> ${this.cells(message.text)}` : `<span class="assistant-mark">⏺</span> ${this.cells(message.text)}`}</div>`).join('')
     }
     renderConversation() {
       const row = this.rows.find(item => item.id === this.viewed)
@@ -134,9 +134,9 @@
       this.heading.querySelector('#subagent-title').title = name
       this.heading.querySelector('#subagent-view-status').textContent = row?.statusText ?? ''
       if (row) {
-        const history = this.long ? Array.from({length:12},(_,index) => `<div class="history-turn"><div class="term-row user">${this.cells(`> 第 ${index + 1} 轮：核对 ${name}`)}</div><p>${this.cells('已保留这轮检查记录，继续核对输入和返回值。')}</p></div>`).join('') : ''
+        const history = this.long ? Array.from({length:12},(_,index) => `<div class="history-turn"><div class="term-row user"><span class="user-pointer">❯</span> ${this.cells(`第 ${index + 1} 轮：核对 ${name}`)}</div><div class="assistant-row"><span class="assistant-mark">⏺</span><div class="assistant-body"><p>${this.cells('已保留这轮检查记录，继续核对输入和返回值。')}</p></div></div></div>`).join('') : ''
         const toolState = row.status === 'running' ? '运行中' : row.statusText
-        this.childTranscript.innerHTML = history + `<section data-agent-transcript="${row.id}"><div class="term-row user">${this.cells(`> ${row.prompt}`)}</div><p>${this.cells(`我会${row.prompt.replace(/。$/,'')}。`)}</p><details class="process"><summary><span class="disclose" aria-hidden="true"></span><span class="summary-kind">Bash</span><span class="summary-name">${this.cells(row.tool)}</span><span class="summary-meta">${this.cells(toolState)}</span></summary><div class="detail"><pre>${this.cells(row.tool)}</pre><div class="body-section">${this.cells(row.lines.join('\n'))}</div></div></details><div class="agent-output ${statusClass(row)}">${this.cells(row.lines.join('\n'))}</div>${this.messageHtml(row.id)}</section>`
+        this.childTranscript.innerHTML = history + `<section data-agent-transcript="${row.id}"><div class="term-row user"><span class="user-pointer">❯</span> ${this.cells(row.prompt)}</div><div class="assistant-row"><span class="assistant-mark">⏺</span><div class="assistant-body"><p>${this.cells(`我会${row.prompt.replace(/。$/,'')}。`)}</p></div></div><details class="process"><summary><span class="disclose" data-mark="⏺" aria-hidden="true"></span><span class="summary-kind tool-kind">Bash</span><span class="summary-name">${this.cells(row.tool)}</span><span class="summary-meta">${this.cells(toolState)}</span></summary><div class="detail"><pre>${this.cells(row.tool)}</pre><div class="body-section">${this.cells(row.lines.join('\n'))}</div></div></details><div class="agent-output ${statusClass(row)}">${this.cells(row.lines.join('\n'))}</div>${this.messageHtml(row.id)}</section>`
       }
       this.input.value = this.drafts.get(this.viewed) ?? ''
       this.input.placeholder = row ? `给 ${name} 发送消息…` : '继续提问…'

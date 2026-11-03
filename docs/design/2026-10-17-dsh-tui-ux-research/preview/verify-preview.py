@@ -116,7 +116,7 @@ with tempfile.TemporaryDirectory(prefix='dsh-ui-browser-') as browser_dir:
 
             check('default details collapsed', devtools.js('document.querySelectorAll("details[open]").length === 0'))
             check('terminal has no pictographic emoji', devtools.js('!(/\\p{Extended_Pictographic}/u.test(document.querySelector("#terminal").textContent))'))
-            check('footer is reduced to permission and working directory', devtools.js('!document.querySelector(".status").textContent.includes("DeepSeek") && !document.querySelector(".status").textContent.includes("上下文") && !document.querySelector(".status").textContent.includes("Ctrl+O") && document.querySelector(".status").textContent.includes("权限") && document.querySelector(".status").textContent.includes("~/code/dsh-TUI")'))
+            check('footer shows version and working directory, not model/context/keys', devtools.js('!document.querySelector(".status").textContent.includes("DeepSeek") && !document.querySelector(".status").textContent.includes("上下文") && !document.querySelector(".status").textContent.includes("Ctrl+O") && document.querySelector(".status").textContent.includes("v0.2.1") && document.querySelector(".status").textContent.includes("~/code/dsh-TUI")'))
             check('context occupancy is visible as a partial pair of input borders', devtools.js('(() => { const composer=document.querySelector(".composer"), top=getComputedStyle(composer,"::before"), bottom=getComputedStyle(composer,"::after"); return parseFloat(top.width)>0 && parseFloat(top.width)<composer.getBoundingClientRect().width && top.borderTopColor===bottom.borderTopColor; })()'))
 
             devtools.click('[data-detail="bash"] summary')
@@ -177,7 +177,7 @@ with tempfile.TemporaryDirectory(prefix='dsh-ui-browser-') as browser_dir:
             check('clicking the thinking row expands its body', devtools.js('document.querySelector("[data-detail=thinking-live]").open && document.querySelector("[data-detail=thinking-live] .detail").textContent.includes("核对空配置")'))
             devtools.click('[data-detail="thinking-live"] summary')
             check('clicking the thinking row again collapses its body', devtools.js('!document.querySelector("[data-detail=thinking-live]").open'))
-            check('running tool card hides raw output rows', devtools.js('!document.querySelector(".live-tail") && !document.querySelector("[data-key=result-summary]")'))
+            check('running tool card shows up to five live output rows', devtools.js('Boolean(document.querySelector(".live-tail")) && document.querySelectorAll(".live-tail .live-line").length <= 5 && !document.querySelector("[data-key=result-summary]")'))
             check('one running indicator', devtools.js('document.querySelectorAll(".activity-glyph").length === 1'))
             devtools.capture('running-100-dark.png')
 
@@ -206,9 +206,9 @@ with tempfile.TemporaryDirectory(prefix='dsh-ui-browser-') as browser_dir:
             check('refusal is explicit and does not run a command', devtools.js('document.querySelector(".approval-result").textContent.includes("未执行")'))
 
             devtools.click('[data-scene="done"]')
-            check('completed thinking row is gone', devtools.js('!document.querySelector("[data-detail=thinking]") && !document.querySelector("[data-detail=thinking-live]")'))
+            check('completed thinking row stays visible', devtools.js('Boolean(document.querySelector("[data-detail=thinking-live]")) && Boolean(document.querySelector(".thinking-tail"))'))
             check('done tool rows show no fabricated duration', devtools.js('!/\\d+(\\.\\d+)?s/.test(document.querySelector("[data-detail=bash] .summary-meta").textContent)'))
-            check('side copy matches the new output budget', devtools.js('document.body.textContent.includes("成功与运行中输出 0 行")'))
+            check('side copy matches the new output budget', devtools.js('document.body.textContent.includes("运行中 / 完成后显示最后 5 行")'))
             devtools.capture('completed-100-dark.png')
             devtools.js('document.querySelector("#width").value="60";document.querySelector("#width").dispatchEvent(new Event("change"))')
             devtools.settle()
