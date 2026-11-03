@@ -2,21 +2,22 @@
 
 - 组标识：`2026-11-03-nano-exit-hardening`
 - 角色：单份 spec，总纲与执行规格合一
-- 状态：**实施版 · 修订 1**（13 条审核发现已改，待复核/过闸）
+- 状态：**实施版 · 修订 2**（两轮审核共 25 条发现已处置，待复核/过闸）
 - Issue：[#164](https://github.com/nano-sun99/dsh-tui-nano/issues/164)
 - 结构：**不拆**（单一成因、单一路径，1 份 spec + 1 张执行 issue）
 - 机制范围：M1–M4（见 §5）
 - 上游：
-  - 实测事故与复现：issue #164（2026-11-03，83 分钟 100% CPU；4 秒复现；`uncaughtExceptionMonitor` 抓到 107,244 次未捕获异常）
+  - 实测事故与复现：issue #164（2026-11-03，83 分钟 100% CPU；4 秒复现；107,244 次未捕获异常）
   - Claude Code 2.1.88 源码（本机归档 `/Users/sunchongsheng/Downloads/归档/06-软件与安装包/ClaudeCode/src`）：
-    `utils/gracefulShutdown.ts:193-232`（`forceExit`：`process.exit` 抛错则 `SIGKILL` 自己；**test 环境先 rethrow 再杀**）、`:278-297`（孤儿巡检，Bun 语义：`stdout.writable`/`stdin.readable`）、`:301-310`（`uncaughtException` 只记日志）、`:417-426`（failsafe `max(5000, hookBudget+3500)` → `forceExit`）、`:132-135`（终端已消失时吞写错误）、`ink/ink.tsx:1691-1702`（revoked TTY 上 `setRawMode`/`read` 抛 EBADF/EIO）
-  - Node 官方文档 [Process › Event `'uncaughtException'`](https://nodejs.org/api/process.html#event-uncaughtexception)：处理器内抛出的异常不再被捕获——该保证只覆盖同步重入，**异步写失败仍会重新触发**，正是本次自激入口
+    `utils/gracefulShutdown.ts:193-232`（`forceExit`：`process.exit` 抛错则 `SIGKILL`；test 先 rethrow）、`:272-276`（SIGHUP → 129）、`:278-296`（30s 孤儿巡检，Bun 语义）、`:301-310`（`uncaughtException` 只记日志）、`:417-426`（failsafe `max(5000, hookBudget+3500)`）、`:436-437`（先复位终端再异步收尾）、`:132-135`（终端已消失时吞写错误）、`ink/ink.tsx:1691-1702`（revoked TTY 上 EBADF/EIO）
+  - 覆盖度调研结论（同一归档，逐场景）：SIGHUP 覆盖；无信号失联仅 30s 流状态巡检（判据在 Node 不成立）；**真孤儿未覆盖**（全仓无 `ppid` 存活判定）；嵌套守卫泄漏不适用（它无 launcher re-exec）；关停卡死有 failsafe 但装在 `await import` 之后；`uncaughtException` 只记日志、不退出，且 `error.message.slice` 对非 Error 会抛
+  - Node 官方文档 [Process › Event `'uncaughtException'`](https://nodejs.org/api/process.html#event-uncaughtexception)：处理器内抛出的异常不再被捕获——只覆盖同步重入，异步写失败仍会重新触发
 - ADR 检索：按「退出 / 退出码 / 信号 / SIGHUP / 孤儿 / orphan / stderr / 关停 / shutdown / fd / 守卫」检索 `docs/decisions/`
-  - 命中并沿用：[ADR-20261029-single-process-fd-guard](../../decisions/2026-10-29-single-process-fd-guard.md)（launcher/runtime 分工、诊断走重定向 stderr、`NANO_GUARDED` 契约）
-  - **本次修订其中一条**：原文「关停增加 3s 强制恢复定时器：无论 hook 是否挂起，3s 时恢复终端并非零退出」→ 改为 5s 且**到点强制退出**（现行代码只恢复不退出，属代码回归该 ADR，R3 一半是修回归）
+  - 命中并沿用：[ADR-20261029-single-process-fd-guard](../../decisions/2026-10-29-single-process-fd-guard.md)（launcher/runtime 分工、诊断走重定向 stderr、3s 强制恢复定时器、`NANO_GUARDED` 契约）
+  - **本次不修订该 ADR**：3s 恢复定时器保持原状（它做的是「复位终端 + 设非零退出码」）；本单新增的是**正交的 13.5s 硬退出上限**。旧 ADR 只在「关联」节加一行交叉引用，正文不动
   - 零命中：退出码约定、`SIGKILL` 兜底、孤儿巡检、诊断写失败熔断、守卫标记的跨进程泄漏
-- ADR：新增 [ADR-20261103-exit-failsafe](../../decisions/2026-11-03-exit-failsafe.md)（修订上述那一条），随本 spec 同一 PR
-- 替代关系：不替代任何 spec；对 ADR-20261029 只改「3s 强制恢复」一条，launcher/runtime 分工、150ms 去重、`NANO_GUARDED` 契约一律不动（R8 只收紧其**校验方式**）
+- ADR：新增 [ADR-20261103-exit-failsafe](../../decisions/2026-11-03-exit-failsafe.md)，随本 spec 同一 PR
+- 替代关系：不替代任何 spec；不改 ADR-20261029 的任何决定
 - 下游：无硬依赖。`plain` 分支（`--help` / `--version` / `purge`）不受影响。
 - 合入前提：`npm run typecheck` / `lint` / `build` / `npm test` 退出 0；§7 的 pty 回归跑过一次并留证据。文档检查：本仓无 docs 检查入口（`scripts/` 下无 check-docs 脚本、AGENTS.md 未自报）。
 
@@ -26,41 +27,42 @@
 
 1. **诊断写永不抛**：进程内所有 stderr 写走同一封装，失败只熔断（R1）。
 2. **退出不留活口**：`forceExit` 以「`process.exit` 失败就 `SIGKILL` 自己」收尾（R2）。
-3. **关停到点就死**：`forceTimer` 从「只恢复终端」改为「恢复后强制退出」，预算 5s（R3）。
-4. **孤儿能被发现**：30s 巡检 `ppid` 基线 + 终端 fd 空写探测（R4）。
+3. **关停有硬上限**：保留 3s 复位定时器，**另加** 13.5s 硬退出定时器（R3）。
+4. **孤儿能被发现**：30s 巡检 `ppid` 基线 + 终端句柄空写探测（R4）。
 5. **launcher 同一套底线**：`fd-guard` 与入口 `catch` 同样安全写，并自注册兜底（R5）。
 6. **不引入新依赖**：不引入 native 模块，不动 `package.json` 依赖（R6）。
 7. **可回归**：守卫路径与失联路径各一条用例（R7）。
-8. **守卫标记不再泄漏**：`NANO_GUARDED` 带 launcher pid 并校验 `ppid`，用完即删（R8）。
+8. **守卫标记不再泄漏**：`NANO_GUARDED` 带 launcher pid 并校验 `ppid`，runtime 进 `main()` 前删除（R8）。
 
 ### 非目标
 
 - **不改 fd-guard 架构**：不合并 launcher/runtime，不改「fd 1/2 绑日志、渲染走 `/dev/tty`」的分工。
 - **不改渲染、终端恢复序列与信号去重**：`terminal.restore()` 的转义序列、150ms 去重窗口不动。
+- **不改 lifecycle 分段预算**：freeze 500 / drain 3000 / flush 3000 / release 2000 / restore 1500 与 `TOTAL_BUDGET_MS = 10_000` 一律不动（本单只在它之上加硬上限）。
 - **不改会话落盘顺序**：drain → flush → core 顺序保持。
 - **不做内核级父进程监听**：macOS 无 `PR_SET_PDEATHSIG`，不为此引入 native 依赖。
-- **不改非 TUI 命令与信号退出码**：信号仍退 0，不对齐 Claude Code 的 129/143（差异记入 ADR「接受的代价」）。
+- **不改非 TUI 命令与信号退出码**：信号仍退 0，不对齐 Claude Code 的 129/143。
 
 ## 2. 现状与证据
 
-### 2.1 两条路径（关键：事故发生在**无守卫**那条）
+### 2.1 两条路径（事故发生在**无守卫**那条）
 
 | 路径 | 触发条件 | 终端挂断后 | 证据 |
 |---|---|---|---|
 | **守卫路径**（launcher 起 runtime，fd 1/2 = `logs/*.log`，渲染走 `/dev/tty`） | 正常启动 | SIGHUP → 诊断写进日志 → **19ms 干净退出** | 2026-11-03 实测：`nano: 开始关停（signal SIGHUP）` → `关停（…，19ms）`，进程消失 |
-| **无守卫路径**（runtime 直接跑，fd 0/1/2 = 终端） | `NANO_GUARDED=1` 被继承 | 诊断写 → `EIO` → 自激 → 吃满一核到进程消失为止 | 4 秒复现；107,244 次未捕获异常；首条栈落在 `NanoApp.shutdown` |
+| **无守卫路径**（runtime 直接跑，fd 0/1/2 = 终端） | `NANO_GUARDED` 被继承 | 诊断写 → `EIO` → 自激 → 吃满一核 | 4 秒复现；107,244 次未捕获异常；首条栈落在 `NanoApp.shutdown` |
 
 事故进程 PID 25029 的 fd 0/1/2 **全部 revoked 且无任何日志文件**——正是无守卫路径的特征（守卫路径的 fd 2 会指向 `logs/nano-*.log`）。
 
 ### 2.2 泄漏成因
 
-`src/runtime/fd-guard.ts:11` 用环境变量 `NANO_GUARDED` 标记「本次已被守卫」，但 runtime 启动后**不清理它**：
+`src/runtime/fd-guard.ts:11` 用环境变量 `NANO_GUARDED` 标记「本次已被守卫」，runtime 启动后**不清理它**：
 
-- 在 nano 会话里（Bash 工具、嵌套终端）再起一个 `nano`，后者继承 `NANO_GUARDED=1` → `src/bin.ts:63` 的 `isGuarded()` 为真 → **跳过守卫**，直接 `main()`；
-- 实测确认：本机 nano 会话导出的环境里 `NANO_GUARDED=1`，在其中启动的 nano 一个日志都不建、fd 全指向终端；
+- 在 nano 会话里（Bash 工具、嵌套终端）再起 `nano`，后者继承该值 → `src/bin.ts:59` 的 `isGuarded()` 为真 → **跳过守卫**，直接 `main()`；
+- 实测：nano 会话导出的环境里 `NANO_GUARDED=1`，在其中启动的 nano 一个日志都不建、fd 全指向终端；
 - 于是「诊断写进日志」这条安全假设失效，终端一断就进入 §2.3 的自激。
 
-### 2.3 自激链（首条栈已抓到）
+### 2.3 自激链（无守卫路径的 runtime 栈；守卫路径 fd 2 是日志，走不到这里）
 
 ```
 终端挂断 → SIGHUP → onSignal → shutdown()
@@ -79,11 +81,12 @@
 | 观测 | 结果 |
 |---|---|
 | pty 挂断后 `process.ppid` | 立即变 `1` |
-| `fs.writeSync(2, …)`（含零长度写） | 抛 `EIO`；零长度不会短路 |
+| `fs.writeSync(2, …)`（含零长度写） | 抛 `EIO` |
+| `openSync('/dev/tty','r+')` 句柄在挂断后 `writeSync(fd,'')` | 抛 `EIO`（2026-11-03 补测 → R4 探测判据成立） |
 | `process.stdout.writable` / `stdin.readable` / `destroyed` | 恒 `true` / `true` / `false` |
-| 守卫路径下同样挂断 | 19ms 干净退出（见 §2.1） |
+| 守卫路径下同样挂断 | 19ms 干净退出 |
 
-第 3 行是关键差异：Claude Code 的 30s 巡检依赖 stream 标志翻转（Bun 语义），**在 Node 上恒真，照抄等于没有巡检**。
+第 4 行是关键差异：Claude Code 的 30s 巡检依赖 stream 标志翻转（Bun 语义），**在 Node 上恒真，照抄等于没有巡检**。
 
 ## 3. 需求规格（实施粒度）
 
@@ -108,9 +111,9 @@ export function isStderrDead(): boolean { return stderrDead }
 export function resetDiagnosticStateForTest(): void { stderrDead = false; uncaughtCount = 0 }
 ```
 
-- **口径是全仓**：`src/` 下所有 `process.stderr.write` 一律替换（实测共 **23 处**，落在 5 个文件：`main.ts` 7、`controls/feature-host.ts` 11、`bin.ts` 2、`runtime/fd-guard.ts` 2、`render/renderer.ts` 1）。`process.stdout.write`（4 处，渲染/装配路径）不在本单范围。
-- 「必须让人看见」的错误（`src/main.ts:361` 的 `writeToTty`）保留 `/dev/tty` 分支，只把其中的 `process.stderr.write` 换成 `writeDiagnostic`。
-- 首次失败后熔断，本进程内不再 syscall；不用 `process.stderr.write`：其实测失败可逃出调用点，且 stream 语义允许异步 `error` 事件逃逸。
+- **口径是全仓**：`src/` 下所有 `process.stderr.write`（实测 **23 处**，5 个文件：`main.ts` 7、`controls/feature-host.ts` 11、`bin.ts` 2、`runtime/fd-guard.ts` 2、`render/renderer.ts` 1）一律替换。`process.stdout.write`（4 处，渲染/装配路径）不在本单范围。
+- 「必须让人看见」的错误（`src/main.ts:361` 的 `writeToTty`）保留 `/dev/tty` 分支（已有 try/catch），只把其中的 stderr 写换成 `writeDiagnostic`。
+- 首次失败后熔断，本进程内不再 syscall。
 
 ### R2 退出必须有终点
 
@@ -131,38 +134,45 @@ export function forceExit(code: number): void {
 
 - `onUncaught` / `onUnhandledRejection`：`uncaughtCount++` → `writeDiagnostic` 记一行 → 走既有 `shutdown`；任一步失败即 `forceExit(1)`。
 - **计数保险**：`uncaughtCount > 3` 时跳过关停直接 `forceExit(70)`。
-- 顺序与 CC 一致：`rethrow` 在 `SIGKILL` **之前**，否则单测会把 vitest worker 自己杀掉（SIGKILL 不可 catch）。
+- `src/bin.ts:65` 与 `:68` 的正常退出也改走 `forceExit`（终端已死时裸 `process.exit` 抛错会把退出码从 0 变成 1）。
 
-### R3 关停到点必须退出
+### R3 关停有硬上限（两个定时器，互不替代）
 
-`src/app/nano-app.ts:1010-1013`（`forceTimer` 本体；1009 是上一个注册、1014 是 `requestShutdown`）：
+`src/app/nano-app.ts:1010-1013` 现状是**一个** 3s 定时器（复位终端 + 设非零 exitCode）。改为两个：
 
 ```ts
-const forceTimer = setTimeout(() => {
+// 保留：3s 复位终端（ADR-20261029 那条决定的原语义，不动）
+const restoreTimer = setTimeout(() => {
   terminal.restore()
   this.exitCode = this.exitCode || 1
-  forceExit(this.exitCode)        // 新增：不再「只恢复终端、进程留着」
-}, SHUTDOWN_BUDGET_MS)            // 3000 → 5000
+}, RESTORE_BUDGET_MS)            // 3000，不变
+
+// 新增：硬退出上限，到点连进程一起收走
+const exitTimer = setTimeout(() => {
+  terminal.restore()             // 幂等，兜住 3s 那次没成功的情况
+  forceExit(this.exitCode || 1)
+}, SHUTDOWN_BUDGET_MS)
 ```
 
-- `SHUTDOWN_BUDGET_MS = 5000`，定义在 `src/app/nano-app.ts` 顶部（模块常量，不跨文件），对齐 CC 的 `max(5000, sessionEndBudget + 3500)`（nano 无 session-end hook，退化为 5000）。
-- 正常路径仍在 `requestShutdown` 返回后 `clearTimeout`，不改变成功路径时延。
+- `RESTORE_BUDGET_MS = 3000`（不变）；`SHUTDOWN_BUDGET_MS = Math.max(5000, TOTAL_BUDGET_MS + 3500) = 13_500`（`TOTAL_BUDGET_MS` 从 `src/runtime/lifecycle.ts:49` 导入；它与 CC 的 `max(5000, hookBudget+3500)` 同构，保证 normal 关停永不腰斩）。
+- 两个定时器都在 `requestShutdown` 返回后 `clearTimeout`；正常关停的路由与耗时不变。
+- 为什么不是「3s 直接杀」：5–10s 的正常关停会落在 flush/落盘中间，`process.exit` 不 flush 异步 I/O，会丢会话。
 
 ### R4 孤儿巡检（30s）
 
 - 启动时快照 `const startPpid = process.ppid`，`setInterval(30_000).unref()`，每轮两件事，任一命中即走失联处理：
   1. `startPpid !== 1 && process.ppid === 1`；
-  2. 对**终端句柄**空写探测：runtime 用 `terminal.ttyFd`（`/dev/tty`），launcher 用 fd 2；抛 `EIO`/`EBADF` 即终端已死。
+  2. 对**终端句柄**空写探测：runtime 用 `terminal.ttyFd`（`/dev/tty`），launcher 用 fd 2；抛 `EIO`/`EBADF` 即终端已死（两处均实测抛 EIO，§2.4）。
 - **`Terminal` 需新增只读 getter**：`get ttyFd(): number | undefined`（当前 `private fd`，`src/runtime/terminal.ts:27`；`enter()` 后才有值，`restore()` 后置 `undefined`）。`undefined` 视为「无终端」→ **跳过写探测**，只用 `ppid` 判据。
 - 仅 `process.stdin.isTTY === true` 时启动定时器（管道/打印模式不装）。
-- 明确**不用** `stdout.writable` / `stdin.readable`（§2.4 第 3 行）。
-- 用 `startPpid` 快照而非「等于 1 即孤儿」，避免容器/CI 里本来以 PID 1 启动时误判。
+- **关停开始时 `clearInterval`**（放进 `removeProcessListeners()`，`src/app/nano-app.ts:1028`），避免关停中途命中把正在跑的 flush force 掉。
+- 明确**不用** `stdout.writable` / `stdin.readable`（§2.4 第 4 行）。
 
 ### R5 launcher 同一套底线
 
-- `src/runtime/fd-guard.ts:45`（spawn 失败分支）与 `:51`（子进程被信号终止分支）、`src/bin.ts:51` 与 `:69-74` 的裸写改 `writeDiagnostic`。
+- `src/runtime/fd-guard.ts:45`（spawn 失败）、`:51`（子进程被信号终止）、`src/bin.ts:51` 与 `:69-74` 的裸写改 `writeDiagnostic`。
 - launcher 注册自己的 `uncaughtException` / `unhandledRejection` → `writeDiagnostic` + `forceExit`（当前一个处理器都没有）。
-- launcher 的失联动作（**这里没有 `shutdown()`，必须写死**）：巡检命中 → `writeDiagnostic` 记一行 → `child.kill('SIGTERM')` → 最多等 1s → `forceExit(129)`。
+- launcher 的失联动作（**这里没有 `shutdown()`，写死**）：巡检命中 → `writeDiagnostic` 记一行 → `child.kill('SIGTERM')` → 最多等 1s → `forceExit(129)`。
 
 ### R6 不引入新依赖
 
@@ -171,43 +181,52 @@ const forceTimer = setTimeout(() => {
 ### R7 可回归
 
 - `tests/feature/exit-hardening.test.ts`：
-  - 用例 A（守卫路径，防回归）：`env -u NANO_GUARDED` 起真 pty → 挂断 → 8s 内消失且日志里出现 `关停（…，NNms）`；
-  - 用例 B（无守卫路径，复现本 bug）：`NANO_GUARDED=1` 起真 pty → 挂断 → 8s 内消失；
+  - 用例 A（守卫路径，防回归）：`env -u NANO_GUARDED` 起真 pty → 挂断 → 8s 内消失且日志出现 `关停（…，NNms）`；
+  - 用例 B（无守卫路径，复现本 bug）：**`NANO_GUARDED=$$ node dist/bin.js --root repro`**（`$$` = 父 shell 的 pid，`ppid` 校验通过 → 跳过 launcher → 正是无守卫路径）→ 挂断 → 8s 内消失；
   - 无 `script` 命令或非 darwin 时 `skip`。
 - `tests/unit/diagnostic.test.ts`：mock `node:fs` 的 `writeSync` 抛 `EIO` → 连续 100 次调用只尝试 1 次、不抛；`isStderrDead()` 为真。
-- `tests/unit/nano-app-uncaught.test.ts`：连发 4 次 `uncaughtException` → 第 4 次直接 `forceExit(70)`，`getUncaughtCount()` 为 4；用 mock 的 `process.exit` 断言，不真杀。
-- `tests/unit/nano-app-shutdown-timeout.test.ts`：注入一个永不 resolve 的 `features.dispose`（现有 `new NanoApp({ features })` 先例可直接 mock）→ 5s 后 `forceExit` 被调。
+- `tests/unit/nano-app-uncaught.test.ts`：连发 4 次 `uncaughtException` → 第 4 次 `forceExit(70)`，`getUncaughtCount()` 为 4（mock `process.exit`，不真杀）。
+- `tests/unit/nano-app-shutdown-timeout.test.ts`：注入永不 resolve 的 `features.dispose`（现有 `new NanoApp({ features })` 先例）→ fake timers 推进到 13.5s → `forceExit` 被调；并断言 3s 时 `terminal.restore()` 已跑过一次。
 
 ### R8 守卫标记不再泄漏
 
-- `NANO_GUARDED` 的值改为 **launcher 的 pid**（`String(process.pid)`），runtime 校验两件事才算「已被守卫」：变量存在 **且** `String(process.ppid) === value`；不匹配则当作未守卫，正常 re-exec。
-- `isGuarded()` 同步改成校验函数，返回布尔；调用点在 `src/bin.ts:63` 不变。
-- runtime 进入 `main()` 前 `delete process.env.NANO_GUARDED`（`src/boot/env.ts`，`bin.ts` 第一个 import），防孙进程继承。
-- 这样「在 nano 会话里再起 nano」会重新走守卫，§2.1 的无守卫路径不再自然出现。
+- **写入端**：`src/runtime/fd-guard.ts:32` 的 `env: { …process.env, [GUARD_ENV]: '1' }` 改为 `[GUARD_ENV]: String(process.pid)`。
+- **校验端**：`src/runtime/fd-guard.ts:13-15` 的 `isGuarded()` 改为「变量存在 **且** `String(process.ppid) === value`」；不匹配视为未守卫。全仓只有 `src/bin.ts:59` 一个调用点、无测试引用，改签名不破。
+- **删除位置必须在守卫判定之后**（不能放 `boot/env.ts`：它是 `bin.ts` 的第一个 import，ESM 先求值完 import 再跑 body，在那里删会让 runtime 也判未守卫 → 无限 re-exec）：
+
+```ts
+// src/bin.ts
+if (!isGuarded() && !plain) {
+  const code = await launchGuarded({ /* … */ })
+  process.exit(code)                     // launcher 到此为止
+}
+delete process.env[GUARD_ENV]            // 只有 runtime 走得到这一行
+const code = await main(argv)
+```
+
+- **连带**：`docs/evidence/2026-11-01-nano-question-card-parity/drive.mjs:11` 的 `=== '1'` 改真值判断（仓内唯一消费方；两个 README 无该变量）。
 
 ## 4. 对照表（无页面路径）
 
-固定四列：
-
 | 流程节点 | 界面或样例 | 数据或接口 | 验收 |
 |---|---|---|---|
-| 正常 `Ctrl+C` 退出 | 无界面；终端恢复 + 退出码 `0`（不变） | `SIGINT` → `shutdown('signal SIGINT')` | 启动后 Ctrl+C，`echo $?` 为 `0`，1s 内消失 |
-| 关窗口（守卫路径） | 无界面；日志出现 `关停（signal SIGHUP，NNms）` | `SIGHUP` → 诊断写日志（成功） | 用例 A：8s 内消失，日志含 `关停` |
+| 正常 `Ctrl+C` 退出 | 无界面；终端恢复 + 退出码 `0`（不变） | `SIGINT` → `shutdown` | 启动后 Ctrl+C，`echo $?` 为 `0`，1s 内消失 |
+| 关窗口（守卫路径） | 无界面；日志 `关停（signal SIGHUP，NNms）` | `SIGHUP` → 诊断写日志（成功） | 用例 A：8s 内消失 |
 | 关窗口（无守卫路径，本 bug） | 无界面；无输出 | `SIGHUP` → 诊断写 → EIO → 熔断 | 用例 B：8s 内消失；采样 `TriggerUncaughtException` 连续命中 ≤ 1 |
-| 终端静默失联（无信号） | 无界面；日志 `reason=orphan`（stderr 未死时） | `ppid` 变 1 或 `/dev/tty` 空写抛 EIO | kill 外层 shell（不触发 SIGHUP）→ 30s + 8s 内消失 |
-| 任何异常且 stderr 已死 | 无界面 | `writeSync(2)` 抛 EIO → 熔断 → 关停 → `forceExit` | 单测断言；CPU 不超过单核 5 秒 |
-| 关停卡住（dispose 不返回） | 无界面；终端已恢复 | `forceTimer` 5000ms | 单测：5s 后 `forceExit` 被调 |
-| 嵌套启动（`NANO_GUARDED` 继承） | 无界面 | 校验 `ppid` 不匹配 → 重新走守卫 | 用例：`NANO_GUARDED=1` 直接跑，日志里应出现守卫创建的 `logs/nano-*.log` |
+| 终端静默失联（无信号） | 无界面；日志 `reason=orphan` | `ppid` 变 1，或 `/dev/tty` 空写抛 EIO | kill 外层 shell → 30s + 8s 内消失 |
+| 任何异常且 stderr 已死 | 无界面 | `writeSync(2)` 抛 EIO → 熔断 → 关停 | 单测断言 |
+| 关停卡死（dispose 不返回） | 无界面；3s 时终端已复位 | `restoreTimer` 3s / `exitTimer` 13.5s | 单测：3s 复位、13.5s `forceExit` |
+| 嵌套启动（标记泄漏） | 无界面 | `ppid` 校验不匹配 → 重新走守卫 | `NANO_GUARDED=1` 启动仍创建 `logs/nano-*.log` |
 
-样例选择：本条按「后端/运行时」路径，用**失败矩阵**（上表）+ 一条端到端薄切片（§2.2 复现脚本）。
+样例选择：本条按「后端/运行时」路径，用**失败矩阵**（上表）+ 端到端薄切片（§2.2 复现脚本）。
 
 ## 5. 机制清单
 
 | ID | 机制 | 解决什么 | 没有会怎样 |
 |---|---|---|---|
 | M1 | `writeDiagnostic` + `stderrDead` 熔断 | 切断「错误处理器自己抛错」的自激环 | 一次终端失联就烧掉一条核 83 分钟（本次事故） |
-| M2 | `forceExit`（`exit` 失败即 `SIGKILL`）+ 关停 `forceTimer` 到点调用 | 保证任何收尾路径都有终点 | 关停卡住时进程挂死，只能人工 `kill -9` |
-| M3 | 孤儿巡检（`ppid` 基线 + 终端 fd 探测，30s） | 覆盖「没收到 SIGHUP 也失联」 | 静默失联要等到下一次异常才可能退出 |
+| M2 | `forceExit` + 13.5s 硬退出定时器 | 保证任何收尾路径都有终点 | 关停卡住时进程挂死，只能人工 `kill -9` |
+| M3 | 孤儿巡检（`ppid` 基线 + 终端 fd 探测，30s） | 覆盖「没收到 SIGHUP 也失联」——Claude Code 连这条都没做 | 静默失联要等到下一次异常才可能退出 |
 | M4 | `uncaughtCount > 3` 计数保险 | 防处理器自身重入（写已安全，但处理器仍可能抛别的） | 新的「处理器抛处理器」路径还能把进程钉住 |
 
 ## 6. 改动面
@@ -215,29 +234,32 @@ const forceTimer = setTimeout(() => {
 | 文件 | 改什么 |
 |---|---|
 | `src/runtime/diagnostic.ts`（新建） | `writeDiagnostic`、`isStderrDead`、`forceExit`、`uncaughtCount` / `getUncaughtCount`、`resetDiagnosticStateForTest` |
-| `src/main.ts`（7 处 stderr 裸写，含 `:214,218,361`） | 全部改 `writeDiagnostic`；`writeToTty` 保留 `/dev/tty` 分支 |
+| `src/main.ts`（7 处 stderr 裸写，含 `:214,218,361`） | 改 `writeDiagnostic`；`writeToTty` 保留 `/dev/tty` 分支 |
 | `src/controls/feature-host.ts`（11 处） | 同上 |
-| `src/runtime/fd-guard.ts`（`:45`、`:51`） | 同上；launcher 自注册 `uncaughtException`/`unhandledRejection` → `forceExit`；R4 巡检 + R5 失联动作（kill child → `forceExit(129)`） |
-| `src/bin.ts`（`:51`、`:69-74`） | 顶层错误改安全写 + `forceExit`；`isGuarded()` 改为校验函数（R8） |
-| `src/boot/env.ts` | runtime 启动即 `delete process.env.NANO_GUARDED`（R8） |
-| `src/runtime/terminal.ts:27` | 新增只读 `get ttyFd(): number \| undefined`（R4） |
-| `src/render/renderer.ts`（1 处） | 裸写改 `writeDiagnostic` |
-| `src/app/nano-app.ts:1010-1013` | `forceTimer` 预算 5000ms，到点 `forceExit`（R3） |
+| `src/render/renderer.ts`（1 处） | 同上 |
+| `src/runtime/fd-guard.ts:32` | `[GUARD_ENV]` 值改 `String(process.pid)`（R8 写入端） |
+| `src/runtime/fd-guard.ts:13-15` | `isGuarded()` 加 `ppid` 校验（R8 校验端） |
+| `src/runtime/fd-guard.ts:45,51` | 裸写改 `writeDiagnostic`；launcher 注册 `uncaughtException`/`unhandledRejection` → `forceExit`；R4 巡检 + R5 失联动作 |
+| `src/bin.ts:51,59,65,68,69-74` | 错误写改安全版 + `forceExit`；:65/:68 正常退出改 `forceExit`；守卫判定后 `delete process.env[GUARD_ENV]` |
+| `src/runtime/terminal.ts:27` | 新增只读 `get ttyFd(): number \| undefined` |
+| `src/app/nano-app.ts:1010-1013` | 拆成 `restoreTimer`(3s) + `exitTimer`(13.5s)（R3） |
 | `src/app/nano-app.ts:277-287` | `onUncaught`/`onUnhandledRejection` 计数 + 安全写 + 保险（R2） |
-| `src/app/nano-app.ts:258-273` | `registerSignals` 内注册 R4 巡检（30s、`unref`、TTY 才装） |
+| `src/app/nano-app.ts:258-273`、`:1028` | 注册 R4 巡检；`removeProcessListeners()` 里 `clearInterval` |
+| `docs/evidence/2026-11-01-nano-question-card-parity/drive.mjs:11` | `=== '1'` 改真值判断（R8 连带） |
 | `tests/unit/diagnostic.test.ts`、`nano-app-uncaught.test.ts`、`nano-app-shutdown-timeout.test.ts`（新建） | 单测 |
-| `tests/feature/exit-hardening.test.ts`（新建） | pty 冒烟 A/B 两例 |
+| `tests/feature/exit-hardening.test.ts`（新建） | pty 冒烟 A/B |
 | `docs/decisions/2026-11-03-exit-failsafe.md`（新建） | ADR |
+| `docs/decisions/2026-10-29-single-process-fd-guard.md` | 只在「关联」节加一行交叉引用，正文不动 |
 
 ## 7. 验收
 
-1. 用例 A（守卫路径）与 B（无守卫路径）各 8s 内进程消失；B 的预算是 `5s 关停 + 3s 收尾`，即 issue 原「3s 内」按新预算换算为「8s 内」。
+1. 用例 A、B 各 8s 内进程消失（正常关停是毫秒级，8s 是余量而非预算）。
 2. 用例 B 采样 `TriggerUncaughtException` 连续命中 ≤ 1。
-3. `grep -rn "process\.stderr\.write" src | grep -v diagnostic.ts` 输出为空（全量口径可验证）。
+3. `grep -rn "process\.stderr\.write" src` 只命中 `diagnostic.ts`。
 4. 把 `logs` 目录设为不可写、或 stderr 指向已挂断 pty，进程仍退出。
 5. 正常路径不回归：Ctrl+C 退 0、`--help` / `--version` / `purge` 行为与退出码不变。
-6. 关停卡死单测：注入永不 resolve 的 `features.dispose` → 5s 后 `forceExit` 被调（不依赖手工 `sample`）。
-7. `NANO_GUARDED=1` 直接启动时，仍会创建 `logs/nano-*.log`（R8 生效）。
+6. 关停卡死单测：3s 时 `terminal.restore()` 已跑、13.5s 时 `forceExit` 被调（fake timers）。
+7. `NANO_GUARDED=1` 直接启动仍会创建 `logs/nano-*.log`（R8 生效）。
 8. `npm run typecheck && npm run lint && npm run build && npm test` 全绿。
 
 ## 8. 迁移 / 回滚 / 兼容 / 观测
@@ -245,50 +267,69 @@ const forceTimer = setTimeout(() => {
 - **迁移 / 回填**：无。不涉及数据、配置或 schema。
 - **回滚**：`git revert` 单个 PR；新增文件全是新增，无隐藏耦合。
 - **兼容**：
-  - CLI 参数、`NANO_GUARDED` 的**存在性语义**保持（仍表示「已被守卫」），只是值从 `1` 变成 launcher pid；旧值 `1` 在 `ppid` 校验下会被判为未守卫（安全侧）。
-  - 退出码：信号仍 0；**新增 `70`（未捕获异常连发 4 次）**，与既有 0/1 不冲突；脚本若依赖退出码需知悉。
+  - CLI 参数不变；`NANO_GUARDED` 的**存在性语义**保持（仍表示「已被守卫」），值从 `1` 变为 launcher pid；旧值 `1` 在 `ppid` 校验下判为未守卫（安全侧）。仓内唯一消费方 `drive.mjs` 同步改真值判断。
+  - 退出码：信号仍 0；**新增 70（未捕获异常连发 4 次）与 129（launcher 失联收尾，语义是「被挂断收尾」而非 CC 的「SIGHUP 导致」）**；不动既有 0/1。
   - 日志格式：`reason` 新增取值 `orphan`；`关停（…，NNms）` 不变。
   - `plain` 分支不装巡检、不装定时器。
-- **观测**：`reason=orphan` + 退出码 70；`stderrDead` 熔断时不写任何地方（终端本来就看不见），以「进程消失时间」为观测口径，由 §7 第 1/3 条断言。
+- **观测**：`reason=orphan` + 退出码 70/129；`stderrDead` 熔断时不写任何地方，以「进程消失时间」为观测口径（§7 第 1/3 条）。
 
 ## 9. DoR 自查
 
 | # | 条目 | 结论 |
 |---|---|---|
-| 1 | 承重规则只有一个结论，无 TBD | ✅ §3 全部定值（5000ms / 30s / 3 次 / 70 / launcher pid 校验） |
-| 2 | 每个流程节点有界面/样例或明确无界面 | ✅ §4 七节点全覆盖，均标「无界面 + 断言」 |
-| 3 | 每条写路径单一入口；状态有字段有读侧 | ✅ 诊断写 = `writeDiagnostic`（全仓 grep 归零，§7.3 可验证）；退出 = `forceExit`；状态 `stderrDead` / `uncaughtCount` 各有读侧 `isStderrDead()` / `getUncaughtCount()` |
-| 4 | 每条验收可执行 | ✅ §7 全部为命令、断言或单测；不再依赖人工采样判读 |
-| 5 | 迁移 / 回填 / 回滚 / 兼容 | ✅ §8（含新增退出码 70） |
-| 6 | 外部合同影响与版本 | 不适用：不涉及报表 / 开放平台 / 消息通道等外部合同 |
-| 7 | ADR supersede 链清楚、正文同步 | ✅ 新 ADR 明写「修订 ADR-20261029 中『关停增加 3s 强制恢复定时器』一条（3s→5s，且到点必须退出）」，其余决定不动；无副本 |
+| 1 | 承重规则只有一个结论，无 TBD | ✅ §3 全部定值（3s / 13.5s / 30s / 3 次 / 70 / 129 / launcher pid 校验） |
+| 2 | 每个流程节点有界面/样例或明确无界面 | ✅ §4 七节点全覆盖 |
+| 3 | 每条写路径单一入口；状态有字段有读侧 | ✅ 诊断写 = `writeDiagnostic`（§7.3 grep 可验证）；退出 = `forceExit`；状态 `stderrDead` / `uncaughtCount` 有 `isStderrDead()` / `getUncaughtCount()` |
+| 4 | 每条验收可执行 | ✅ §7 全为命令、断言或单测 |
+| 5 | 迁移 / 回填 / 回滚 / 兼容 | ✅ §8（含新增 70 / 129） |
+| 6 | 外部合同影响与版本 | 不适用：不涉及报表 / 开放平台 / 消息通道 |
+| 7 | ADR supersede 链清楚、正文同步 | ✅ 新 ADR「取代：无 / 修订：无」——3s 定时器保持原状，新增的是正交硬上限；旧 ADR「关联」加一行交叉引用 |
 
 ## 10. 自定细节
 
-- **关停预算 3s → 5s**：对齐 CC `max(5000, …)`；代价是卡住时多等 2s，且大会话 flush 超过 5s 会被强杀（记入 ADR「接受的代价」）。
+- **两个定时器而非一个**：3s 复位的语义按 ADR-20261029 原样保留；13.5s 才是硬退出上限。`SHUTDOWN_BUDGET_MS = Math.max(5000, TOTAL_BUDGET_MS + 3500)`。
 - **熔断粒度 = 进程级**：`stderrDead` 置位后本进程内不再尝试写 stderr（含启动期 heap watch）。
-- **`uncaughtCount` 落点**：`src/runtime/diagnostic.ts` 模块级变量，读侧 `getUncaughtCount()`；`resetDiagnosticStateForTest()` 同时复位计数。
-- **`SHUTDOWN_BUDGET_MS` 落点**：`src/app/nano-app.ts` 顶部模块常量。
+- **`uncaughtCount` 落点**：`src/runtime/diagnostic.ts` 模块级；`resetDiagnosticStateForTest()` 同时复位它。
+- **`RESTORE_BUDGET_MS` / `SHUTDOWN_BUDGET_MS` 落点**：`src/app/nano-app.ts` 顶部模块常量；`TOTAL_BUDGET_MS` 从 `lifecycle.ts` 导出后引用。
 - **`ppid` 用启动快照**：避免容器/CI 里以 PID 1 启动时误判。
-- **探测目标**：runtime 探 `terminal.ttyFd`（`/dev/tty`），launcher 探 fd 2——两者的「终端」不是同一个 fd。`ttyFd === undefined` 时跳过写探测，只用 `ppid`。
-- **launcher 失联动作**：`child.kill('SIGTERM')` → 1s 后 `forceExit(129)`（129 = 128+1，表示「因失联收尾」，与 CC 的 SIGHUP 退出码同值）。
-- **退出码**：信号仍 0；`forceExit` 传当前 `exitCode`，为 0 时兜底为 1；计数保险固定 70。
-- **命名**：`writeDiagnostic` / `forceExit` / `SHUTDOWN_BUDGET_MS` / `ttyFd` 为工作名，实施时可改，语义不变。
+- **探测目标**：runtime 探 `terminal.ttyFd`（`/dev/tty`），launcher 探 fd 2；`ttyFd === undefined` 时跳过写探测，只用 `ppid`。
+- **launcher 失联动作**：`child.kill('SIGTERM')` → 1s 后 `forceExit(129)`。
+- **`NANO_GUARDED` 删除位置**：`bin.ts` 守卫分支之后（不能放 `boot/env.ts`，见 R8）。
+- **命名**：`writeDiagnostic` / `forceExit` / `RESTORE_BUDGET_MS` / `SHUTDOWN_BUDGET_MS` / `ttyFd` 为工作名，实施时可改，语义不变。
 
 ## 11. 审核修订记录
 
+### 第 1 轮（轻审）
+
 | # | 严重度 | 发现 | 处置 |
 |---|---|---|---|
-| 1 | 中 | §2.1/§2.3 对 §10 的 launcher/runtime 归属冲突 | 已改：§2.1 拆成守卫/无守卫两条路径，§2.3 标注为无守卫路径的 runtime 栈，事故归因改为「无守卫实例」 |
-| 2 | 中 | 「单一入口」与 19+ 处裸写不符 | 已改：R1 改为全仓口径（实测 23 处 `process.stderr.write` / 5 文件），§6 逐文件列出，§7.3 加 grep 断言 |
-| 3 | 中 | `Terminal.fd` 是 private，改动面缺 terminal.ts | 已改：R4/§6 新增 `get ttyFd()`；§10 写死 `undefined` 时跳过探测 |
-| 4 | 中 | launcher 无 `shutdown()`，失联动作未定 | 已改：R5/§10 定为 `kill child` → 1s → `forceExit(129)` |
-| 5 | 中 | `forceExit` 的 SIGKILL/rethrow 顺序与 CC 相反 | 已改：rethrow 前置，与 `gracefulShutdown.ts:214-222` 一致 |
-| 6 | 中 | 把「3s 强制恢复」改 5s + 语义变更写成「不修改 ADR」 | 已改：ADR 增「修订」栏；§上游与 DoR#7 改为「修订其一条」；补「现行代码只恢复不退出 = 代码回归该 ADR」 |
-| 7 | 低 | 拿行号当条款号 | 已改：改引原文首句 |
-| 8 | 低 | 三处行号区间不准 | 已改：`1010-1013` / `277-287` / `258-273`；并补 `fd-guard.ts:45` |
-| 9 | 低 | 机制清单漏「计数保险」 | 已改：新增 M4，M2 描述纳入 `forceTimer` |
-| 10 | 低 | 新增退出码 70 未进兼容性 | 已改：§8/§10 补 70 |
-| 11 | 低 | §7.5/§7.2 不可执行 | 已改：改为 mock 单测；采样降为辅助证据 |
-| 12 | 低 | `uncaughtCount` / `SHUTDOWN_BUDGET_MS` / reset 落点缺失 | 已改：§10 补三条 |
-| 13 | 低 | 3s→8s 未写换算、ADR 代价缺 flush 风险 | 已改：§7.1 补换算；ADR 代价补「flush > 5s 被强杀」 |
+| 1 | 中 | §2.1/§2.3 的 launcher/runtime 归属冲突 | 已改：§2.1 拆两条路径，§2.3 标注为无守卫路径的 runtime 栈 |
+| 2 | 中 | 「单一入口」与 19+ 处裸写不符 | 已改：R1 全仓口径（23 处 / 5 文件），§7.3 加 grep 断言 |
+| 3 | 中 | `Terminal.fd` 是 private | 已改：R4/§6 新增 `get ttyFd()` |
+| 4 | 中 | launcher 无 `shutdown()` | 已改：R5/§10 定 `kill child` → 1s → `forceExit(129)` |
+| 5 | 中 | `forceExit` 的 SIGKILL/rethrow 顺序 | 已改：rethrow 前置 |
+| 6 | 中 | 把 3s 改 5s 写成「不修改 ADR」 | 已改：第 2 轮进一步拆成两个定时器，**3s 原样保留**，不再修订该 ADR |
+| 7 | 低 | 拿行号当条款号 | 已改：引原文首句 |
+| 8 | 低 | 三处行号区间不准 | 已改：`1010-1013` / `277-287` / `258-273`；补 `fd-guard.ts:45` |
+| 9 | 低 | 机制清单漏「计数保险」 | 已改：新增 M4 |
+| 10 | 低 | 退出码 70 未进兼容性 | 已改：§8/§10 补 70 |
+| 11 | 低 | §7 第 5/2 条不可执行 | 已改：改 mock 单测 |
+| 12 | 低 | `uncaughtCount` 等三处落点缺失 | 已改：§10 补齐 |
+| 13 | 低 | 3s→8s 未写换算、ADR 代价缺 flush 风险 | 已改：第 2 轮撤销该改动（不再用 5s） |
+
+### 第 2 轮（复审）
+
+| # | 严重度 | 发现 | 处置 |
+|---|---|---|---|
+| 1 | 高 | R8 的 `delete` 放 `boot/env.ts` 会导致无限 re-exec | 已改：移到 `bin.ts` 守卫分支之后（R8 代码块），§6 同步 |
+| 2 | 高 | 5s 预算会砍断 5–10s 的正常关停（漏看 lifecycle `TOTAL_BUDGET_MS=10_000`） | 已改：拆成 3s 复位 + 13.5s 硬退出；§7 验收、§10、ADR 同步 |
+| 3 | 中 | 旧 ADR 未双向同步 | 已改：不再修订该 ADR（3s 保持原状），只加「关联」交叉引用；DoR#7 重写 |
+| 4 | 中 | `forceExit(129)` 与 ADR「仅新增 70」冲突 | 已改：ADR 决定 6 与 §8 同时列 70 / 129 |
+| 5 | 中 | 用例 B 在 R8 后与 A 同路径，失去回归意义 | 已改：B 改为 `NANO_GUARDED=$$ node dist/bin.js` |
+| 6 | 中 | §6 漏 `fd-guard.ts:32` 写入端 | 已改：§6 补写入端与校验端两行 |
+| 7 | 低 | `bin.ts:63` 应为 `:59` | 已改：§2.2 与 R8 两处都改 |
+| 8 | 低 | §2.3 缺「无守卫路径栈」标注 | 已改：标题行内补注 |
+| 9 | 低 | `/dev/tty` 句柄零写未实测 | 已实测：挂断后抛 EIO，写入 §2.4 第 3 行 |
+| 10 | 低 | `drive.mjs` 的 `=== '1'` 会失效 | 已改：§6 列入改动面（真值判断） |
+| 11 | 低 | `bin.ts:65/:68` 正常退出仍是裸 `process.exit` | 已改：R2 与 §6 一并改 `forceExit` |
+| 12 | 低 | 巡检 interval 关停时不清 | 已改：§6 `:1028` 加 `clearInterval` |

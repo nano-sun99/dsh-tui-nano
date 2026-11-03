@@ -8,7 +8,8 @@ const emit = (text) => {
   process.stdin.emit('data', Buffer.from(text))
   if (log) appendFileSync(log, `${Date.now()} INPUT ${JSON.stringify(text)}\n`)
 }
-if (process.env.NANO_GUARDED === '1') {
+// 守卫标记的值是 launcher pid（ADR-20261103-exit-failsafe），这里只判存在性。
+if (process.env.NANO_GUARDED) {
   if (log) writeFileSync(log, `PID ${process.pid}\nTTY ${execFileSync('stty', ['size'], { stdio: [0, 'pipe', 'pipe'] }).toString().trim()}\n`)
   const originalRender = NanoApp.prototype.render
   NanoApp.prototype.render = function(...args) {
