@@ -1,11 +1,11 @@
 # ADR-20261029-single-process-fd-guard：fd 级 stdout/stderr 守护用启动器 re-exec 实现，运行态仍是单一宿主
 
-- 状态：已被取代
+- 状态：生效中
 - 日期：2026-10-29
 - 决策人：用户
 - 适用范围：Nano 的进程模型、fd 1/2 重定向与终端写入者
 - 取代：[ADR-20261028-implementation-language-typescript](2026-10-28-implementation-language-typescript.md)
-- 被取代：[ADR-20261103-single-process-exit](2026-11-03-single-process-exit.md)（本 ADR 的「用启动器 re-exec 拉起 runtime，把 fd 1/2 绑到日志」与「关停增加 3s 强制恢复定时器」两条；launcher 一并移除，故「launcher 只负责拉起、转发信号与回收退出码」这句也不再生效。「终端单写入者」被加强为「只有 `Terminal.write` 能上屏」，「150ms 信号去重」继续有效）
+- 被取代：无
 - 决策来源：2026-10-29 实施审核发现「re-exec 引入第二个 Node 进程，与总纲单一进程字面冲突」；用户当日选择「接受并补文档（改旧 spec）」。原 ADR 的其余决定（TypeScript、自建 Cordis 根、reconciler + Yoga、官方独占服务、Rust 归档、三处行为变更）按原文继续有效，仅运行形态与终端所有权按本 ADR 修订
 
 ## 决定
@@ -47,4 +47,3 @@
 - Spec：`docs/specs/2026-10-28-nano-ts/S01-runtime-render-conversation.md` §2.5、§1
 - 证据：PR #89（合并后 `docs/evidence/2026-10-28-nano-ts/alpha/README.md` §8/§9）
 - 实施：issue #86、PR #89
-- 被取代（2026-11-03）：[ADR-20261103-single-process-exit](2026-11-03-single-process-exit.md) 移除了 launcher re-exec 与 3s 强制恢复定时器；守卫改由进程内 sink（日志文件 + 写改道）承担，「终端单写入者」被加强为「只有 `Terminal.write` 能上屏」，「150ms 信号去重」原样保留。
