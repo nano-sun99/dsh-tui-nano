@@ -1,11 +1,11 @@
 # ADR-20261029-single-process-fd-guard：fd 级 stdout/stderr 守护用启动器 re-exec 实现，运行态仍是单一宿主
 
-- 状态：生效中
+- 状态：已被取代
 - 日期：2026-10-29
 - 决策人：用户
 - 适用范围：Nano 的进程模型、fd 1/2 重定向与终端写入者
 - 取代：[ADR-20261028-implementation-language-typescript](2026-10-28-implementation-language-typescript.md)
-- 被取代：无
+- 被取代：[ADR-20261103-single-process-exit](2026-11-03-single-process-exit.md)（「launcher re-exec」「`NANO_GUARDED` 标记」「3s 强制恢复定时器」三条；终端单写入者与 150ms 信号去重继续有效）
 - 决策来源：2026-10-29 实施审核发现「re-exec 引入第二个 Node 进程，与总纲单一进程字面冲突」；用户当日选择「接受并补文档（改旧 spec）」。原 ADR 的其余决定（TypeScript、自建 Cordis 根、reconciler + Yoga、官方独占服务、Rust 归档、三处行为变更）按原文继续有效，仅运行形态与终端所有权按本 ADR 修订
 
 ## 决定
@@ -47,5 +47,4 @@
 - Spec：`docs/specs/2026-10-28-nano-ts/S01-runtime-render-conversation.md` §2.5、§1
 - 证据：PR #89（合并后 `docs/evidence/2026-10-28-nano-ts/alpha/README.md` §8/§9）
 - 实施：issue #86、PR #89
-- 并行生效：[ADR-20261103-exit-failsafe](2026-11-03-exit-failsafe.md)——新增 13.5s 硬退出上限；本 ADR 的 3s 强制恢复定时器原样保留，两者互补，不改本 ADR 的决定
-- 职责扩展（非变更）：该 ADR 给 launcher 加了失联巡检与兜底退出（`SIGTERM` → 等 ≈15s → `forceExit(129)`）。launcher 仍不持有会话、不连官方服务，与上条「只负责拉起、转发信号与回收退出码」不冲突。
+- 取代：[ADR-20261103-single-process-exit](2026-11-03-single-process-exit.md)（2026-11-03）——launcher 与 `NANO_GUARDED` 一并移除，守卫改由 `bin/nano` 这个 sh shim 的 `exec` 重定向承担；3s 强制恢复定时器由「终端归还排在关停第一步 + `RESTORE_BUDGET_MS`」替代。本 ADR 的「终端单写入者」「150ms 信号去重」在新 ADR 中原样保留。
