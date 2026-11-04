@@ -36,6 +36,7 @@ import { HistoryStore } from './input/history.ts'
 import { describeBindings } from './input/keymap.ts'
 import { renderKeymapHelp } from './input/keymap-docs.ts'
 import { Renderer } from './render/renderer.ts'
+import { writeDiagnostic } from './runtime/diagnostic.ts'
 import { startHeapWatch } from './runtime/heap-watch.ts'
 import { Terminal } from './runtime/terminal.ts'
 import { featureBootPatches } from './sessions/boot-patches.ts'
@@ -211,7 +212,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       history,
       ...(version !== undefined ? { version } : {}),
       openSessionsPanel: startup.openSessionsPanel,
-      writeDiagnostic: (line) => process.stderr.write(`${line}\n`),
+      writeDiagnostic: (line) => writeDiagnostic(line),
       features: new Features(),
     })
     // 只看不救：真炸时日志里至少要有一行「当时堆多大」（issue #138）。
@@ -300,7 +301,7 @@ async function confirmPurge(dataRoot: string, yes: boolean): Promise<boolean> {
   }
   // 提示必须落在终端上：stdout 被重定向（`nano purge > log`、管道、IDE 捕获）时
   // 写 stdout 会让用户只看见光标在等，不知道在等什么。
-  writeToTty(`将删除数据根 ${dataRoot}（含 profile、会话、历史），不可撤销。\n输入 yes 继续：`)
+  writeToTty(`将删除数据根 ${dataRoot}（含 profile、会话、历史），不可撤销。\n输入 yes 继续：\n`)
   const { createInterface } = await import('node:readline')
   const rl = createInterface({ input: process.stdin, output: process.stderr })
   try {
@@ -359,7 +360,7 @@ function message(error: unknown): string {
 /** Write a fatal message to the log and directly to the terminal. */
 /** 同时写 stderr 与 `/dev/tty`；没有控制终端时至少 stderr 有。 */
 function writeToTty(text: string): void {
-  process.stderr.write(text)
+  writeDiagnostic(text)
   try {
     const fd = openSync('/dev/tty', 'w')
     try {
