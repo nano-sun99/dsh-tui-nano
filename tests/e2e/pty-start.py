@@ -64,8 +64,6 @@ def main() -> int:
     parser.add_argument("--click-wait", type=float, default=3.0)
     # 关掉 master 制造真正的终端挂断（fd 1/2 的后续写入拿到 EIO），取代末尾的 Ctrl+C。
     parser.add_argument("--hangup", action="store_true")
-    # 不发送 `--wait` 到点后的 Ctrl+C（由用例自己结束进程）。
-    parser.add_argument("--no-interrupt", action="store_true")
     # 挂断前先让子进程活满这么久（秒）：避免「启动即崩」被当成「挂断后乖乖退出」。
     parser.add_argument("--min-uptime", type=float, default=0.0)
     # 等子进程自己退出多久；到点还没退就按下面 `--no-cleanup` 决定是否杀掉。
@@ -211,11 +209,10 @@ def main() -> int:
         master_open = False
     else:
         master_open = True
-        if not args.no_interrupt:
-            try:
-                os.write(master, b"\x03")
-            except OSError:
-                pass
+        try:
+            os.write(master, b"\x03")
+        except OSError:
+            pass
 
     # 再给关停一点时间；waitpid 必须带超时：被测进程若卡住，python 不能永久阻塞。
     status = None

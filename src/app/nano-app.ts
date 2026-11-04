@@ -27,7 +27,7 @@ import { INPUT_BYTE_LIMIT } from '../input/segments.ts'
 import type { Renderer } from '../render/renderer.ts'
 import { forceExit } from '../runtime/diagnostic.ts'
 import { writeHandoff } from '../runtime/handoff.ts'
-import { formatShutdownReport, Lifecycle } from '../runtime/lifecycle.ts'
+import { formatShutdownReport, Lifecycle, TOTAL_BUDGET_MS } from '../runtime/lifecycle.ts'
 import type { Terminal } from '../runtime/terminal.ts'
 import { activeTheme } from '../theme/theme.ts'
 import type { Row } from '../transcript/spans.ts'
@@ -276,20 +276,24 @@ export class NanoApp {
   private signalHandlers: Record<string, () => void> = {}
 
   private onUncaught = (error: unknown): void => {
-    this.exitCode = 1
+    // 码值先落地成本地快照：信号可能随后把 `this.exitCode` 清回 0（onSignal 无条件置 0），
+    // 那会把一条崩溃报成正常退出。
+    const code = 1
+    this.exitCode = code
     this.options.writeDiagnostic(`nano: 未捕获异常：${String(error)}`)
     void this.shutdown('uncaughtException').then(
-      () => forceExit(this.exitCode),
-      () => forceExit(1),
+      () => exitNow(code),
+      () => exitNow(1),
     )
   }
 
   private onUnhandledRejection = (reason: unknown): void => {
-    this.exitCode = 1
+    const code = 1
+    this.exitCode = code
     this.options.writeDiagnostic(`nano: 未处理的 Promise 拒绝：${String(reason)}`)
     void this.shutdown('unhandledRejection').then(
-      () => forceExit(this.exitCode),
-      () => forceExit(1),
+      () => exitNow(code),
+      () => exitNow(1),
     )
   }
 
@@ -1014,13 +1018,18 @@ export class NanoApp {
     this.lifecycle.register('restore', 'terminal', async () => {
       terminal.restore()
     })
+    // 3s：只把终端还回来并记非零退出码（ADR-20261029「3s 时恢复终端并非零退出」）。
     const forceTimer = setTimeout(() => {
       terminal.restore()
       this.exitCode = this.exitCode || 1
-      forceExit(this.exitCode)
     }, 3000)
+    // Lifecycle 自己的总预算是 10s；硬兜底必须排在它之后，否则会砍掉 flush（会话落盘）。
+    // 留 3s 余量给报告与收尾。
+    const hardExitTimer = setTimeout(() => exitNow(this.exitCode), TOTAL_BUDGET_MS + 3000)
+    hardExitTimer.unref()
     const report = await this.lifecycle.requestShutdown(reason)
     clearTimeout(forceTimer)
+    clearTimeout(hardExitTimer)
     this.removeProcessListeners()
     const failed = report.results.some((result) => result.status !== 'stopped')
     if (failed) this.exitCode = this.exitCode || 1
@@ -1039,6 +1048,18 @@ export class NanoApp {
     }
     process.off('uncaughtException', this.onUncaught)
     process.off('unhandledRejection', this.onUnhandledRejection)
+  }
+}
+
+/**
+ * 关停后的最后一跳。`forceExit` 在测试环境会 rethrow（spec §5 的已知死代码），
+ * 这里不能再让它逃成未处理拒绝 —— 那正是本单要切断的自激，只是换成 rejection 版。
+ */
+function exitNow(code: number): void {
+  try {
+    forceExit(code)
+  } catch {
+    // NODE_ENV=test：留给测试断言，不对进程动手。
   }
 }
 

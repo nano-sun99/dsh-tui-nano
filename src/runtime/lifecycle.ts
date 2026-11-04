@@ -46,7 +46,7 @@ const PHASE_DEADLINE_MS: Record<LifecyclePhase, number> = {
   restore: 1500,
 }
 
-const TOTAL_BUDGET_MS = 10_000
+export const TOTAL_BUDGET_MS = 10_000
 
 export class Lifecycle {
   private readonly hooks: LifecycleHook[] = []

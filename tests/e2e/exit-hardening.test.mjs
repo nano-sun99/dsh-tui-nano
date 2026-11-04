@@ -101,14 +101,14 @@ test('挂断后 8s 内进程自己消失（无守卫态）', () => {
       },
     )
     const elapsed = Date.now() - startedAt
-    assert.equal(result.status, 0, `pty-start.py 失败：${result.stderr}`)
-
     const lines = result.stdout.trim().split('\n')
     const pidLine = lines.find((line) => line.startsWith('pid='))
-    assert.ok(pidLine, `pty 必须打印 child pid：${result.stdout}`)
-    pid = Number.parseInt(pidLine.slice(4), 10)
+    // pid 先于状态断言解析：python 中途炸掉时 finally 也得收拾掉那个在烧核的子进程。
+    if (pidLine) pid = Number.parseInt(pidLine.slice(4), 10)
+    assert.equal(result.status, 0, `pty-start.py 失败：${result.stderr}`)
 
     // 前置断言先过：否则 dist 缺失 → 127 立即退出会让后面的空断言假绿。
+    assert.ok(pidLine, `pty 必须打印 child pid：${result.stdout}`)
     assert.ok(Number.isInteger(pid) && pid > 0, `非法 pid：${pidLine}`)
     assert.ok(elapsed > 1000, `进程必须活过 1s，实际 ${elapsed}ms`)
     const screen = readFileSync(out, 'utf8')

@@ -301,7 +301,7 @@ async function confirmPurge(dataRoot: string, yes: boolean): Promise<boolean> {
   }
   // 提示必须落在终端上：stdout 被重定向（`nano purge > log`、管道、IDE 捕获）时
   // 写 stdout 会让用户只看见光标在等，不知道在等什么。
-  writeToTty(`将删除数据根 ${dataRoot}（含 profile、会话、历史），不可撤销。\n输入 yes 继续：`)
+  writeToTty(`将删除数据根 ${dataRoot}（含 profile、会话、历史），不可撤销。\n输入 yes 继续：\n`)
   const { createInterface } = await import('node:readline')
   const rl = createInterface({ input: process.stdin, output: process.stderr })
   try {
