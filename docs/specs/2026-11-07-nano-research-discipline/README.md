@@ -2,7 +2,7 @@
 
 - 组标识：`2026-11-07-nano-research-discipline`
 - 角色：单份 spec（批次 1）；批次 2「只读 research 子代理」不在本 spec，另立
-- 状态：实施中（代码与证据就绪，待实施审核）
+- 状态：实施完成（PR #175；上线状态见 issue #174）
 - Issue：#174
 - 结构：不拆——1 份 spec + 1 张执行 issue
 - 机制范围：**2 个提示层机制**——① 新增根 agent 常驻段 `nano:research-discipline`；② 覆盖官方 `plan-mode` 的 `section` 配置。无新增运行时机制、无新依赖、不改工具目录
@@ -240,3 +240,5 @@ Do not edit or write files, change configuration, run formatters or code generat
 | --- | --- | --- | --- |
 | 18 | 中 | 主路步 2：缺失 / 空 section 导致 plan 插件激活失败，但该插件不是官方必需启动项，不能断言整个 boot 失败；属于既有 spec 误述 | §4 步 2 改为激活失败并告警、boot 仍可成功而 planMode 服务缺失；历史记录 #5 标注该事实结论被取代。未新增运行时硬闸 |
 | 19 | 低 | 主路步 3 / A3：证据 assemble 没传 step toolSet，比较的是注册工具视图，不能声称实际请求目录不变 | 脚本和 evidence README 改为 registered tool view unchanged，明确官方 exit_plan_mode 仍按条件披露；仅校准证据口径，不改变官方行为 |
+
+2026-11-07 实施 R2：用户选择轻审；首次异步通道只留截断摘要，未作为完整通过结论使用，用户随后单独授权同步重取。同步分身确认 #18 / #19 闭合 2/2，无新增阻断 / 高 / 中 / 低，原文已贴 PR #175 评论。R2 只核修订，未重跑真实模型；回归命令由主 agent 另行复跑。以上为审核记录和状态机械回填，不改变定稿提示或验收承诺。
