@@ -26,6 +26,17 @@ describe('readModelIdentity', () => {
     const identity = readModelIdentity(ctxWith({ provider: 'p', model: 'm' }, ['low', 'high']))
     expect(identity?.efforts).toEqual(['low', 'high'])
   })
+
+  it('会话记录值优先于 profile 默认值', () => {
+    const agent = {
+      model: {
+        current: () => ({ provider: 'deepseek-official', model: 'deepseek-pro' }),
+      },
+    }
+    expect(
+      readModelIdentity(ctxWith({ provider: 'deepseek-official', model: 'deepseek-flash' }), agent),
+    ).toEqual({ provider: 'deepseek-official', model: 'deepseek-pro' })
+  })
 })
 
 describe('occupancyText', () => {

@@ -5,6 +5,7 @@
 // MOCK_SCRIPT=approval ：bash 提权（审批）→ 最终文本
 //
 // 最终文本按最后一个 tool_result 的 is_error 决定：失败就绝不回「已完成」。
+import { appendFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 
 const mode = process.env.MOCK_SCRIPT ?? 'chain'
@@ -105,6 +106,8 @@ const handler = (req, res) => {
     } catch {
       // 非 JSON 请求按空体处理；下面会走文本分支。
     }
+    const modelLog = process.env.MOCK_MODEL_LOG
+    if (modelLog) appendFileSync(modelLog, `${body.model ?? 'unknown'}\n`)
     const withTools = Array.isArray(body.tools) && body.tools.length > 0
     if (mode === 'text') {
       sse(res)

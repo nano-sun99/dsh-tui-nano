@@ -3,7 +3,15 @@
  * the data root, every later launch repairs only missing files and refuses to
  * silently overwrite a damaged one.
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import type { OfficialModules } from './official.ts'
@@ -45,7 +53,51 @@ export function ensureProfile(dataRoot: string, official: OfficialModules): Ensu
   assertParseableJson(manifestPath, 'package.json')
   ensureArrayYaml(cordisPath, 'cordis.yml')
   ensureArrayYaml(patchPath, 'cordis.patch.yml')
+  retireProfileEntries(cordisPath)
   return { dir, manifestPath, cordisPath, patchPath, created }
+}
+
+/**
+ * 0.2.2 把 `dsh-tool-subagent-control/list-agents` 并进主包，旧版本物化到
+ * `cordis.yml` 的 entry 会在启动时 import 失败。只在文件里存在时做一次
+ * 文本级删除（保留其余内容），并先备份；不是 YAML 重写，避免丢掉 `!!js`。
+ */
+const RETIRED_PROFILE_ENTRIES = [
+  { id: 'tool-subagent-list-agents', name: '@deepseek-ai/dsh-tool-subagent-control/list-agents' },
+]
+
+/** Remove retired entry blocks from the generated profile; returns true when changed. */
+export function retireProfileEntries(path: string): boolean {
+  const text = readFileSync(path, 'utf8')
+  if (
+    !RETIRED_PROFILE_ENTRIES.some((entry) => text.includes(entry.name) || text.includes(entry.id))
+  ) {
+    return false
+  }
+  const lines = text.split('\n')
+  const starts: number[] = []
+  for (const [index, line] of lines.entries()) {
+    if (/^-\s+id:/.test(line)) starts.push(index)
+  }
+  const retired = new Set<number>()
+  for (const [position, start] of starts.entries()) {
+    const end = starts[position + 1] ?? lines.length
+    const block = lines.slice(start, end).join('\n')
+    if (
+      RETIRED_PROFILE_ENTRIES.some(
+        (entry) => block.includes(entry.name) || block.includes(entry.id),
+      )
+    ) {
+      for (let index = start; index < end; index++) retired.add(index)
+    }
+  }
+  if (retired.size === 0) return false
+  const backup = `${path}.bak-${Date.now()}`
+  copyFileSync(path, backup)
+  writeFileSync(path, lines.filter((_, index) => !retired.has(index)).join('\n'), {
+    mode: 0o600,
+  })
+  return true
 }
 
 /** Load the profile and reject partial loads instead of continuing silently. */

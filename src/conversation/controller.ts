@@ -101,13 +101,7 @@ export class ConversationController {
   private readonly options: ConversationOptions
   private handle: any
   private statusValue: 'idle' | 'running' = 'idle'
-  private selection: { provider: string; model: string; reasoningEffort?: string } | undefined
-  private selectionRef:
-    | {
-        current: { provider: string; model: string; reasoningEffort?: string }
-        assembled: unknown
-      }
-    | undefined
+  private selection: ModelSelection | undefined
   private disposers: Array<() => void> = []
   private disposed = false
   /** callId → jobId（session `job/registered` 建立）与反向映射。 */
@@ -138,13 +132,12 @@ export class ConversationController {
   async start(): Promise<void> {
     const { ctx, official, rootId, cwd } = this.options
     const selection = ctx.get('agentDefaultModel')?.currentSelection?.() as
-      | { provider: string; model: string; reasoningEffort?: string }
+      | ModelSelection
       | undefined
     if (!selection?.provider || !selection?.model) {
       throw new Error('nano: 没有可用的默认模型；请先在官方 DSH 中配置 provider/model。')
     }
     this.selection = selection
-    this.selectionRef = { current: selection, assembled: undefined }
     const sessionId = official.session.SessionId(rootId)
     const agentOptions = {
       provider: selection.provider,
@@ -152,7 +145,8 @@ export class ConversationController {
       ...(selection.reasoningEffort ? { reasoningEffort: selection.reasoningEffort } : {}),
     }
     const setup = (agentCtx: any) => {
-      official.agent.installModelSelection(agentCtx, this.selectionRef)
+      // 0.2.2 起模型选择由 Agent 自己持有（agent.model），这里只装「换模型」提示。
+      official.agent.installModelSelection(agentCtx)
       const disposeQuestion = agentCtx.systemPrompt.section({
         name: 'nano:question-discipline',
         order: 10145,
@@ -190,7 +184,35 @@ export class ConversationController {
       )
     }
     if (resumed) this.replay(this.handle.agent.session)
+    await this.reconcileModelSelection(selection)
     this.attach()
+  }
+
+  /**
+   * 恢复会话时官方优先用会话日志里的模型选择；provider 被移除或模型下架后，
+   * 它会让每个回合都在请求阶段失败。启动后做一次有界的失效对账：
+   * 明确不可用才回退到 profile 默认，并留一条可见提示；超时不改。
+   */
+  private async reconcileModelSelection(fallback: ModelSelection): Promise<void> {
+    const recorded = this.agent?.model?.current?.() as ModelSelection | undefined
+    if (!recorded?.provider || !recorded?.model) return
+    if (recorded.provider === fallback.provider && recorded.model === fallback.model) return
+    const llm = this.options.ctx.get('llm')
+    if (typeof llm?.resolveModelInfo !== 'function') return
+    try {
+      await llm.resolveModelInfo(recorded.provider, recorded.model, AbortSignal.timeout(2000))
+    } catch (error) {
+      const name = (error as { name?: string } | undefined)?.name
+      if (name === 'TimeoutError' || name === 'AbortError') return
+      const agent = this.agent
+      if (typeof agent?.model?.select !== 'function') return
+      agent.model.select(fallback)
+      this.selection = fallback
+      this.model.appendNotice(
+        `会话记录的模型 ${recorded.provider}/${recorded.model} 不可用，已回退到默认模型 ${fallback.provider}/${fallback.model}。`,
+        'warning',
+      )
+    }
   }
 
   /** Rebuild the reading surface from the official message projection. */
@@ -621,11 +643,15 @@ export class ConversationController {
   }
 
   get selectionInfo(): string {
-    return this.selection ? `${this.selection.provider}/${this.selection.model}` : '未选择模型'
+    const selection = this.modelSelection
+    return selection ? `${selection.provider}/${selection.model}` : '未选择模型'
   }
 
-  get modelSelection(): { provider: string; model: string; reasoningEffort?: string } | undefined {
-    return this.selectionRef?.current ?? this.selection
+  get modelSelection(): ModelSelection | undefined {
+    // 0.2.2 的权威选择在 Agent 上：恢复会话时它可能来自会话日志，而不是启动默认值。
+    const live = this.agent?.model?.current?.()
+    if (live?.provider && live?.model) return live as ModelSelection
+    return this.selection
   }
 
   /** 当前 provider 的官方模型目录（adapter 自报，可能为空）。 */
@@ -694,7 +720,7 @@ export class ConversationController {
 
   /**
    * 切换模型/强度：只改下一次请求的组装，不触碰正在运行的步骤。
-   * 先用官方 resolveModelInfo 校验，成功才写回 selection ref。
+   * 先用官方 resolveModelInfo 校验，成功才交给 Agent 记录选择。
    */
   async selectModel(
     provider: string,
@@ -724,10 +750,17 @@ export class ConversationController {
         `模型 ${provider}/${model} 没有强度 ${effort}；可选：${efforts.join(' / ') || '无'}`,
       )
     }
-    const next = { provider, model, ...(effort ? { reasoningEffort: effort } : {}) }
-    if (!this.selectionRef) throw new Error('会话尚未启动')
+    const next: ModelSelection = {
+      provider,
+      model,
+      ...(effort ? { reasoningEffort: effort } : {}),
+    }
+    const agent = this.agent
+    if (!agent?.model?.select) throw new Error('会话尚未启动')
+    // 0.2.2 起由 Agent 持有选择：写会话日志，下一步/下一回合按它组装请求。
+    if (typeof llm.resolveCallConfig === 'function') await llm.resolveCallConfig(next)
+    agent.model.select(next)
     // 会话内选择先生效；profile 写失败只影响重启后的记忆，不回滚本次切换。
-    this.selectionRef.current = next
     this.selection = next
     const saveError = catalogValidated
       ? await saveDefaultSelection(this.options.ctx, next)

@@ -65,12 +65,17 @@ test('调度：A/B 各自可见自己的任务，门面投影与按根隔离都�
   const a = await boot('schedule-a')
   let b
   try {
-    const createdA = await a.runtime.service.create('schedule-a', {
-      title: 'SCHEDULE_MARKER',
-      prompt: '只应出现在 A',
-      after_seconds: 3600,
-    })
+    const createdA = await a.runtime.service.create(
+      {
+        title: 'SCHEDULE_MARKER',
+        prompt: '只应出现在 A',
+        timing: { kind: 'after', after_seconds: 3600 },
+        target: { kind: 'new_once' },
+      },
+      'schedule-a',
+    )
     assert.match(createdA.title, /SCHEDULE_MARKER/)
+    assert.equal(createdA.target?.kind, 'new_once', '显式 target 应保留')
     // 走 nano 门面，不直接读官方 service：投影丢字段会在这一步暴露。
     const rowsA = await a.runtime.catalog()
     assert.ok(
@@ -84,11 +89,15 @@ test('调度：A/B 各自可见自己的任务，门面投影与按根隔离都�
 
     b = await boot('schedule-b')
     // B 正控：B 自己能创建并看到自己的任务，排除「catalog 恒空所以隔离看似成立」。
-    const createdB = await b.runtime.service.create('schedule-b', {
-      title: 'B_SCHEDULE_MARKER',
-      prompt: '只应出现在 B',
-      after_seconds: 3600,
-    })
+    const createdB = await b.runtime.service.create(
+      {
+        title: 'B_SCHEDULE_MARKER',
+        prompt: '只应出现在 B',
+        timing: { kind: 'after', after_seconds: 3600 },
+        target: { kind: 'new_once' },
+      },
+      'schedule-b',
+    )
     assert.match(createdB.title, /B_SCHEDULE_MARKER/)
     const rowsB = await b.runtime.catalog()
     assert.ok(

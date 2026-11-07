@@ -22,13 +22,13 @@ const plain = commands.some((arg) =>
   ['--help', '-h', '--version', '-v', 'purge', '--purge'].includes(arg),
 )
 
-// S03 §2.1：engines 只警告，入口必须真拦。低于 22.19 的 Node 会在类型剥离、
-// import.meta 等特性上直接炸出难懂的栈，这里先给可操作的错误。
+// S03 §2.1：engines 只警告，入口必须真拦。官方 dsh 0.2.2 整包的
+// engines 就是 >=24.9.0（全树最严），nano 跟随，低于下限先给可操作的错误。
 type Semver = readonly [number, number, number]
 
-const MIN_NODE: Semver = [22, 19, 0]
+const MIN_NODE: Semver = [24, 9, 0]
 
-/** 预发布后缀（`22.19.0-rc.1`）按 semver 低于同号正式版。 */
+/** 预发布后缀（`24.9.0-rc.1`）按 semver 低于同号正式版。 */
 function parseSemver(text: string): { core: Semver; prerelease: boolean } {
   const [coreText, ...rest] = text.split('-')
   const parts = (coreText ?? '').split('.').map((part) => Number.parseInt(part, 10))
@@ -51,7 +51,7 @@ function atLeast(actual: { core: Semver; prerelease: boolean }, minimum: Semver)
 if (!atLeast(parseSemver(process.versions.node), MIN_NODE)) {
   process.stderr.write(
     `nano: 需要 Node.js >= ${MIN_NODE.join('.')}，当前 ${process.versions.node}。\n` +
-      '请升级 Node 后重试，例如：nvm install 22.19 && nvm use 22.19\n',
+      '请升级 Node 后重试，例如：nvm install 24.9 && nvm use 24.9\n',
   )
   process.exit(1)
 }

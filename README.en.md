@@ -9,8 +9,8 @@
 
 ![status](https://img.shields.io/badge/status-release--candidate-orange)
 ![platform](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)
-![node](https://img.shields.io/badge/node-%3E%3D22.19-blue)
-![dsh](https://img.shields.io/badge/dsh-0.2.1--rc.2-blue)
+![node](https://img.shields.io/badge/node-%3E%3D24.9-blue)
+![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1-blue)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ![Streaming reasoning, live Bash output and the activity indicator](docs/media/readme/thinking-bash.png)
@@ -66,8 +66,8 @@ nano -r <id>
 | Item | Requirement |
 | --- | --- |
 | OS / terminal | macOS arm64 + Ghostty (manual interaction verified; others untested) |
-| Node | ≥ 22.19 (`engines`; the entry checks at runtime and exits with an actionable error below that) |
-| Official dsh | exactly `0.2.1-rc.2`; unknown versions are refused at startup |
+| Node | ≥ 24.9 (`engines`; the entry checks at runtime and exits with an actionable error below that) |
+| Official dsh | exactly `0.2.2-rc.1`; unknown versions are refused at startup |
 | Credentials | resolved by the official dsh under `${DSH_HOME:-~/.dsh}`; nano never copies or prints credential values |
 
 The data root defaults to `~/.dsh-tui-nano` (override with `NANO_DATA_ROOT`): the app-owned profile, sessions, runtime data, history and logs live there. In `$DSH_HOME`, nano only writes `.anonymous-user-id` and touches nothing else.
@@ -149,9 +149,16 @@ Display debugging: `NANO_TOOL_PREVIEW_LINES=4..2000` caps the total lines kept f
 - **Scheduling has no pause / resume**: stopping a task means deleting it; delivery is **not exactly-once** and may repeat.
 - **Monitor `notify` costs money**: the default is `quiet` (official inject: does not wake the model or start a turn; content rides along with the next request and is billed there). Switching to `notify` wakes the model and incurs charges.
 - **Three behaviours differ from v1** (kept explicitly by the user on 2026-10-28): Monitor defaults to `quiet`; cold session rename takes the write lock (via a controlled restart); a failed permission switch keeps the old value and warns that it may have partially applied, so re-check `/permission`.
-- Only official dsh `0.2.1-rc.2` is accepted; unknown versions are refused, no guessing and no fallback.
+- Only official dsh `0.2.2-rc.1` is accepted; unknown versions are refused, no guessing and no fallback.
+- **Web Fetch can reach local and private networks**: see "Security boundary" below.
 - `@file` only inserts a path, it does not read the file; the model still has to call a file tool.
 - Hard kills, power loss and escaped descendant processes are not guaranteed to be cleaned up; nano only owns the process groups it started.
+
+### Security boundary: Web Fetch can reach local and private networks (confirmed by the user on 2026-11-07)
+
+Since official dsh 0.2.2, Web Fetch no longer rejects loopback and private addresses (for proxies and intranets). nano adds no extra blocking; this is a deliberate trade-off: the local TUI defaults to `danger-full-access`, and URL/IP blocklists cannot fully cover SSRF variants such as DNS rebinding, IPv6, or IPv4-mapped addresses.
+
+The cost: prompt injection can make the model read local or private-network HTTP services. If you need isolation, restrict the network yourself or run in a restricted environment.
 
 Full list: [`docs/release/0.2.0/known-limitations.md`](docs/release/0.2.0/known-limitations.md).
 
