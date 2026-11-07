@@ -2,9 +2,9 @@
 
 **给 DeepSeek Harness 的极简、克制的终端界面。**
 
-[English](README.en.md) · [规格](docs/specs/2026-10-28-nano-ts/README.md) · [发布验收](docs/release/0.2.3.1/README.md)
+[English](README.en.md) · [规格](docs/specs/2026-10-28-nano-ts/README.md) · [发布验收](docs/release/0.2.4/README.md)
 
-> **0.2.3.1。** 当前尚未发布到 npm registry；发布验收与证据见 `docs/release/0.2.3.1/`。<br>
+> **0.2.4。** 当前尚未发布到 npm registry；发布验收与证据见 `docs/release/0.2.4/`。<br>
 > 这是独立项目，不是 DeepSeek 官方产品。
 
 ![status](https://img.shields.io/badge/status-release--candidate-orange)
@@ -51,7 +51,7 @@
 ```sh
 # 安装 / 升级：registry 尚未发布，先打包再装产物
 npm pack
-npm install -g ./dsh-tui-nano-0.2.3.1.tgz
+npm install -g ./dsh-tui-nano-0.2.4.tgz
 # registry 发布后改回：npm install -g dsh-tui-nano
 
 # 启动：新会话
@@ -190,7 +190,7 @@ Ghostty
 
 | 项目 | 状态 |
 | --- | --- |
-| 0.2.3.1 发布 | **未发布到 registry**；`npm pack` 产物可全局安装，发布结论见 `docs/release/0.2.3.1/` |
+| 0.2.4 发布 | **未发布到 registry**；`npm pack` 产物可全局安装，发布结论见 `docs/release/0.2.4/` |
 | 平台 | macOS arm64 + Ghostty 手工交互验证 |
 | 首次发布 | dist-tag `next`；发布结论通过后再提升 `latest` |
 

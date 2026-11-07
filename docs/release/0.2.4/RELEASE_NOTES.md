@@ -1,19 +1,19 @@
-# dsh-tui-nano v0.2.3.1
+# dsh-tui-nano v0.2.4
 
 本地构建的安装包（GitHub Release 附件），**未发布到 npm registry**。
 
 ## 安装
 
-下载附件 `dsh-tui-nano-0.2.3.1.tgz` 后：
+下载附件 `dsh-tui-nano-0.2.4.tgz` 后：
 
 ```sh
-npm install -g ./dsh-tui-nano-0.2.3.1.tgz
-nano --version   # nano 0.2.3.1 (harness 0.2.2-rc.1)
+npm install -g ./dsh-tui-nano-0.2.4.tgz
+nano --version   # nano 0.2.4 (harness 0.2.2-rc.1)
 ```
 
 > 不要执行 `npm install -g dsh-tui-nano`：整包未上 npm registry（E404）。
 
-> `0.2.3.1` 不是合法 semver，`npm publish` 会拒绝；本项目当前不发布 registry，tarball 安装可用。下一次发布请改用 `0.2.4` 等合法版本号。
+> `0.2.3.1` 不是合法 semver，已撤回（Release 与 tag 均删除）；本版改用标准 `0.2.4`。
 
 ## 本版内容
 
@@ -38,8 +38,8 @@ nano --version   # nano 0.2.3.1 (harness 0.2.2-rc.1)
 ## 校验
 
 ```
-文件名    dsh-tui-nano-0.2.3.1.tgz
-大小      598,027 字节 / 157 文件
-SHA-256   52c5de8a0fad4bd43d777cc353407ac0490d79af3d59bb1bb3217fc797c57ba4
-integrity sha512-KD8sqyzIFNIWzlmIg+hDcBKufZUj2Bgtb0YGtvR3Sh8as2y9KA8L3iyMfqWUwAutaPhqYEVewG2+JFUiA2ChpQ==
+文件名    dsh-tui-nano-0.2.4.tgz
+大小      598,021 字节 / 157 文件
+SHA-256   82b241761fa58f6df3a516d98f0587ba8a58a6db5902bb29b0e1ea3ba8af3be3
+integrity sha512-FRsbX5s7KR4VPrET0m8RBqwyda520QOxX4S3K6VyI334HbIq0Br3d8h1LmX9IrJA/3KuVMKshUnQUFfn8t5tcQ==
 ```
