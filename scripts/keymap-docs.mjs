@@ -12,7 +12,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-// 直接读源码（Node >=22.19 的类型剥离）：读 dist 会在「改了 src 没 build」时
+// 直接读源码（Node >=24.9 的类型剥离）：读 dist 会在「改了 src 没 build」时
 // 用旧产物做 --check，把过期文档判成最新。
 import { FEATURE_KEYBINDINGS } from '../src/controls/feature-keys.ts'
 import { describeBindings } from '../src/input/keymap.ts'

@@ -9,7 +9,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-export const PINNED_HARNESS_VERSION = '0.2.1-rc.2'
+export const PINNED_HARNESS_VERSION = '0.2.2-rc.1'
 
 export interface OfficialModules {
   readonly appBoot: Record<string, any>

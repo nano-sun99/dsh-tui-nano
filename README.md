@@ -9,8 +9,8 @@
 
 ![status](https://img.shields.io/badge/status-release--candidate-orange)
 ![platform](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)
-![node](https://img.shields.io/badge/node-%3E%3D22.19-blue)
-![dsh](https://img.shields.io/badge/dsh-0.2.1--rc.2-blue)
+![node](https://img.shields.io/badge/node-%3E%3D24.9-blue)
+![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1-blue)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ![思考流式推进、Bash 实时输出与活动指示](docs/media/readme/thinking-bash.png)
@@ -66,8 +66,8 @@ nano -r <id>
 | 项目 | 要求 |
 | --- | --- |
 | 系统 / 终端 | macOS arm64 + Ghostty（手工交互验证；其他环境未验证） |
-| Node | ≥ 22.19（`engines` 声明；入口运行时检查，低于下限给可操作错误并退出） |
-| 官方 dsh | 精确 `0.2.1-rc.2`；未知版本拒绝启动 |
+| Node | ≥ 24.9（`engines` 声明；入口运行时检查，低于下限给可操作错误并退出） |
+| 官方 dsh | 精确 `0.2.2-rc.1`；未知版本拒绝启动 |
 | 凭据 | 由官方 dsh 在 `${DSH_HOME:-~/.dsh}` 解析；nano 不复制、不显示凭据值 |
 
 数据根默认 `~/.dsh-tui-nano`（可用 `NANO_DATA_ROOT` 覆盖）：应用自持 profile、会话、运行时数据、历史与日志都在这里。`$DSH_HOME` 中 nano 只写 `.anonymous-user-id`，其他不改不删。
@@ -151,7 +151,8 @@ npm uninstall -g dsh-tui-nano
 - **调度没有暂停 / 恢复**：停止任务只能删除；投递**非严格一次**，可能重复。
 - **Monitor `notify` 会计费**：默认 `quiet`（官方 inject，不唤醒、不新建 turn，内容随下一次请求计费）；切到 `notify` 会唤醒模型并产生费用。
 - **三处与 v1 不同的行为**（用户 2026-10-28 明确保留）：Monitor 默认 `quiet`；冷会话改名允许先取写权限（走受控重启）；权限切换失败保留原值并提示「可能已部分生效，请重开 /permission 核对」。
-- 只接受官方 dsh `0.2.1-rc.2`；未知版本直接拒绝启动，不猜字段、不降级。
+- 只接受官方 dsh `0.2.2-rc.1`；未知版本直接拒绝启动，不猜字段、不降级。
+- **Web Fetch 可访问内网**：官方 0.2.2 起不再拒绝回环与私网地址；需要隔离时由部署侧限制网络，nano 不做额外拦截。
 - `@file` 只插入路径，不读取文件内容；模型仍需调用文件工具才能读取。
 - 强杀、断电和主动逃逸的后代进程不作清理保证；nano 只负责本窗口拥有的进程组。
 

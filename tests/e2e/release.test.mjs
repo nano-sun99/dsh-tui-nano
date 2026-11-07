@@ -24,6 +24,7 @@ const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 const nodeBin = process.execPath
 const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'))
 const expectedVersion = packageJson.version
+const expectedHarness = packageJson.dependencies['@deepseek-ai/dsh']
 
 // 所有 npm 命令共用一份合成 HOME 与固定 cache；跨运行复用，避免每次重下整棵官方依赖树。
 const sharedHome = mkdtempSync(path.join(os.tmpdir(), 'nano-e2e-home-'))
@@ -258,7 +259,7 @@ test('全新安装后 nano --version 可用', () => {
   const result = runNano(ctx.prefix, ['--version'], ctx.env)
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, new RegExp(`nano ${expectedVersion.replaceAll('.', '\\.')}`))
-  assert.match(result.stdout, /harness 0\.2\.1-rc\.2/)
+  assert.match(result.stdout, new RegExp(`harness ${expectedHarness.replaceAll('.', '\\.')}`))
 })
 
 test('--help 含用法与键位段', () => {
@@ -377,36 +378,44 @@ test('骨架后核心加载失败：恢复终端、可见错误、退出 1', () 
 })
 
 // 本机没有对应 Node 时跳过；发布证据运行会显式设置这两个变量。
-const node22 = process.env.NANO_NODE_22
+const node24 = process.env.NANO_NODE_24
 const node20 = process.env.NANO_NODE_20
 
-test('Node 22.19（下限）里能启动', { skip: node22 ? false : '未设置 NANO_NODE_22' }, () => {
-  const actual = run(node22, ['-p', 'process.versions.node'], { env: baseEnv() })
+test('Node 24.9+（下限）里能启动', { skip: node24 ? false : '未设置 NANO_NODE_24' }, () => {
+  const actual = run(node24, ['-p', 'process.versions.node'], { env: baseEnv() })
   assert.equal(actual.status, 0, actual.stderr)
-  assert.equal(actual.stdout.trim(), '22.19.0', 'NANO_NODE_22 必须真的指向 22.19.0')
-  const version = run(node22, [path.join(repoRoot, 'dist', 'bin.js'), '--version'], {
+  const actualVersion = actual.stdout.trim()
+  const [major, minor] = actualVersion.split('.').map((part) => Number.parseInt(part, 10))
+  assert.ok(
+    major > 24 || (major === 24 && minor >= 9),
+    `NANO_NODE_24 必须 >= 24.9.0，实际 ${actualVersion}`,
+  )
+  const version = run(node24, [path.join(repoRoot, 'dist', 'bin.js'), '--version'], {
     env: baseEnv({ NANO_DATA_ROOT: ctx.dataRoot }),
   })
   assert.equal(version.status, 0, version.stderr)
   assert.match(version.stdout, new RegExp(`nano ${expectedVersion.replaceAll('.', '\\.')}`))
-  // 确认 PTY 的 PATH 真的会解析到 22.19.0，而不是悄悄用了默认 node。
+  // 确认 PTY 的 PATH 真的会解析到这个 Node，而不是悄悄用了默认 node。
   const resolved = run(
     'env',
-    [`PATH=${path.dirname(node22)}:${process.env.PATH}`, 'node', '-p', 'process.versions.node'],
+    [`PATH=${path.dirname(node24)}:${process.env.PATH}`, 'node', '-p', 'process.versions.node'],
     { env: baseEnv() },
   )
-  assert.equal(resolved.stdout.trim(), '22.19.0')
-  const { code, output } = startInPty(ctx.prefix, ctx.env, { nodeBin: node22, until: '输入消息' })
-  assert.ok(code === 0 || code === 130, `22.19 启动退出码异常：${code}\n${output.slice(0, 1500)}`)
+  assert.equal(resolved.stdout.trim(), actualVersion)
+  const { code, output } = startInPty(ctx.prefix, ctx.env, { nodeBin: node24, until: '输入消息' })
+  assert.ok(
+    code === 0 || code === 130,
+    `Node ${actualVersion} 启动退出码异常：${code}\n${output.slice(0, 1500)}`,
+  )
 })
 
-test('低于 22.19 拒绝启动并给可操作错误', { skip: node20 ? false : '未设置 NANO_NODE_20' }, () => {
+test('低于 24.9 拒绝启动并给可操作错误', { skip: node20 ? false : '未设置 NANO_NODE_20' }, () => {
   const result = run(node20, [path.join(repoRoot, 'dist', 'bin.js'), '--version'], {
     env: baseEnv({ NANO_DATA_ROOT: ctx.dataRoot }),
   })
   assert.equal(result.status, 1, result.stdout)
-  assert.match(result.stderr, /需要 Node\.js >= 22\.19\.0/)
-  assert.match(result.stderr, /nvm install 22\.19/)
+  assert.match(result.stderr, /需要 Node\.js >= 24\.9\.0/)
+  assert.match(result.stderr, /nvm install 24\.9/)
 })
 
 test('升级：安装更高版本后 --version 跟着变', () => {

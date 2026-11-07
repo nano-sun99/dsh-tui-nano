@@ -5,12 +5,12 @@
 ```sh
 npm run test:e2e
 # 可选：带上 Node 版本矩阵
-NANO_NODE_22=<node-22.19> NANO_NODE_20=<node-20> npm run test:e2e
+NANO_NODE_24=<node-24.9+> NANO_NODE_20=<node-20> npm run test:e2e
 # 可选：只在发布 tag 上复核 version-matrix 里冻结的产物哈希
 NANO_RELEASE_VERIFY=1 npm run test:e2e
 ```
 
-前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 62 个用例（按文件顶层 `test()` 计数）：安装 17（其中发布验收 1 条默认跳过）+ 视觉 3 + 能力 1 + 交互 6 + 输入 5 + 跨会话 2 + 跨面 8 + 子代理 dock 5 + 会话生命周期 9 + 主链路 3 + Monitor 1 + 调度 1 + 退出加固 1。发布证据运行显式设置了 `NANO_NODE_22` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip；`NANO_RELEASE_VERIFY=1` 只在发布 tag 上复核 version-matrix 哈希时设置。
+前置：`npm ci && npm run build`；`npm pack` 的 `prepack` 会自己再构建一次。首次运行会下载官方依赖树，之后复用固定 cache。所有套件串行跑（`--test-concurrency=1`）。共 62 个用例（按文件顶层 `test()` 计数）：安装 17（其中发布验收 1 条默认跳过）+ 视觉 3 + 能力 1 + 交互 6 + 输入 5 + 跨会话 2 + 跨面 8 + 子代理 dock 5 + 会话生命周期 9 + 主链路 3 + Monitor 1 + 调度 1 + 退出加固 1。发布证据运行显式设置了 `NANO_NODE_24` / `NANO_NODE_20`，因此 Node 矩阵两例不 skip；`NANO_RELEASE_VERIFY=1` 只在发布 tag 上复核 version-matrix 哈希时设置。
 
 ## `release.test.mjs`（17）
 
@@ -24,11 +24,11 @@ NANO_RELEASE_VERIFY=1 npm run test:e2e
 | `--root purge 不会被当成 purge 子命令` | `--root purge --yes` 与 `--root=purge --yes` 都不得删数据根                                           |
 | `purge --yes 删除数据根`               | 数据根被删除                                                                                          |
 | `启动冒烟`                             | 真 PTY 下出现 pre-boot 骨架、Ctrl+C 干净退出；`$DSH_HOME` 只允许新增 `.anonymous-user-id`             |
-| `未知 harness 版本拒绝启动`            | `loadOfficial` 对非 `0.2.1-rc.2` 的锚点报「版本不受支持」                                             |
+| `未知 harness 版本拒绝启动`            | `loadOfficial` 对非当前 dsh 依赖版本的锚点报「版本不受支持」                                          |
 | `强杀残留提示 reset`                   | 预置陈旧挂载锁（不存在的 pid），下次启动界面出现 `reset` 提示                                         |
 | `骨架后核心加载失败`                   | 把已安装包的 `startCore` 换成抛错 shim：骨架可见、错误可见、退出 1、安装前缀恢复原状                  |
-| `Node 22.19（下限）里能启动`           | 先断言 `NANO_NODE_22` 真是 22.19.0 且 PATH 解析一致，再跑启动冒烟                                     |
-| `低于 22.19 拒绝启动并给可操作错误`    | 20.20 在入口打印可操作错误并退出 1                                                                    |
+| `Node 24.9+（下限）里能启动`           | 先断言 `NANO_NODE_24` 不低于 24.9.0 且 PATH 解析一致，再跑启动冒烟                                    |
+| `低于 24.9 拒绝启动并给可操作错误`     | 20.20 在入口打印可操作错误并退出 1                                                                    |
 | `升级`                                 | 装 0.2.1 后 `--version` 跟着变，再装回 0.2.0                                                          |
 | `普通卸载保留数据根`                   | bin 消失、数据根保留；重装后真 PTY 启动成功                                                           |
 | `keymap 文档与源码一致`                | `scripts/keymap-docs.mjs --check`                                                                     |
