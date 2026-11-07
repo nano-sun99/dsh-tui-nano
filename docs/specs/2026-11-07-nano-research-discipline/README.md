@@ -112,7 +112,7 @@ Do not edit or write files, change configuration, run formatters or code generat
 | 步 | 触发 → 响应 | 失败 / 空态 | 落点 · 依据 · 证据 |
 |---|---|---|---|
 | 1 常驻纪律 | 根 agent `start()` → 注册 `nano:research-discipline`(10140)，disposer 收进 `this.disposers` | 注册抛错 → `start()` 失败，不静默吞；agent 销毁 → disposer 解绑 | `controller.ts` `setup()`；依据 §2 行 1、6；证据 A1 |
-| 2 plan 覆盖 | 每次 boot `featureBootPatches()` 返回覆盖行 → 与官方 plan-mode 行按 id 合并 | 覆盖行缺 `section` 或 `section` 为空 → `dsh-plan-mode` 插件加载抛错、boot 失败；不会静默变成空引导 | `src/sessions/boot-patches.ts`；依据 §2 行 4、5；证据 A3 |
+| 2 plan 覆盖 | 每次 boot `featureBootPatches()` 返回覆盖行 → 与官方 plan-mode 行按 id 合并 | 覆盖行缺 `section` 或 `section` 为空 → `dsh-plan-mode` 插件激活失败并告警；它不是必需启动项，boot 仍可成功而 `planMode` 服务缺失，不能把 boot 返回当作覆盖生效 | `src/sessions/boot-patches.ts`；依据 §2 行 4、5；证据 A3 |
 | 3 行为生效 | 非平凡需求 → 模型先给五项清单并建议 `/plan`；plan 激活 → 五阶段文本渲染 | 模型跳过清单（软约束）→ 按 §6.2 B1/B2 记录并修订提示；plan 未激活 → `plan:policy` 空 | 提示层；依据 §7；证据 A1/A3/B1-B3 |
 | 4 回归 | 改完跑 `npm test` / `typecheck` / `lint` | 任一失败 → 不合并 | 仓库现有脚本；证据 A4 |
 
@@ -220,7 +220,7 @@ Do not edit or write files, change configuration, run formatters or code generat
 | 2 | 高 | 覆盖文本丢了 `todo_write` 禁令与 decision-complete 清单，弱化「不得用散文 / 问卷求批准」，且只要求一条验证命令、40 行上限 | §3.1② 重写，保留官方全部约束语义；Phase 4 用本仓 test/typecheck/lint；去掉 40 行硬上限 |
 | 3 | 高 | A1–A5 只证明文本装上，不证明「模型会先调研」 | §6 增加 B1–B3 真实会话证据；§1 明确即时证据、不设观察期 |
 | 4 | 高 | 调研漏了 Claude Code 2.1.88 的 `EnterPlanMode` 工具，把「建议 `/plan`」当成等价机制 | §2 补事实；§3.2 明确批次 1 不做、批次 2 评估；§6.2 B1 只判「建议 `/plan`」 |
-| 5 | 中 | §4 步 2 失败态写成「plan 引导为空」 | 改为插件加载抛错、boot 失败 |
+| 5 | 中 | §4 步 2 失败态写成「plan 引导为空」 | 改为插件加载抛错、boot 失败（其中「boot 失败」事实结论已被下方实施重审 R1 更正取代） |
 | 6 | 中 | A2 用「另建一个没 setup 的 agent」代理子 agent | A2 改为带 `parentAgent` 的真子 agent；§8 说明 |
 | 7 | 中 | §2/§8 的探针没有可复跑脚本 | 新增 §8.1 `probe-plan-section.mjs` 与 README 输出 |
 | 8 | 低 | Claude Code 引用行号偏差 | 修正为 `exploreAgent.ts:61-62`、`messages.ts:3233` |
@@ -233,3 +233,10 @@ Do not edit or write files, change configuration, run formatters or code generat
 | 15 | 提示 | B2 固定输入「修掉这个一行 bug」没有具体缺陷，transcript 不可复现 | 改为临时 worktree 固定一个 typo，文件 / 行写在 transcript 首行 |
 | 16 | 提示 | evidence README 复跑缺 `npm install` | 补 `npm install` 前提 |
 | 17 | 提示 | PR 正文 A3 漏「只经 `exit_plan_mode` 交审」 | PR 正文补上 |
+
+2026-11-07 实施重审 R1（用户选择重审，两份结论来自主 agent 派出的分身，非独立第三方；原文已贴 PR #175 评论）。用户随后选择「全改」并单独允许纠正已合并 spec 的失败态事实；两段定稿提示、生产代码、验收承诺均不变：
+
+| # | 严重度 | 发现 | 处置 |
+| --- | --- | --- | --- |
+| 18 | 中 | 主路步 2：缺失 / 空 section 导致 plan 插件激活失败，但该插件不是官方必需启动项，不能断言整个 boot 失败；属于既有 spec 误述 | §4 步 2 改为激活失败并告警、boot 仍可成功而 planMode 服务缺失；历史记录 #5 标注该事实结论被取代。未新增运行时硬闸 |
+| 19 | 低 | 主路步 3 / A3：证据 assemble 没传 step toolSet，比较的是注册工具视图，不能声称实际请求目录不变 | 脚本和 evidence README 改为 registered tool view unchanged，明确官方 exit_plan_mode 仍按条件披露；仅校准证据口径，不改变官方行为 |

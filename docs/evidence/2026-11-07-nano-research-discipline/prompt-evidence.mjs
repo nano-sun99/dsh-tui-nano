@@ -101,8 +101,10 @@ try {
     ['review rejection or abort stays in plan mode', /review rejects it[^\n]+unavailable or aborted, stay in plan mode/],
   ]
   for (const [name, pattern] of constraints) assert.match(policy, pattern, name)
-  assert.deepEqual(active.tools, inactive.tools, '切模式不得改工具目录')
-  console.log('A3 active plan: five phases; approved text matches; official constraints: 8/8; tool catalog unchanged')
+  // assemble 未传 toolSet，只检查注册视图，不声称本步实际披露的工具相同。
+  // 官方 exit_plan_mode 另有条件披露；§5.4 这里验证的是提示约束被保留。
+  assert.deepEqual(active.tools, inactive.tools, '切模式不改变已注册工具视图')
+  console.log('A3 active plan: five phases; approved text matches; official constraints: 8/8; registered tool view unchanged')
   await core.ctx.planMode.set(controller.agent, false)
   assert.equal((await assemble(controller.agent)).sections.find((s) => s.name === 'plan:policy')?.text, '')
   console.log('A3 deactivated plan:policy is empty: true')

@@ -44,7 +44,7 @@ spec 期探针复跑输出与上节一致。实施期脚本输出原文（已知
 A1 root nano sections: research -> question -> delegation; approved text matches
 A2 real child (parentAgent=root) has research discipline: false
 A3 inactive plan:policy is empty: true
-A3 active plan: five phases; approved text matches; official constraints: 8/8; tool catalog unchanged
+A3 active plan: five phases; approved text matches; official constraints: 8/8; registered tool view unchanged
 A3 deactivated plan:policy is empty: true
 implementation prompt evidence passed
 ```
@@ -53,7 +53,7 @@ implementation prompt evidence passed
 
 - A1：单测逐字断言注册正文与 order `10140 / 10145 / 10150`；脚本再检查真实组装顺序，并从获批 spec 的两个 `text` 代码块读取独立预期，逐字核对实际常驻段和 plan 段。
 - A2：用 `core.ctx.agents.create({ parentAgent: controller.agent, ... })` 创建真实子 agent，检查其真实组装结果；不是另建无 setup 的根 agent 冒充子 agent。
-- A3：检查 `plan:policy` 未激活为空、激活后全文替换、关闭后恢复为空；逐项核对八项官方提示约束，并比较模式切换前后的工具目录。
+- A3：检查 `plan:policy` 未激活为空、激活后全文替换、关闭后恢复为空；逐项核对八项官方提示约束，并比较模式切换前后的已注册工具视图。这里的 `assemble()` 没有传入本步 `toolSet`，因此不证明实际请求工具目录不变；官方 `exit_plan_mode` 在首次进入 plan 后才条件披露。本次只保留官方提示约束，不修改官方披露行为。
 - A5：两个脚本均已在实施工作区复跑；脚本失败会以非零退出，不用 stdout 文字冒充成功。
 
 ## 回归（A4）
@@ -97,3 +97,12 @@ B3 首轮在测试驱动的 300 秒时限内仍在只读调研，因此被驱动
 4. B3 新 root 先输入 `/plan`，再输入「给 nano 的会话列表增加按会话标题关键词筛选的功能，跨列表状态与界面等多个文件。请完成计划，先不要实施。」。等待真实 Plan review 卡；不要批准，核对末次模型 step 仅一个 `exit_plan_mode` 且文件未变，再退出。若驱动中断，复用同一个数据根和 root 恢复，不重复输入会切换状态的 `/plan`。
 
 两段提示仍是软约束，plan 模式不是权限或沙箱安全边界；本次三场证据只证明这些真实场景，不保证所有模型或所有后续回合都遵守。
+
+## 实施重审 R1 修订
+
+用户选择重审后，规格符合性与对抗两个分身各给一项发现（1 中、1 低，无阻断 / 高），原文见 PR #175 评论。用户随后选择「全改」并单独允许纠正已合并规格的失败态事实：
+
+- 旧 spec 的“section 缺失 / 为空会使整个 boot 失败”改为“plan 插件激活失败并告警，但非必需项失败不必阻断 boot”；旧审核记录对应结论标注被本次更正取代。没有新增运行时硬闸。
+- 组装证据输出改为 `registered tool view unchanged`，明确没有传入 step `toolSet`，不再把注册工具视图一致误说成实际请求目录一致。
+
+两段定稿提示、生产代码、A/B 验收承诺均未改变；无需伪造或重写 B1–B3 的真实模型输出。
