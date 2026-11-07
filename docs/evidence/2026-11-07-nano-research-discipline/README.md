@@ -1,14 +1,15 @@
 # 2026-11-07-nano-research-discipline 证据
 
-## spec 期探针（§9.1）
+## spec 期探针（§8.1）
 
 验证 profile 补丁能否按 id 整段替换官方 `plan-mode.section`，以及 plan 未激活时是否为空。
 
-前提：当前工作区已 `npm run build`（探针从 `dist/` 导入）。
+前提：fresh worktree 先 `npm install`；再 `npm run build`（探针从 `dist/` 导入）。
 
 命令：
 
 ```bash
+npm install
 npm run build
 node docs/evidence/2026-11-07-nano-research-discipline/probe-plan-section.mjs
 ```
