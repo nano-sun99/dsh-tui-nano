@@ -250,26 +250,39 @@ describe('ConversationController delivery', () => {
     expect(notice?.kind === 'notice' ? notice.text : '').toContain('提交失败：bad content')
   })
 
-  it('在根 agent 作用域注册提问纪律与委派纪律段', async () => {
+  it('在根 agent 作用域按顺序注册调研、提问与委派纪律段', async () => {
     const harness = makeHarness('idle')
     await harness.controller.start()
 
-    expect(harness.sections).toHaveLength(2)
-    expect(harness.sections[0]).toMatchObject({
+    expect(harness.sections).toHaveLength(3)
+    expect(harness.sections[0]).toEqual({
+      name: 'nano:research-discipline',
+      order: 10140,
+      interpolate: false,
+      text: `# Research before proposing
+When the user asks for a change, a feature, or a plan, ground it in the repository before proposing anything.
+- Read every file you intend to change, plus its callers and tests. Never propose changes to code you have not read.
+- Before proposing an approach, list what you found: the files that matter with paths, the existing functions or patterns to reuse, the call chain the change touches, the risks, and how you will verify the result.
+- Resolve discoverable facts by inspection. Do not ask the user where code lives or how current behavior works when you can find out.
+- If part of the codebase is still unexplored, name that part and say why it cannot change the answer. Never present an assumption as a finding.
+- "Non-trivial" means a new feature, a behavior change, a multi-file change, an architectural choice, or unclear scope. For non-trivial work, state that you recommend plan mode (\`/plan\`) before designing. Do not start editing until the list above is complete.
+- Skip the full list only for a one-line or other small local fix, a pure fact lookup, or when the user says to start immediately; even then, read the files first.`,
+    })
+    expect(harness.sections[1]).toMatchObject({
       name: 'nano:question-discipline',
       order: 10145,
       interpolate: false,
     })
-    expect(harness.sections[0].text).toContain('# Bias toward action')
-    expect(harness.sections[0].text).toContain(
+    expect(harness.sections[1].text).toContain('# Bias toward action')
+    expect(harness.sections[1].text).toContain(
       'Use ask_user_question only when the answer changes what gets built and cannot be derived from the code, config, or defaults.',
     )
-    expect(harness.sections[1]).toMatchObject({
+    expect(harness.sections[2]).toMatchObject({
       name: 'nano:delegation-responsiveness',
       order: 10150,
       interpolate: false,
     })
-    expect(harness.sections[1].text).toBe(
+    expect(harness.sections[2].text).toBe(
       "Delegated subagents run in the background. The runtime notifies you when one finishes; do not sleep, poll `list_agents`, or read a subagent's output file to check its progress. If you have no useful work left while they run, end your turn — the user can keep talking to you, and the completion notice will wake you in a later turn.",
     )
   })

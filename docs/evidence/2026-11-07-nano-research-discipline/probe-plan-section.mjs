@@ -1,4 +1,4 @@
-// spec 2026-11-07-nano-research-discipline §9.1 的 spec 期探针。
+// spec 2026-11-07-nano-research-discipline §8.1 的 spec 期探针。
 //
 // 真 boot 官方核心 + 真 ConversationController.start()，注入一个 marker 覆盖
 // plan-mode 的 section，然后分别组装 plan 未激活 / 激活时的系统提示：
