@@ -79,7 +79,7 @@ export class InfoPanel {
       this.loadFailed = String((error as Error)?.message ?? error)
       this.options.writeDiagnostic(`nano: 技能目录读取失败：${this.loadFailed}`)
     }
-    this.model = readModelIdentity(ctx)
+    this.model = readModelIdentity(ctx, this.options.getAgent())
     if (this.model) {
       const efforts = await readEfforts(ctx, this.model)
       if (efforts.length > 0) this.model = { ...this.model, efforts }
@@ -139,15 +139,17 @@ export class InfoPanel {
   }
 }
 
-/** 模型身份只认 `provider + model` 同时存在。 */
-export function readModelIdentity(ctx: any): ModelIdentity | undefined {
-  const selection = ctx.get('agentDefaultModel')?.currentSelection?.()
+/** 模型身份只认 `provider + model` 同时存在；会话记录值优先于 profile 默认值。 */
+export function readModelIdentity(ctx: any, agent?: any): ModelIdentity | undefined {
+  const live = agent?.model?.current?.()
+  const recorded = live?.provider && live?.model ? live : undefined
+  const selection = recorded ?? ctx.get('agentDefaultModel')?.currentSelection?.()
   const provider = String(selection?.provider ?? '')
   const model = String(selection?.model ?? '')
   if (provider === '' || model === '') return undefined
   const efforts = Array.isArray(selection?.efforts)
     ? (selection.efforts as string[])
-    : Array.isArray(ctx.get('agentDefaultModel')?.efforts)
+    : recorded === undefined && Array.isArray(ctx.get('agentDefaultModel')?.efforts)
       ? (ctx.get('agentDefaultModel').efforts as string[])
       : undefined
   return {

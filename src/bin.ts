@@ -22,8 +22,8 @@ const plain = commands.some((arg) =>
   ['--help', '-h', '--version', '-v', 'purge', '--purge'].includes(arg),
 )
 
-// S03 §2.1：engines 只警告，入口必须真拦。官方 dsh 0.2.2 起要求
-// Node >= 24.9（node:sqlite 等运行时能力），低于下限先给可操作的错误。
+// S03 §2.1：engines 只警告，入口必须真拦。官方 dsh 0.2.2 整包的
+// engines 就是 >=24.9.0（全树最严），nano 跟随，低于下限先给可操作的错误。
 type Semver = readonly [number, number, number]
 
 const MIN_NODE: Semver = [24, 9, 0]

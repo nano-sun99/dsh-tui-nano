@@ -184,7 +184,35 @@ export class ConversationController {
       )
     }
     if (resumed) this.replay(this.handle.agent.session)
+    await this.reconcileModelSelection(selection)
     this.attach()
+  }
+
+  /**
+   * 恢复会话时官方优先用会话日志里的模型选择；provider 被移除或模型下架后，
+   * 它会让每个回合都在请求阶段失败。启动后做一次有界的失效对账：
+   * 明确不可用才回退到 profile 默认，并留一条可见提示；超时不改。
+   */
+  private async reconcileModelSelection(fallback: ModelSelection): Promise<void> {
+    const recorded = this.agent?.model?.current?.() as ModelSelection | undefined
+    if (!recorded?.provider || !recorded?.model) return
+    if (recorded.provider === fallback.provider && recorded.model === fallback.model) return
+    const llm = this.options.ctx.get('llm')
+    if (typeof llm?.resolveModelInfo !== 'function') return
+    try {
+      await llm.resolveModelInfo(recorded.provider, recorded.model, AbortSignal.timeout(2000))
+    } catch (error) {
+      const name = (error as { name?: string } | undefined)?.name
+      if (name === 'TimeoutError' || name === 'AbortError') return
+      const agent = this.agent
+      if (typeof agent?.model?.select !== 'function') return
+      agent.model.select(fallback)
+      this.selection = fallback
+      this.model.appendNotice(
+        `会话记录的模型 ${recorded.provider}/${recorded.model} 不可用，已回退到默认模型 ${fallback.provider}/${fallback.model}。`,
+        'warning',
+      )
+    }
   }
 
   /** Rebuild the reading surface from the official message projection. */

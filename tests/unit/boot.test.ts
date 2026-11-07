@@ -119,6 +119,30 @@ describe('profile', () => {
     writeFileSync(join(dataRoot, 'profile', 'cordis.yml'), '')
     expect(() => ensureProfile(dataRoot, fakeOfficial())).toThrow(/0 字节/)
   })
+
+  it('removes retired list-agents rows and backs up cordis.yml', () => {
+    const dataRoot = tempDir()
+    const ensured = ensureProfile(dataRoot, fakeOfficial())
+    writeFileSync(
+      ensured.cordisPath,
+      [
+        '- id: keep',
+        '  name: keep',
+        '- id: tool-subagent-list-agents',
+        "  name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'",
+        '- id: tail',
+        '  name: tail',
+        '',
+      ].join('\n'),
+    )
+    ensureProfile(dataRoot, fakeOfficial())
+    const after = readFileSync(ensured.cordisPath, 'utf8')
+    expect(after).toContain('id: keep')
+    expect(after).toContain('id: tail')
+    expect(after).not.toContain('list-agents')
+    const backups = readdirSync(join(dataRoot, 'profile')).filter((name) => name.includes('.bak-'))
+    expect(backups.length).toBe(1)
+  })
 })
 
 describe('root identity', () => {

@@ -381,15 +381,11 @@ test('骨架后核心加载失败：恢复终端、可见错误、退出 1', () 
 const node24 = process.env.NANO_NODE_24
 const node20 = process.env.NANO_NODE_20
 
-test('Node 24.9+（下限）里能启动', { skip: node24 ? false : '未设置 NANO_NODE_24' }, () => {
+test('Node 24.9.0（下限）里能启动', { skip: node24 ? false : '未设置 NANO_NODE_24' }, () => {
   const actual = run(node24, ['-p', 'process.versions.node'], { env: baseEnv() })
   assert.equal(actual.status, 0, actual.stderr)
   const actualVersion = actual.stdout.trim()
-  const [major, minor] = actualVersion.split('.').map((part) => Number.parseInt(part, 10))
-  assert.ok(
-    major > 24 || (major === 24 && minor >= 9),
-    `NANO_NODE_24 必须 >= 24.9.0，实际 ${actualVersion}`,
-  )
+  assert.equal(actualVersion, '24.9.0', 'NANO_NODE_24 必须真的指向 24.9.0')
   const version = run(node24, [path.join(repoRoot, 'dist', 'bin.js'), '--version'], {
     env: baseEnv({ NANO_DATA_ROOT: ctx.dataRoot }),
   })

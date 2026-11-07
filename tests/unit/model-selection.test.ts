@@ -83,4 +83,32 @@ describe('模型选择（DSH 0.2.2 的 Agent 持有选择）', () => {
     ;(controller as any).selection = { provider: 'p', model: 'm0' }
     expect(controller.modelSelection).toEqual({ provider: 'p', model: 'm0' })
   })
+
+  it('恢复会话记录值不可用时回退 profile 默认并留可见提示', async () => {
+    const { controller, select } = makeController({
+      current: () => ({ provider: 'p', model: 'removed' }),
+      resolveModelInfo: async () => {
+        throw new Error('unknown model')
+      },
+    })
+    await (controller as any).reconcileModelSelection({ provider: 'p', model: 'm1' })
+
+    expect(select).toHaveBeenCalledWith({ provider: 'p', model: 'm1' })
+    const entries = (controller.model as any).entries as Array<{ kind: string; text?: string }>
+    expect(entries.some((entry) => entry.kind === 'notice' && entry.text?.includes('不可用'))).toBe(
+      true,
+    )
+  })
+
+  it('对账超时保留会话记录值，不误回退', async () => {
+    const timeout = Object.assign(new Error('timeout'), { name: 'TimeoutError' })
+    const { controller, select } = makeController({
+      current: () => ({ provider: 'p', model: 'slow' }),
+      resolveModelInfo: async () => {
+        throw timeout
+      },
+    })
+    await (controller as any).reconcileModelSelection({ provider: 'p', model: 'm1' })
+    expect(select).not.toHaveBeenCalled()
+  })
 })

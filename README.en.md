@@ -150,9 +150,15 @@ Display debugging: `NANO_TOOL_PREVIEW_LINES=4..2000` caps the total lines kept f
 - **Monitor `notify` costs money**: the default is `quiet` (official inject: does not wake the model or start a turn; content rides along with the next request and is billed there). Switching to `notify` wakes the model and incurs charges.
 - **Three behaviours differ from v1** (kept explicitly by the user on 2026-10-28): Monitor defaults to `quiet`; cold session rename takes the write lock (via a controlled restart); a failed permission switch keeps the old value and warns that it may have partially applied, so re-check `/permission`.
 - Only official dsh `0.2.2-rc.1` is accepted; unknown versions are refused, no guessing and no fallback.
-- **Web Fetch can reach private networks**: since official 0.2.2 it no longer rejects loopback and private addresses; restrict the network at the deployment side if needed. nano adds no extra blocking.
+- **Web Fetch can reach local and private networks**: see "Security boundary" below.
 - `@file` only inserts a path, it does not read the file; the model still has to call a file tool.
 - Hard kills, power loss and escaped descendant processes are not guaranteed to be cleaned up; nano only owns the process groups it started.
+
+### Security boundary: Web Fetch can reach local and private networks (confirmed by the user on 2026-11-07)
+
+Since official dsh 0.2.2, Web Fetch no longer rejects loopback and private addresses (for proxies and intranets). nano adds no extra blocking; this is a deliberate trade-off: the local TUI defaults to `danger-full-access`, and URL/IP blocklists cannot fully cover SSRF variants such as DNS rebinding, IPv6, or IPv4-mapped addresses.
+
+The cost: prompt injection can make the model read local or private-network HTTP services. If you need isolation, restrict the network yourself or run in a restricted environment.
 
 Full list: [`docs/release/0.2.0/known-limitations.md`](docs/release/0.2.0/known-limitations.md).
 

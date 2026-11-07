@@ -24,6 +24,11 @@ export interface ScheduleRow {
   readonly state: 'active' | 'inactive'
 }
 
+/**
+ * 只读门面：当前 nano 没有调度 UI，也没有挂 `dsh-tool-schedule`；这里保留
+ * `catalog()` 供测试和后续入口使用，不复制官方记录。`create` 的 target 语义
+ * （`this_session` / `new_once`）由官方负责，nano 不替它做默认值。
+ */
 export class ScheduleRuntime {
   private readonly options: ScheduleRuntimeOptions
   private disposeController: (() => void) | undefined

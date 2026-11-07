@@ -31,10 +31,10 @@ function childEnv(home, dshHome, port) {
   }
 }
 
-function startMock(mode) {
+function startMock(mode, extraEnv = {}) {
   const child = spawn(nodeBin, ['tests/e2e/mock-model.mjs'], {
     cwd: repoRoot,
-    env: { ...process.env, MOCK_SCRIPT: mode },
+    env: { ...process.env, MOCK_SCRIPT: mode, ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   return new Promise((resolve, reject) => {
@@ -68,6 +68,7 @@ function runChain({
   keysUntil,
   clickMarker,
   permissionMode = 'workspace-write',
+  sendWait = 20,
 }) {
   const home = mkdtempSync(path.join(os.tmpdir(), 'nano-main-'))
   const dshHome = path.join(home, '.dsh')
@@ -83,7 +84,7 @@ function runChain({
     '--send',
     send,
     '--send-wait',
-    '20',
+    String(sendWait),
     '--cwd',
     workspace,
     '--cols',
@@ -198,5 +199,30 @@ test('默认 bypass：不弹审批，bash 直接执行', async () => {
   } finally {
     if (mock) mock.child.kill('SIGKILL')
     rmSync(workspace, { recursive: true, force: true })
+  }
+})
+
+test('/model 切换后下一次请求真的带上新模型', async () => {
+  const workspace = mkdtempSync(path.join(os.tmpdir(), 'nano-main-ws-'))
+  const logDir = mkdtempSync(path.join(os.tmpdir(), 'nano-model-log-'))
+  const log = path.join(logDir, 'models.log')
+  let mock
+  try {
+    mock = await startMock('text', { MOCK_MODEL_LOG: log })
+    const { code, screen } = runChain({
+      port: mock.port,
+      mode: 'model-switch',
+      send: '/model deepseek-official/deepseek-v4-pro\nhello model switch',
+      workspace,
+      sendWait: 5,
+    })
+    assert.ok(code === 0 || code === 130, `退出码异常：${code}`)
+    assert.match(screen, /模型已切换：deepseek-official\/deepseek-v4-pro/)
+    assert.doesNotMatch(screen, /回合出错/)
+    assert.equal(readFileSync(log, 'utf8').trim().split('\n').at(-1), 'deepseek-v4-pro')
+  } finally {
+    if (mock) mock.child.kill('SIGKILL')
+    rmSync(workspace, { recursive: true, force: true })
+    rmSync(logDir, { recursive: true, force: true })
   }
 })
