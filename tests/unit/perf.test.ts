@@ -3,7 +3,7 @@
  * streaming p95 ≤50ms, resize p95 ≤80ms; 5000-line memory growth is bounded.
  */
 import { createElement } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { App, type AppSnapshot } from '../../src/app/App.tsx'
 import { DecisionManager } from '../../src/decisions/manager.ts'
 import { Renderer } from '../../src/render/renderer.ts'
@@ -148,8 +148,42 @@ describe('transcript performance', () => {
     }
     const growth = process.memoryUsage().heapUsed - before
     renderer.unmount()
-    return growth
+    // GC can reclaim older allocations; a shrinking heap is not negative growth.
+    return Math.max(0, growth)
   }
+
+  it.each([
+    // Captured from the failing full-suite run: GC shrank the small baseline.
+    {
+      name: 'treats GC-driven shrinkage as zero growth',
+      before: 62126864,
+      after: 39689976,
+      want: 0,
+    },
+    {
+      name: 'preserves measured positive growth',
+      before: 60423744,
+      after: 74638712,
+      want: 14214968,
+    },
+    {
+      name: 'does not cap growth above the 24 MiB budget',
+      before: 0,
+      after: 40 * 1024 * 1024,
+      want: 40 * 1024 * 1024,
+    },
+  ])('$name', ({ before, after, want }) => {
+    const snapshot = process.memoryUsage()
+    const memory = vi
+      .spyOn(process, 'memoryUsage')
+      .mockReturnValueOnce({ ...snapshot, heapUsed: before })
+      .mockReturnValueOnce({ ...snapshot, heapUsed: after })
+    try {
+      expect(scrollGrowth(500)).toBe(want)
+    } finally {
+      memory.mockRestore()
+    }
+  })
 
   it('keeps per-frame memory growth independent of transcript length', () => {
     const small = scrollGrowth(500)
