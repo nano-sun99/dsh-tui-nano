@@ -2,13 +2,14 @@
 
 - 组标识：`2026-11-07-nano-research-discipline`
 - 角色：单份 spec（批次 1）；批次 2「只读 research 子代理」不在本 spec，另立
-- 状态：方案中（实施版，待审）
+- 状态：实施中（代码与证据就绪，待实施审核）
+- Issue：#174
 - 结构：不拆——1 份 spec + 1 张执行 issue
 - 机制范围：**2 个提示层机制**——① 新增根 agent 常驻段 `nano:research-discipline`；② 覆盖官方 `plan-mode` 的 `section` 配置。无新增运行时机制、无新依赖、不改工具目录
 - 上游：Claude Code 2.1.88 源码调研（`~/Downloads/归档/06-软件与安装包/ClaudeCode/src`）；nano 既有 `nano:question-discipline`（[ADR-20261103](../../decisions/2026-11-03-question-trigger-discipline.md)）、`nano:delegation-responsiveness`
 - 替代关系：无——不改旧 spec；与 `2026-10-30-nano-main-agent-responsive` 的委派纪律并列，不重叠
 - ADR：本次新增 [ADR-20261107-research-discipline](../../decisions/2026-11-07-research-discipline.md)
-- 下游：spec 合并后开执行 issue；批次 2 另开
+- 下游：执行 issue #174；批次 2 另开
 
 ## 1. 目标
 

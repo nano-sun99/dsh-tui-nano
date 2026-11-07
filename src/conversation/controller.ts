@@ -40,6 +40,16 @@ export function deliveryNotice(delivery: SubmitResult['delivery']): string | und
 const DELEGATION_GUIDANCE =
   "Delegated subagents run in the background. The runtime notifies you when one finishes; do not sleep, poll `list_agents`, or read a subagent's output file to check its progress. If you have no useful work left while they run, end your turn — the user can keep talking to you, and the completion notice will wake you in a later turn."
 
+/** 调研纪律（ADR-20261107-research-discipline），仅装在根 agent 作用域。 */
+const RESEARCH_DISCIPLINE = `# Research before proposing
+When the user asks for a change, a feature, or a plan, ground it in the repository before proposing anything.
+- Read every file you intend to change, plus its callers and tests. Never propose changes to code you have not read.
+- Before proposing an approach, list what you found: the files that matter with paths, the existing functions or patterns to reuse, the call chain the change touches, the risks, and how you will verify the result.
+- Resolve discoverable facts by inspection. Do not ask the user where code lives or how current behavior works when you can find out.
+- If part of the codebase is still unexplored, name that part and say why it cannot change the answer. Never present an assumption as a finding.
+- "Non-trivial" means a new feature, a behavior change, a multi-file change, an architectural choice, or unclear scope. For non-trivial work, state that you recommend plan mode (\`/plan\`) before designing. Do not start editing until the list above is complete.
+- Skip the full list only for a one-line or other small local fix, a pure fact lookup, or when the user says to start immediately; even then, read the files first.`
+
 /** 提问纪律（ADR-20261103-question-trigger-discipline），与 Claude Code 同义。 */
 const QUESTION_DISCIPLINE = `# Bias toward action
 Act on your best judgment rather than asking for confirmation.
@@ -147,6 +157,13 @@ export class ConversationController {
     const setup = (agentCtx: any) => {
       // 0.2.2 起模型选择由 Agent 自己持有（agent.model），这里只装「换模型」提示。
       official.agent.installModelSelection(agentCtx)
+      const disposeResearch = agentCtx.systemPrompt.section({
+        name: 'nano:research-discipline',
+        order: 10140,
+        interpolate: false,
+        text: RESEARCH_DISCIPLINE,
+      })
+      if (typeof disposeResearch === 'function') this.disposers.push(disposeResearch)
       const disposeQuestion = agentCtx.systemPrompt.section({
         name: 'nano:question-discipline',
         order: 10145,
