@@ -11,12 +11,13 @@ import { ConversationController } from '../../../dist/conversation/controller.js
 import { featureBootPatches } from '../../../dist/sessions/boot-patches.js'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
+// 常驻正文的预期读现行 spec §5.1（旧 spec 已冻结）；plan 段归官方，不逐字钉。
 const spec = readFileSync(
-  new URL('../../specs/2026-11-07-nano-research-discipline/README.md', import.meta.url),
+  new URL('../../specs/2026-11-10-prompt-only-research/README.md', import.meta.url),
   'utf8',
 )
 const approved = [...spec.matchAll(/```text\n([\s\S]*?)\n```/g)].map((match) => match[1])
-assert.equal(approved.length, 2, 'spec 必须给出两段定稿文本')
+assert.equal(approved.length, 1, 'spec 必须给出一段定稿文本')
 const base = mkdtempSync(path.join(os.tmpdir(), 'nano-research-evidence-'))
 const dataRoot = path.join(base, 'data')
 const home = path.join(base, 'home')
@@ -86,25 +87,12 @@ try {
   const active = await assemble(controller.agent)
   const policy = active.sections.find((section) => section.name === 'plan:policy')?.text
   assert.ok(policy)
-  assert.ok(policy.includes('Phase 1 — Explore'))
-  assert.equal(policy.includes('Explore first.'), false)
-  assert.equal(policy, approved[1], 'plan 覆盖正文必须与获批 spec 逐字一致')
-  // §5.4 的约束独立列出，防止覆盖时语义回退。
-  const constraints = [
-    ["conversational agreement does not approve", /conversational agreement[^\n]+approves nothing/],
-    ['read-only planning', /Do not edit or write files, change configuration,[^\n]+carry out the plan/],
-    ['stable tool catalog', /tool catalog stays the same across modes[^\n]+override any later tool description or guidance/],
-    ['no todo_write', /Do not use todo_write to track this planning phase/],
-    ['decision-complete plan', /decision-complete:[^\n]+tests, acceptance criteria, and explicit assumptions/],
-    ['exit_plan_mode only and final', /Call exit_plan_mode[^\n]+only and final tool call/],
-    ['no prose or question approval', /Do not paste the final plan as a plain reply[^\n]+prose or ask_user_question/],
-    ['review rejection or abort stays in plan mode', /review rejects it[^\n]+unavailable or aborted, stay in plan mode/],
-  ]
-  for (const [name, pattern] of constraints) assert.match(policy, pattern, name)
+  assert.ok(policy.includes('Explore first.'), 'plan 段必须回到官方引导')
+  assert.equal(policy.includes('Phase 1 — Explore'), false, '不得再出现我们的五阶段覆盖')
+  // 官方 plan 文本不归我们逐字钉：这里只证明覆盖已撤回、官方引导在位。
   // assemble 未传 toolSet，只检查注册视图，不声称本步实际披露的工具相同。
-  // 官方 exit_plan_mode 另有条件披露；§5.4 这里验证的是提示约束被保留。
   assert.deepEqual(active.tools, inactive.tools, '切模式不改变已注册工具视图')
-  console.log('A3 active plan: five phases; approved text matches; official constraints: 8/8; registered tool view unchanged')
+  console.log('A3 active plan: official guidance; no Phase marker; registered tool view unchanged')
   await core.ctx.planMode.set(controller.agent, false)
   assert.equal((await assemble(controller.agent)).sections.find((s) => s.name === 'plan:policy')?.text, '')
   console.log('A3 deactivated plan:policy is empty: true')
