@@ -2,14 +2,14 @@
 
 - 组标识：`2026-11-10-prompt-only-research`
 - 角色：单份 spec
-- 状态：方案期（待审）
-- Issue：待开
+- 状态：实施完成（PR #180）
+- Issue：[#179](https://github.com/nano-sun99/dsh-tui-nano/issues/179)
 - 结构：不拆——1 份 spec + 1 张执行 issue
 - 机制范围：**2 处提示层改动**——① 改写根 agent 常驻段 `nano:research-discipline`；② 删除 `plan-mode` 的 `section` 覆盖，plan 回到官方引导。无运行时机制、无新依赖、不改工具目录
 - 上游：用户 2026-11-10 原话「那大家都没有我也不折腾了，那我们就和 claude code一样只做提示词工程吧，然后撤回plan的我们继续做」；Claude Code 2.1.88、Codex `main`、ZCode `v3.17.2` 调研；[ADR-20261107-research-discipline](../../decisions/2026-11-07-research-discipline.md)（本次被取代）
 - 替代关系：取代 [2026-11-07-nano-research-discipline](../2026-11-07-nano-research-discipline/README.md) 的 ②（plan 五阶段覆盖）；① 常驻段沿用位置与 order，文案重写
 - ADR：新增 [ADR-20261110-prompt-only-research](../../decisions/2026-11-10-prompt-only-research.md)，取代 ADR-20261107
-- 下游：执行 issue 待开
+- 下游：[执行 issue #179](https://github.com/nano-sun99/dsh-tui-nano/issues/179)；[实施 PR #180](https://github.com/nano-sun99/dsh-tui-nano/pull/180)
 
 ## 1. 目标
 

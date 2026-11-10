@@ -83,37 +83,55 @@ implementation prompt evidence passed
 
 ## 真实 TUI 行为证据（B1 / B2）
 
-**结论：B1 / B2 本次「未执行」**，没有可判读的 transcript。按 spec §7.2 的规矩，没有真会话就标未执行，不拿假 transcript 代替。
+2026-11-10 在本机实跑，**建模真实模型会话**：Node 24.18.0、官方 dsh 0.2.2-rc.1、本 PR 构建的 `dist/bin.js`；
+真实 `deepseek-official/deepseek-flash`（effort `max`，取自本机真实 profile 的默认值）。
+驱动走**本仓自己的 `tests/e2e/pty-start.py`**：无头真 PTY（48×120），不开窗口、不抢焦点、不动剪贴板；
+临时 `NANO_DATA_ROOT` / `DSH_HOME` 与凭据临时副本，不写真实 profile 与会话，结束后删除临时副本。
+两个场景都在 `origin/main`（`913d151`）的临时 detached worktree 里跑，工作区不含本次实现的改动。
 
-### 跑过什么
-
-2026-11-10 在本机实跑，环境：Node 24.18.0、官方 dsh 0.2.2-rc.1、本 PR 构建的 `dist/bin.js`；
-真实模型 `deepseek-official/deepseek-flash`（effort `max`，取自本机真实 profile 的默认值）；
-驱动方式是真 nano TUI + 自动化 PTY（`expect`，控制终端 48×120），临时 `NANO_DATA_ROOT` / `DSH_HOME`
-与凭据临时副本，不写真实 profile 与会话。
-
-| 次数 | 场景 | 结果 |
+| 场景 | 结果 | 证据 |
 | --- | --- | --- |
-| 1 | B1 输入，cwd = 本 PR 工作区 | 跑到 step 12 / 22 个工具调用后被固定等待的 Ctrl+C 打断（`turn/end reason: aborted by user`），没有最终正文；且工作区带着本次未提交的实现改动，不构成 B1 证据 |
-| 2 | B1 输入，cwd = `origin/main` 的临时 detached worktree，上限 900 秒 | 会话日志只有 `turn/start` + 1 个 `step/start`：**0 条 assistant 消息、0 个工具调用**；900 秒到点收尾（`turn/end`: `aborted by user`，+904s） |
-| 3 | 对照组「只回一句 ok」 | 拿到 assistant 正文 `ok`，说明 TUI、凭据与模型通道本身可用 |
-| 4 | 对照组：一句中等调研请求（读一个文件并回列表） | 184 秒内 0 条 assistant 消息、0 个工具调用 |
+| B1 非平凡：「给 nano 加一个跨 2–3 个文件的功能，先别改代码」 | **部分满足**：研究真做了、路径与行号都有，但五类面不齐（缺显式的上游 / 下游 / 数据层 / 验证）；不推荐 `/plan`；没把假设当发现 | [session-b1.md](session-b1.md) |
+| B2 小改：「把这个 typo 修掉：README.en.md 第 3 行的 termianl 应为 terminal。」 | **通过**：先 `read` 再 `edit`，没有五类面仪式，不推荐 `/plan`，修完 `git status` 为空 | [session-b2.md](session-b2.md) |
 
-第 2/4 次说明：需要读文件的研究类请求在本次运行期间没有返回任何流式内容（连推理增量都没有），
-而同一环境下的短问答正常。**这是环境侧的失败，不是「软约束正常」的证据，也不能反过来说新提示无效。**
-另外三次运行里都没观察到 `turn/end` 自行出现，所以判定回合结束用的是「事件流静默 N 秒 + 到点 Ctrl+C」，
-不是官方回合结束事件；这条偏差一并记在这里。
+### B1 细节
 
-### 手工复跑步骤（B1 / B2 的判定仍待真实会话）
+9 个 step / 16 次工具调用：先看 git 状态与仓库结构，读 `AGENTS.md` 与 `package.json`，再定位
+`src/input/keymap.ts`、`src/controls/feature-host.ts`、`src/app/nano-app.ts` 的分发路径，最后用
+`ask_user_question` 问「要加哪个功能」。可见正文（seq 105）给了三处改动落点并带行号
+（`src/app/nano-app.ts:352`、`src/controls/feature-host.ts` 的 `dispatchAction` 与 `:346` 的斜杠命令入口），
+符合「改动落点 + 路径 + 实际读过」，但**没有**逐条写出上游 / 下游 / 数据层 / 验证方式，所以按 spec §7.2
+判**不算通过**。回合停在问卷卡上，PTY 到点 Ctrl+C 收尾，日志里没有 `turn/end`。
 
-1. `npm ci && npm run build`；在临时目录建立独立 `DSH_HOME`、`NANO_DATA_ROOT`，只把凭据复制进临时 `DSH_HOME`
-   （`~/.dsh/.credentials.yaml` 与 `~/.dsh-tui-nano/profile`），不复制真实会话；结束后删除临时副本，别把凭据提交进仓库。
-2. 用真实终端运行 `<repo>/dist/bin.js`；`/model` 选与本次记录一致的模型与 effort。
-3. **B1**：在一个干净的 `origin/main` 检出目录里开新 root，输入「给 nano 加一个跨 2–3 个文件的功能，先别改代码」。
-   判据见 spec §7.2：给方案前出现五类面清单、每项带路径、没有「假设当发现」、不推荐 `/plan`。
-4. **B2**：另开临时 detached worktree，把 `README.en.md` 第 3 行的 `terminal` 植入为 `termianl`；在该目录运行同一构建，
-   输入「把这个 typo 修掉：README.en.md 第 3 行的 termianl 应为 terminal。」。判据：不摆五类面仪式，仍先读该文件再改，
-   修完 `git status` 为空。
+这是提示层的软约束漏项，不是运行时回归：spec §4 主路第 3 行对这种情形的要求是「记入 B1/B2，修订提示，不新增机制」。
+要不要现在就改文案（会动到 spec §5.1 的定稿文本）是用户的决定，本次不擅自改。
+
+### B2 细节
+
+5 个 step / 4 次工具调用，顺序是 `read README.en.md` → `grep termianl`（确认全仓范围）→ `edit` 改那一行 →
+复读 `sed` + `grep` 核验。`turn/end` 为 `completed`；运行后 `git status` 空、第 3 行是
+`**A minimal, restrained terminal interface for DeepSeek Harness.**`，没有动其他文件。
 
 DB 面：本仓没有数据库 fixture，**B1/B2 本来就不覆盖 Data 行**；只由 A1 证明文本在。需要 DB 证据时在带 storage 的仓库另测，
 不在本 spec 承诺。
+
+### 复跑
+
+```bash
+npm ci && npm run build
+mkdir -p <root>/data <root>/home/.dsh
+cp -R ~/.dsh-tui-nano/profile <root>/data/profile
+cp ~/.dsh/.credentials.yaml <root>/home/.dsh/.credentials.yaml
+git worktree add --detach /tmp/nano-b1-tree origin/main
+NANO_DATA_ROOT=<root>/data DSH_HOME=<root>/home/.dsh \
+  python3 tests/e2e/pty-start.py --out <root>/screen.raw --rows 48 --cols 120 \
+  --cwd /tmp/nano-b1-tree --wait 25 --send "<场景输入>" --send-wait 420 --exit-wait 15 \
+  -- node "$PWD/dist/bin.js"
+zstd -dc <root>/data/sessions/*/*/session.v4.jsonl.zstd > <root>/session.jsonl
+```
+
+B2 先把 `README.en.md` 第 3 行的 `terminal` 改成 `termianl`，跑完核对 `git -C /tmp/nano-b2-tree status` 应为空。
+临时目录与凭据副本用完即删，不要提交进仓库。
+
+> 过程记录：本轮早前用 `expect` 驱动时，研究类请求出现过两次「请求已受理但长时间无任何流式返回」（420 秒 / 900 秒都停在 1 个 step），
+> 同一环境短问答正常；改用本仓 `pty-start.py` 后两个场景都正常跑完。那两次失败不作为「软约束正常」的证据，也不计入本节判定。
