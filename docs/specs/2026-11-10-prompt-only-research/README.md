@@ -28,17 +28,17 @@
 
 | 事实 | 证据 |
 |---|---|
-| 0.2.5 用一段自养文本整段替换官方 plan 引导（五阶段） | `src/sessions/boot-patches.ts:30-43`（常量）、`:63-67`（补丁项） |
-| 常驻纪律只有「五项清单」，没有数据层，也没有证据形态要求 | `src/conversation/controller.ts:44-51` |
-| 常驻纪律最后一条教模型「非平凡就建议 `/plan`」 | `controller.ts:50` |
+| 0.2.5 用一段自养文本整段替换官方 plan 引导（五阶段） | `src/sessions/boot-patches.ts:31-43`（常量）、`:64-67`（补丁项） |
+| 常驻纪律已有「五项清单 + 路径 + 未读声明 + 不把假设当发现」；缺的是数据层、逐项绑定「实际读过」、以及有备选时的取舍 | `src/conversation/controller.ts:44-51`（`:47` 路径、`:49` 未读与假设） |
+| 常驻纪律第 5 条（6 条中）教模型「非平凡就建议 `/plan`」 | `controller.ts:50` |
 | 单测逐字钉住旧文本；证据脚本断言 plan 段含 `Phase 1 — Explore` | `tests/unit/conversation-delivery.test.ts:259-269`；`docs/evidence/2026-11-07-nano-research-discipline/prompt-evidence.mjs:89` |
 | 0.2.5 的 B1–B3 证据只覆盖旧文案，且 B3 依赖用户主动进 `/plan` | `docs/evidence/2026-11-07-nano-research-discipline/README.md` |
 | 主流 agent 都没有「影响面必读」机制：CC 靠 plan + Explore 子代理；Codex 的 plan 模板是三段对话式；ZCode 同样是 `EnterPlanMode` / `ExitPlanMode` + hooks | CC `utils/messages.ts:3235-3292`；Codex `codex-rs/collaboration-mode-templates/templates/plan.md`；ZCode `apps/zcode-cli/docs/usage/04-tools.md` |
-| dsh 有可用的工具级拦截点（`ctx.tools.guard`），旧 ADR「没有可靠拦截点」的结论不成立 | 2026-11-10 探针：守卫拦 `write` 返回 `Error: probe-guard: …`，`read` 放行（脚本未入库） |
+| dsh 有可用的工具级拦截点（`ctx.tools.guard`），旧 ADR「没有可靠拦截点」的结论不成立 | API：`dsh-tools/lib/types/index.d.ts:136`；行为：2026-11-10 本地探针（未入库，不可在仓库复核）：守卫拦 `write` 返回自定义理由、`read` 放行 |
 
 根因两条：
 
-- 现有文案只要求「列清单」，没定义清单必须包含**数据层**、也没要求**证据形态**，模型可以用「看了下」糊过去。
+- 现有文案没有要求**数据层**，没有把每项绑定到「实际读过」，也没有要求在有备选时说明取舍；模型可以用「看了下」糊过去。
 - 调研被绑进 plan 模式，而用户从不使用 `/plan`：收益≈0，维护成本>0（每次升 dsh 要人工对一次覆盖文本）。
 
 ## 3. 范围与边界
@@ -52,10 +52,15 @@
 **③ 测试与证据**：
 
 - `tests/unit/conversation-delivery.test.ts`：三段顺序不变，逐字断言改新文本。
-- `docs/evidence/2026-11-07-nano-research-discipline/prompt-evidence.mjs`：plan 段断言改为「命中官方 `Explore first.`、不命中 `Phase 1 — Explore`」，并在该 evidence README 记一句「0.2.5 的覆盖已被 2026-11-10 决定撤回」。
+- `docs/evidence/2026-11-07-nano-research-discipline/prompt-evidence.mjs`（旧脚本，必须一起改，否则实施后必红）：
+  - `:64` 的 `approved[0]` 改为从**本 spec §5.1** 的 `text` 块读取常驻正文，不再读旧 spec。
+  - `:89`–`:91` 改为：命中官方 `Explore first.`、不命中 `Phase 1 — Explore`；**删除** `assert.equal(policy, approved[1])`（官方文本不归我们逐字钉）。
+  - 同段 `constraints` 8 条是给旧覆盖写的，其中 `Call exit_plan_mode…` 等大小写/措辞只对旧文成立；**整块删除**，只保留 `Explore first.` 与「不含 Phase 标记」两条。
+  - 日志文案同步（`five phases` → `official guidance`）；该 evidence README 记一句「0.2.5 的覆盖已被 2026-11-10 决定撤回，B1–B3 transcript 保留为历史」。
 - 新增 `docs/evidence/2026-11-10-prompt-only-research/prompt-evidence.mjs`：真 boot + 真 `ConversationController.start()`，断言 A1/A2/A3。
+- 新增 `docs/evidence/2026-11-10-prompt-only-research/README.md`：复跑命令与预期输出原文块（A5 的比对对象）。
 
-**④ 文档**：新增本 spec、新 ADR；旧 ADR 只改状态与「被取代」链接，正文不动。
+**④ 文档**：新增本 spec、新 ADR；旧 ADR 只改状态与「被取代」链接，正文不动。旧 spec 正文冻结不回写，取代关系只在新 spec 与新 ADR 记录。
 
 ### 3.2 本次不做
 
@@ -92,7 +97,7 @@ When the user asks for a change, a feature, or a plan, map the impact surface in
 - Skip the full map only for a one-line or other small local fix, a pure fact lookup, or when the user says to start immediately; even then, read the files first.
 ```
 
-字符数 1,401（旧文本 927，+474 ≈ +120 tokens/请求）。
+字符数 1,401（旧模板展开后 1,171，+230 ≈ +58 tokens/请求）。
 
 ### 5.2 plan 段
 
@@ -115,7 +120,7 @@ When the user asks for a change, a feature, or a plan, map the impact surface in
 - **A2** 真实子 agent（`parentAgent` 创建）的 sections 不含 `nano:research-discipline`。
 - **A3** plan 未激活：`plan:policy` 为空；激活后：命中官方 `Explore first.`、不命中 `Phase 1 — Explore`；关闭后再次为空。
 - **A4** `npm test`、`npm run typecheck`、`npm run lint` 通过。
-- **A5** `docs/evidence/2026-11-10-prompt-only-research/prompt-evidence.mjs` 可复跑，输出与 evidence README 记录一致。
+- **A5** `docs/evidence/2026-11-10-prompt-only-research/prompt-evidence.mjs` 可复跑，输出与该目录 `README.md` 记录的输出块一致；旧脚本改完后同样可复跑。
 
 ### 7.2 行为验收（真实会话，同单证据）
 
@@ -131,7 +136,7 @@ DB 面：本仓没有数据库 fixture，**B1/B2 不覆盖 Data 行**；只由 A
 ## 8. 风险与回退
 
 - **纯提示，无强制**：模型仍可能跳过清单。这是用户 2026-11-10 明确接受的口径；不把一次失败解释成「软约束正常」，按 B1/B2 记录并改提示。
-- **文本变长**：常驻段 927 → 1,401 字符（+474，约 +120 tokens/请求）。
+- **文本变长**：常驻段 1,171 → 1,401 字符（+230，约 +58 tokens/请求）。
 - **失去的三条提醒**：撤覆盖后不再有「至少两个方案 / 复核关键文件 / 写验证命令」的分阶段提醒；新文案用「name the trade-off」与「Verification」两行承接，强度弱于原五阶段。
 - **官方行为变化**：plan 文本回到上游，dsh 升级时自动跟随，不再需要人工对齐我们那段覆盖。
 - **回退**：恢复 `PLAN_GUIDANCE` 与补丁项 + 旧文案，一次 revert 即可。
