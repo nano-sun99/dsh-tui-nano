@@ -76,6 +76,9 @@ const createReconciler = Reconciler as unknown as (config: unknown) => Reconcile
  */
 const MEASURE_SWEEP_FRAMES = 60
 
+/** 动画节拍默认值；由 `nano-app` 用同一个常量注入（spec §5.2）。 */
+export const DEFAULT_ACTIVITY_INTERVAL_MS = 33
+
 export interface RendererOptions {
   readonly write: (bytes: string) => void
   readonly width: number
@@ -83,6 +86,8 @@ export interface RendererOptions {
   readonly defaultFg: Rgb
   /** Called when a rendered frame fails; keeps the process alive but visible. */
   readonly onError?: (error: unknown) => void
+  /** 纯动画帧的节拍；与内容刷新共用同一个常量。 */
+  readonly activityIntervalMs?: number
 }
 
 export class Renderer {
@@ -93,7 +98,7 @@ export class Renderer {
   private previous: Screen | undefined
   private width: number
   private height: number
-  private scheduled = false
+  private scheduled: NodeJS.Immediate | undefined
   private mounted = false
   private readonly write: (bytes: string) => void
   private readonly defaultFg: Rgb
@@ -104,6 +109,7 @@ export class Renderer {
   private readonly activityPlayer = new ActivityImagePlayer()
   private activityImage: ActivityImage | undefined
   private activityTimer: NodeJS.Timeout | undefined
+  private readonly activityIntervalMs: number
   private graphics: () => ActivityGraphics | undefined = () => undefined
   private activityStopped = false
   private framesSinceSweep = 0
@@ -116,6 +122,10 @@ export class Renderer {
     this.write = options.write
     this.defaultFg = options.defaultFg
     this.onError = options.onError
+    this.activityIntervalMs = Math.max(
+      1,
+      options.activityIntervalMs ?? DEFAULT_ACTIVITY_INTERVAL_MS,
+    )
     this.rootYoga = Yoga.Node.create()
     this.rootYoga.setFlexDirection(FlexDirection.Column)
     this.container = {
@@ -143,12 +153,17 @@ export class Renderer {
     this.commit(element)
   }
 
-  update(element: ReactNode): void {
+  /**
+   * `immediate` 跳过 `setImmediate` 合并，直接画出这一帧：输入回显、滚动、
+   * resize、退出与审批 / 问卷卡的出现和消失都不该等一个合并窗口（§5.2）。
+   */
+  update(element: ReactNode, options: { readonly immediate?: boolean } = {}): void {
     if (!this.mounted) {
       this.mount(element)
       return
     }
     this.commit(element)
+    if (options.immediate === true) this.paintNow()
   }
 
   unmount(): void {
@@ -207,16 +222,28 @@ export class Renderer {
   }
 
   private scheduleFrame(): void {
-    if (this.scheduled) return
-    this.scheduled = true
-    setImmediate(() => {
-      this.scheduled = false
+    if (this.scheduled !== undefined) return
+    this.scheduled = setImmediate(() => {
+      this.scheduled = undefined
       try {
         this.frame()
       } catch (error) {
         this.reportError(error)
       }
     })
+  }
+
+  /** 立刻画一帧；顺手撤掉排队中的那一帧，避免同一内容画两次。 */
+  private paintNow(): void {
+    if (this.scheduled !== undefined) {
+      clearImmediate(this.scheduled)
+      this.scheduled = undefined
+    }
+    try {
+      this.frame()
+    } catch (error) {
+      this.reportError(error)
+    }
   }
 
   private reportError(error: unknown): void {
@@ -267,47 +294,9 @@ export class Renderer {
     this.applySelection(screen)
     const bytes = encodeDiff(this.previous, screen)
     this.previous = screen
-    let imageBytes = ''
-    if (!this.activityStopped) {
-      try {
-        imageBytes = this.activityPlayer.paint(
-          this.activityImage,
-          this.graphics(),
-          /^(1|true)$/iu.test(process.env.NANO_REDUCED_MOTION ?? ''),
-          Date.now(),
-        )
-      } catch {
-        imageBytes = this.activityPlayer.disable()
-      }
-    }
     if (bytes !== '') this.write(bytes)
-    if (imageBytes !== '') {
-      try {
-        this.write(imageBytes)
-      } catch {
-        const clear = this.activityPlayer.disable()
-        try {
-          if (clear) this.write(clear)
-        } catch {
-          /* Best effort; the agent keeps running. */
-        }
-      }
-    }
-    if (this.activityTimer) clearTimeout(this.activityTimer)
-    this.activityTimer = undefined
-    if (
-      !this.activityStopped &&
-      this.activityImage &&
-      this.graphics() &&
-      !this.activityPlayer.disabled &&
-      !/^(1|true)$/iu.test(process.env.NANO_REDUCED_MOTION ?? '')
-    ) {
-      this.activityTimer = setTimeout(() => {
-        this.activityTimer = undefined
-        this.scheduleFrame()
-      }, 26)
-      this.activityTimer.unref()
-    }
+    const imageBytes = this.writeActivity()
+    this.scheduleActivity()
     const cell = this.cursorCell as { row: number; col: number } | undefined
     if (cell) {
       const row = Math.min(Math.max(0, Math.floor(cell.row)), this.height - 1)
@@ -321,6 +310,69 @@ export class Renderer {
       // Writes without a marker move the physical cursor; force a re-park next time.
       this.lastCursorCell = undefined
     }
+  }
+
+  /**
+   * 纯动画帧：只重发鲸鱼图，复用上一帧算好的图片坐标（§5.2）。
+   * 不跑 React、不重算 layout、不重建 screen、不 diff。
+   */
+  private animationFrame(): void {
+    if (!this.mounted || this.activityStopped) return
+    this.writeActivity()
+    this.scheduleActivity()
+  }
+
+  /** 只把鲸鱼图那一块重发一次；没有新帧就不写。 */
+  private writeActivity(): string {
+    if (this.activityStopped) return ''
+    let bytes: string
+    try {
+      bytes = this.activityPlayer.paint(
+        this.activityImage,
+        this.graphics(),
+        /^(1|true)$/iu.test(process.env.NANO_REDUCED_MOTION ?? ''),
+        Date.now(),
+      )
+    } catch {
+      bytes = this.activityPlayer.disable()
+    }
+    if (bytes === '') return ''
+    try {
+      this.write(bytes)
+    } catch {
+      const clear = this.activityPlayer.disable()
+      try {
+        if (clear) this.write(clear)
+      } catch {
+        /* Best effort; the agent keeps running. */
+      }
+    }
+    return bytes
+  }
+
+  private scheduleActivity(): void {
+    if (this.activityTimer) clearTimeout(this.activityTimer)
+    this.activityTimer = undefined
+    if (!this.shouldAnimate()) return
+    this.activityTimer = setTimeout(() => {
+      this.activityTimer = undefined
+      try {
+        this.animationFrame()
+      } catch (error) {
+        this.reportError(error)
+      }
+    }, this.activityIntervalMs)
+    this.activityTimer.unref()
+  }
+
+  private shouldAnimate(): boolean {
+    return (
+      !this.activityStopped &&
+      this.activityImage !== undefined &&
+      this.graphics() !== undefined &&
+      !this.activityPlayer.disabled &&
+      !/^(1|true)$/iu.test(process.env.NANO_REDUCED_MOTION ?? '')
+    )
   }
 
   private syncRootChildren(): void {
@@ -449,7 +501,7 @@ export class Renderer {
   private paintText(node: TextNode | RawTextNode, screen: Screen, clip: Rect): void {
     const width = Math.max(1, Math.floor(node.width))
     const wrap = node.kind === 'text' ? (node.props.wrap ?? true) : true
-    const lines = wrap && node.text.length > 0 ? wrapText(node.text, width) : node.text.split('\n')
+    const lines = wrappedLines(node, width, wrap)
     const style = mergeStyle({ fg: this.defaultFg }, textStyle(node.props as AnyProps))
     const maxRows = Math.max(0, Math.min(Math.floor(node.height), lines.length))
     const baseX = Math.floor(node.left)
@@ -551,6 +603,22 @@ export class Renderer {
     }
     return undefined
   }
+}
+
+/**
+ * 每个 text 节点每帧都要一遍换行；`text` 引用与宽度没变就复用上一帧的结果
+ * （spec §5.3）。React 只在内容真的变了时才换掉 `node.text`，所以引用比较就够。
+ */
+function wrappedLines(
+  node: TextNode | RawTextNode,
+  width: number,
+  wrap: boolean,
+): readonly string[] {
+  const cache = node.wrapCache
+  if (cache !== undefined && cache.text === node.text && cache.width === width) return cache.lines
+  const lines = wrap && node.text.length > 0 ? wrapText(node.text, width) : node.text.split('\n')
+  node.wrapCache = { text: node.text, width, lines }
+  return lines
 }
 
 function mergeStyle(base: Style, extra: Style): Style {

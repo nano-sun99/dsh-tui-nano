@@ -23,10 +23,22 @@ const WIDTH_OVERRIDES: Readonly<Record<string, number>> = {
 }
 
 /**
+ * Pure printable ASCII (plus newlines) needs no segmentation: every code unit
+ * is one grapheme and one cell. Transcripts and code blocks are mostly this,
+ * and `Intl.Segmenter` costs more than the rest of a code row put together.
+ */
+const PLAIN_ASCII = /^[\u0020-\u007e\n]*$/u
+
+function isPlainAscii(text: string): boolean {
+  return PLAIN_ASCII.test(text)
+}
+
+/**
  * Split text into user-perceived characters (grapheme clusters). Emoji ZWJ
  * sequences and combining marks stay intact.
  */
 export function graphemes(text: string): string[] {
+  if (isPlainAscii(text)) return text.split('')
   const out: string[] = []
   for (const { segment } of segmenter.segment(text)) out.push(segment)
   return out
@@ -46,6 +58,14 @@ export function graphemeWidth(grapheme: string): number {
 
 /** Display width of an arbitrary string, newlines excluded. */
 export function displayWidth(text: string): number {
+  // 可打印 ASCII 每码元 1 格，只有换行不占位。
+  if (isPlainAscii(text)) {
+    let newlines = 0
+    for (let index = 0; index < text.length; index++) {
+      if (text.charCodeAt(index) === 0x0a) newlines++
+    }
+    return text.length - newlines
+  }
   let width = 0
   for (const g of graphemes(text)) {
     if (g === '\n') continue

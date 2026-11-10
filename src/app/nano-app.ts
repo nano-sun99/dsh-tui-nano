@@ -160,6 +160,9 @@ export interface FeatureHost {
   modelPanelRows?(): number
 }
 
+/** 内容刷新的最小间隔（spec §5.2）；同一个常量注入 renderer 作动画节拍。 */
+export const RENDER_INTERVAL_MS = 33
+
 export class NanoApp {
   private readonly options: NanoAppOptions
   private readonly theme = activeTheme()
@@ -176,7 +179,9 @@ export class NanoApp {
   private lastTotalLines: number | undefined
   private currentBodyHeight = 1
   private readonly notices = new NoticeState(() => this.scheduleRender())
-  private renderScheduled = false
+  private renderScheduled: NodeJS.Immediate | undefined
+  private renderTimer: NodeJS.Timeout | undefined
+  private lastRenderAt = Number.NEGATIVE_INFINITY
   private stopping = false
   private shutdownStartedAt = 0
   private exitCode = 0
@@ -246,7 +251,8 @@ export class NanoApp {
       if (open && !approvalOpen) this.options.features?.resetToMain?.()
       approvalOpen = open
       this.syncWaitingCall()
-      this.scheduleRender()
+      // 审批卡 / 问卷卡的出现与消失不走合并窗口（§5.2 立即绘制白名单）。
+      this.scheduleRender(true)
     })
     return finish.then((code) => {
       if (this.pendingRestart) {
@@ -327,12 +333,13 @@ export class NanoApp {
           break
       }
     }
-    this.scheduleRender()
+    // 输入回显与滚动都不该等合并窗口（§5.2 立即绘制白名单）。
+    this.scheduleRender(true)
   }
 
   handleResize(width: number, height: number): void {
     this.options.renderer.resize(width, height)
-    this.scheduleRender()
+    this.scheduleRender(true)
   }
 
   private handleKey(key: Key): void {
@@ -907,19 +914,50 @@ export class NanoApp {
       : { ...snapshot, scrollOffset: this.scrollOffset, stickBottom: this.stickBottom }
   }
 
-  private scheduleRender(): void {
-    if (this.renderScheduled || this.stopping) return
-    this.renderScheduled = true
-    setImmediate(() => {
-      this.renderScheduled = false
+  /**
+   * 内容刷新按 `RENDER_INTERVAL_MS` 合并：窗口内只画一帧，窗口结束补画最后一帧
+   * （trailing timer，`unref()` 不拖住退出）。`immediate` 走白名单直接画。
+   */
+  private scheduleRender(immediate = false): void {
+    if (this.stopping) return
+    if (immediate) {
+      this.flushRender()
+      return
+    }
+    if (this.renderScheduled !== undefined || this.renderTimer !== undefined) return
+    const wait = this.lastRenderAt + RENDER_INTERVAL_MS - performance.now()
+    if (wait <= 0) {
+      this.renderScheduled = setImmediate(() => {
+        this.renderScheduled = undefined
+        this.render()
+      })
+      return
+    }
+    this.renderTimer = setTimeout(() => {
+      this.renderTimer = undefined
       this.render()
-    })
+    }, wait)
+    this.renderTimer.unref()
   }
 
-  render(): void {
+  /** 撤掉排队中的帧，立刻画当前状态。 */
+  private flushRender(): void {
+    if (this.renderScheduled !== undefined) {
+      clearImmediate(this.renderScheduled)
+      this.renderScheduled = undefined
+    }
+    if (this.renderTimer !== undefined) {
+      clearTimeout(this.renderTimer)
+      this.renderTimer = undefined
+    }
+    this.render(true)
+  }
+
+  render(immediate = false): void {
     if (this.stopping) return
+    this.lastRenderAt = performance.now()
     try {
-      this.options.renderer.update(createElement(App, { snapshot: this.snapshot() }))
+      this.options.renderer.update(createElement(App, { snapshot: this.snapshot() }), { immediate })
     } catch (error) {
       this.options.writeDiagnostic(`nano: 渲染失败：${String(error)}`)
     }

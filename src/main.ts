@@ -9,7 +9,7 @@ import { closeSync, existsSync, openSync, readFileSync, rmSync, writeSync } from
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createElement } from 'react'
-import { AppExit, AppRestart, NanoApp } from './app/nano-app.ts'
+import { AppExit, AppRestart, NanoApp, RENDER_INTERVAL_MS } from './app/nano-app.ts'
 import { Skeleton } from './app/skeleton.tsx'
 import { type PreparedCore, prepareCore, startCore } from './boot/assemble.ts'
 import {
@@ -163,6 +163,8 @@ export async function main(argv: readonly string[]): Promise<number> {
       height: terminal.height,
       defaultFg: theme.fg,
       onError: (error) => process.stderr.write(`nano: 渲染错误：${String(error)}\n`),
+      // 动画节拍与内容刷新共用同一个常量（spec §5.2，单一来源在 app 层）。
+      activityIntervalMs: RENDER_INTERVAL_MS,
     })
     renderer.mount(
       createElement(Skeleton, {

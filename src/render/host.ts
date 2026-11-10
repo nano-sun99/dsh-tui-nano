@@ -108,6 +108,8 @@ export interface TextNode extends BaseHostNode {
   text: string
   lines: string[]
   measuredWidth: number
+  /** `paintText` 的换行缓存（spec §5.3）：键是 `text` 引用 + 宽度。 */
+  wrapCache?: { readonly text: string; readonly width: number; readonly lines: string[] }
 }
 
 export interface RawTextNode extends BaseHostNode {
@@ -115,6 +117,8 @@ export interface RawTextNode extends BaseHostNode {
   text: string
   lines: string[]
   measuredWidth: number
+  /** `paintText` 的换行缓存（spec §5.3）：键是 `text` 引用 + 宽度。 */
+  wrapCache?: { readonly text: string; readonly width: number; readonly lines: string[] }
 }
 
 export interface GridNode extends BaseHostNode {
