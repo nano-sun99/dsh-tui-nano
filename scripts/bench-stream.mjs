@@ -218,9 +218,15 @@ async function frameCase() {
   return result
 }
 
+/**
+ * §6.3 的两个用例内容是**纯 ASCII** 与**纯 CJK**：混排的 markdown 走不到
+ * ASCII 快路径，量出来的就不是这条路径的成本。
+ */
 function textCase() {
-  const ascii = makeAnswer(48 * 1024)
-  const cjk = '中文宽字符测试，'.repeat(Math.ceil((48 * 1024) / 16)).slice(0, 48 * 1024)
+  const ascii = 'the quick brown fox jumps over the lazy dog.\n'
+    .repeat(2048)
+    .slice(0, 48 * 1024)
+  const cjk = '中文宽字符测试，'.repeat(4096).slice(0, 48 * 1024)
   const run = (text) => () => {
     graphemes(text)
     displayWidth(text)
