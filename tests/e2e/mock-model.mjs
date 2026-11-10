@@ -17,18 +17,19 @@ const LONG_TEXT =
   ).join('\n')
 
 /** 30 秒流式长回答（§6.4 的 CPU 采样用）：很多小 delta，慢慢发。 */
-const STREAM_TEXT = Array.from(
-  { length: 60 },
-  (_, index) =>
-    `## 第 ${index} 节\n\n` +
-    '流式输出时，每个 delta 都要把已经稳定的前缀重新解析一遍，' +
-    '于是成本随已稳定文本增长。这一段用来把流式窗口拉长到几十秒。\n\n' +
-    '- 稳定块命中缓存，只重排尾块\n- 尾块有上界\n- 帧调度按时间合并\n\n' +
-    '```ts\nexport function value' +
-    `${index}(input: number): number {\n  return input * ${index} + 1\n}\n` +
-    '```\n\n' +
-    `> 小节 ${index}：结尾会有一个标记。\n\n`,
-).join('') + '\nSTREAM_DONE\n'
+const STREAM_TEXT =
+  Array.from(
+    { length: 60 },
+    (_, index) =>
+      `## 第 ${index} 节\n\n` +
+      '流式输出时，每个 delta 都要把已经稳定的前缀重新解析一遍，' +
+      '于是成本随已稳定文本增长。这一段用来把流式窗口拉长到几十秒。\n\n' +
+      '- 稳定块命中缓存，只重排尾块\n- 尾块有上界\n- 帧调度按时间合并\n\n' +
+      '```ts\nexport function value' +
+      `${index}(input: number): number {\n  return input * ${index} + 1\n}\n` +
+      '```\n\n' +
+      `> 小节 ${index}：结尾会有一个标记。\n\n`,
+  ).join('') + '\nSTREAM_DONE\n'
 
 const sse = (res) => {
   res.writeHead(200, {
