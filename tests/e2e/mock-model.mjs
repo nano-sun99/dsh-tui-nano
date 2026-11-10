@@ -16,6 +16,20 @@ const LONG_TEXT =
     (_, index) => `第 ${String(index + 1).padStart(2, '0')} 行：主题、间距与窄屏换行检查。`,
   ).join('\n')
 
+/** 30 秒流式长回答（§6.4 的 CPU 采样用）：很多小 delta，慢慢发。 */
+const STREAM_TEXT = Array.from(
+  { length: 60 },
+  (_, index) =>
+    `## 第 ${index} 节\n\n` +
+    '流式输出时，每个 delta 都要把已经稳定的前缀重新解析一遍，' +
+    '于是成本随已稳定文本增长。这一段用来把流式窗口拉长到几十秒。\n\n' +
+    '- 稳定块命中缓存，只重排尾块\n- 尾块有上界\n- 帧调度按时间合并\n\n' +
+    '```ts\nexport function value' +
+    `${index}(input: number): number {\n  return input * ${index} + 1\n}\n` +
+    '```\n\n' +
+    `> 小节 ${index}：结尾会有一个标记。\n\n`,
+).join('') + '\nSTREAM_DONE\n'
+
 const sse = (res) => {
   res.writeHead(200, {
     'content-type': 'text/event-stream',
@@ -115,6 +129,48 @@ const handler = (req, res) => {
       text(res, LONG_TEXT)
       send(res, 'message_stop', { type: 'message_stop' })
       res.end()
+      return
+    }
+    if (mode === 'stream') {
+      sse(res)
+      res.on('error', () => {})
+      start(res, body.model)
+      const total = Number(process.env.MOCK_STREAM_MS ?? 30000)
+      const steps = Math.max(1, Math.round(total / 100))
+      const size = Math.ceil(STREAM_TEXT.length / steps)
+      let step = 0
+      send(res, 'content_block_start', {
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'text', text: '' },
+      })
+      const timer = setInterval(() => {
+        const from = step * size
+        const piece = STREAM_TEXT.slice(from, from + size)
+        step++
+        try {
+          if (piece !== '') {
+            send(res, 'content_block_delta', {
+              type: 'content_block_delta',
+              index: 0,
+              delta: { type: 'text_delta', text: piece },
+            })
+          }
+          if (step >= steps || piece === '') {
+            clearInterval(timer)
+            send(res, 'content_block_stop', { type: 'content_block_stop', index: 0 })
+            send(res, 'message_delta', {
+              type: 'message_delta',
+              delta: { stop_reason: 'end_turn', stop_sequence: null },
+              usage: { output_tokens: 8 },
+            })
+            send(res, 'message_stop', { type: 'message_stop' })
+            res.end()
+          }
+        } catch {
+          clearInterval(timer)
+        }
+      }, 100)
       return
     }
     if (mode === 'slow') {
