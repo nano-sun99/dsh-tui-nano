@@ -31,6 +31,7 @@ import {
   resolveRootId,
 } from '../../src/boot/root.ts'
 import { takeHandoff, writeHandoff } from '../../src/runtime/handoff.ts'
+import { featureBootPatches } from '../../src/sessions/boot-patches.ts'
 
 function fakeOfficial() {
   return {
@@ -243,5 +244,18 @@ describe('last-session', () => {
       sessionId: `s${LAST_SESSION_LIMIT + 4}`,
       lastUsedAt: LAST_SESSION_LIMIT + 4,
     })
+  })
+})
+
+describe('boot patches', () => {
+  // 回退守卫（ADR-20261110-prompt-only-research）：plan 段必须由官方持有。
+  // 把 plan-mode 覆盖加回来，这里立刻红；e2e 只把补丁当 extraPatches 传，不拦这个。
+  it('不覆盖 plan-mode，也不再带五阶段文本', () => {
+    const layers = featureBootPatches('root')
+    const ids = layers.map((layer) => layer.id).filter((id): id is string => Boolean(id))
+    expect(ids).toEqual(['storage-domain'])
+    expect(ids).not.toContain('plan-mode')
+    expect(JSON.stringify(layers)).not.toContain('Phase 1 — Explore')
+    expect(JSON.stringify(layers)).not.toContain('You are in plan mode')
   })
 })
