@@ -65,10 +65,11 @@ implementation prompt evidence passed
 
 | 命令 | 结果 |
 | --- | --- |
-| `npm test` | 43 个测试文件 / 547 项通过（unit），12 个 / 56 项通过（feature） |
+| `npm test` | 43 个测试文件 / 548 项通过（unit），12 个 / 56 项通过（feature） |
 | `npm run typecheck` | 退出 0 |
 | `npm run lint` | 退出 0；5 条既有警告，全部在本次未改动的文件里 |
 | `node --test --test-concurrency=1 tests/e2e/capability.test.mjs tests/e2e/schedule-surface.test.mjs` | 2 项真实 boot / 调度隔离回归通过（`featureBootPatches` 被本次改动，单独补跑） |
+| 守卫变异自查：把 `plan-mode` 覆盖加回 `featureBootPatches()` | `tests/unit/boot.test.ts` 的「不覆盖 plan-mode」用例变红（1 failed / 18 passed）；恢复后全绿 |
 
 环境与已知输出：
 
