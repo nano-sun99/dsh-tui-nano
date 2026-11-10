@@ -92,7 +92,7 @@ When the user asks for a change, a feature, or a plan, map the impact surface in
 - Skip the full map only for a one-line or other small local fix, a pure fact lookup, or when the user says to start immediately; even then, read the files first.
 ```
 
-字符数约 1,470（旧文本约 1,130，+340 ≈ +90 tokens/请求）。
+字符数 1,401（旧文本 927，+474 ≈ +120 tokens/请求）。
 
 ### 5.2 plan 段
 
@@ -131,7 +131,7 @@ DB 面：本仓没有数据库 fixture，**B1/B2 不覆盖 Data 行**；只由 A
 ## 8. 风险与回退
 
 - **纯提示，无强制**：模型仍可能跳过清单。这是用户 2026-11-10 明确接受的口径；不把一次失败解释成「软约束正常」，按 B1/B2 记录并改提示。
-- **文本变长**：常驻段 +340 字符（~90 tokens/请求）。
+- **文本变长**：常驻段 927 → 1,401 字符（+474，约 +120 tokens/请求）。
 - **失去的三条提醒**：撤覆盖后不再有「至少两个方案 / 复核关键文件 / 写验证命令」的分阶段提醒；新文案用「name the trade-off」与「Verification」两行承接，强度弱于原五阶段。
 - **官方行为变化**：plan 文本回到上游，dsh 升级时自动跟随，不再需要人工对齐我们那段覆盖。
 - **回退**：恢复 `PLAN_GUIDANCE` 与补丁项 + 旧文案，一次 revert 即可。
