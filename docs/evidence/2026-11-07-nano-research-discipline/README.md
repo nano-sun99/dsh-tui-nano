@@ -31,6 +31,8 @@ spec probe passed
 
 ## 实施期组装证据（spec §8.2；A1/A2/A3/A5）
 
+> **2026-11-10 更新**：0.2.5 的 plan 五阶段覆盖已被 [ADR-20261110-prompt-only-research](../../decisions/2026-11-10-prompt-only-research.md) 撤回，plan 段回到官方引导；常驻段改为影响面清单（现行文本见 [新 spec §5.1](../../specs/2026-11-10-prompt-only-research/README.md)）。本目录的 B1–B3 transcript 只覆盖旧文案，**保留为历史**，不再代表当前行为；当前证据在 [2026-11-10-prompt-only-research](../2026-11-10-prompt-only-research/README.md)。下面的输出块与口径已按撤回后的真实行为更新。
+
 2026-11-07，基线 `3d29687` + #174 实施工作区；Node 24.18.0、官方 dsh 0.2.2-rc.1。先 `npm ci`、`npm run build`；下面两个脚本都是真 boot + 真 `ConversationController.start()`，使用临时 HOME / DSH_HOME / 数据根，不调用模型，不修改真实用户配置。
 
 ```bash
@@ -38,22 +40,22 @@ node docs/evidence/2026-11-07-nano-research-discipline/probe-plan-section.mjs
 node docs/evidence/2026-11-07-nano-research-discipline/prompt-evidence.mjs
 ```
 
-spec 期探针复跑输出与上节一致。实施期脚本输出原文（已知 boot 警告不计入标准输出）：
+spec 期探针复跑输出与上节一致。实施期脚本输出原文（已知 boot 警告不计入标准输出；2026-11-10 撤回覆盖后复跑）：
 
 ```text
 A1 root nano sections: research -> question -> delegation; approved text matches
 A2 real child (parentAgent=root) has research discipline: false
 A3 inactive plan:policy is empty: true
-A3 active plan: five phases; approved text matches; official constraints: 8/8; registered tool view unchanged
+A3 active plan: official guidance; no Phase marker; registered tool view unchanged
 A3 deactivated plan:policy is empty: true
 implementation prompt evidence passed
 ```
 
 核验口径：
 
-- A1：单测逐字断言注册正文与 order `10140 / 10145 / 10150`；脚本再检查真实组装顺序，并从获批 spec 的两个 `text` 代码块读取独立预期，逐字核对实际常驻段和 plan 段。
+- A1：单测逐字断言注册正文与 order `10140 / 10145 / 10150`；脚本再检查真实组装顺序，并从现行 spec §5.1 的 `text` 代码块读取独立预期，逐字核对实际常驻段。
 - A2：用 `core.ctx.agents.create({ parentAgent: controller.agent, ... })` 创建真实子 agent，检查其真实组装结果；不是另建无 setup 的根 agent 冒充子 agent。
-- A3：检查 `plan:policy` 未激活为空、激活后全文替换、关闭后恢复为空；逐项核对八项官方提示约束，并比较模式切换前后的已注册工具视图。这里的 `assemble()` 没有传入本步 `toolSet`，因此不证明实际请求工具目录不变；官方 `exit_plan_mode` 在首次进入 plan 后才条件披露。本次只保留官方提示约束，不修改官方披露行为。
+- A3：检查 `plan:policy` 未激活为空、激活后为官方引导（命中 `Explore first.`、不含我们的 `Phase 1 — Explore`）、关闭后恢复为空，并比较模式切换前后的已注册工具视图。这里的 `assemble()` 没有传入本步 `toolSet`，因此不证明实际请求工具目录不变。官方 plan 正文不归我们逐字钉：撤回覆盖后脚本不再比对覆盖文本，也不再逐条核对旧覆盖里的八项约束。
 - A5：两个脚本均已在实施工作区复跑；脚本失败会以非零退出，不用 stdout 文字冒充成功。
 
 ## 回归（A4）
