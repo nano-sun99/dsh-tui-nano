@@ -146,12 +146,18 @@ function median(values) {
   return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
 }
 
-/** 每次调用返回下一份「预览文本」，模拟持续到达的 delta。 */
+/**
+ * 每次调用返回下一份「预览文本」：真实流式只往后追加（前缀不变），
+ * 所以这里也是单调增长，而不是每次换一个同长的尾巴 —— 后者会让分块扫描
+ * 永远命中不了前缀记忆，量出来的是最坏情况。
+ */
 function previewSource(base, unit) {
+  let text = base
   let index = 0
   return () => {
     index++
-    return `${base}\n${unit(index)}`
+    text = `${text}\n${unit(index)}`
+    return text
   }
 }
 

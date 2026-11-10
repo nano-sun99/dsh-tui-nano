@@ -35,6 +35,9 @@ interface BlockRender {
   readonly rows: readonly Row[]
   /** 块首元素是段落 / 标题 / 纯文本（决定 `lead` 是否与首行同排）。 */
   readonly inlineFirst: boolean
+  /** 命中校验：同一个块原文在不同宽度 / 缩进下要重新渲染。 */
+  readonly width: number
+  readonly indent: number
 }
 
 const blockCache = new BlockCache<BlockRender>()
@@ -101,14 +104,19 @@ export function renderMarkdownFull(
   )
 }
 
-/** 一块的渲染结果按 `宽度|缩进|块原文` 缓存（spec §5.1）。 */
+/**
+ * 一块的渲染结果按块原文缓存，命中后校验宽度 / 缩进（spec §5.1 的
+ * `宽度|缩进|块原文`）。键只用原文：字符串的哈希算一次就缓存住，拼一个
+ * `宽度|缩进|原文` 的新串等于每次 delta 都要把几 KB 重新摊平再哈希一遍。
+ */
 function blockRows(text: string, width: number, indent: number): BlockRender {
-  const key = `${width}|${indent}|${text}`
-  const hit = blockCache.get(key)
-  if (hit !== undefined) return hit
+  const hit = blockCache.get(text)
+  if (hit !== undefined && hit.width === width && hit.indent === indent) return hit
   const tokens = new Lexer({ gfm: true }).lex(text)
   const first = tokens.find((token) => token.type !== 'space')
   const value: BlockRender = {
+    width,
+    indent,
     inlineFirst:
       first !== undefined &&
       (first.type === 'paragraph' || first.type === 'heading' || first.type === 'text'),
@@ -118,7 +126,7 @@ function blockRows(text: string, width: number, indent: number): BlockRender {
       indent: (row.indent ?? 0) + indent,
     })),
   }
-  blockCache.set(key, value)
+  blockCache.set(text, value)
   return value
 }
 
