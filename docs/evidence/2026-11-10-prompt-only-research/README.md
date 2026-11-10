@@ -91,10 +91,11 @@ implementation prompt evidence passed
 
 | 场景 | 结果 | 证据 |
 | --- | --- | --- |
-| B1 非平凡：「给 nano 加一个跨 2–3 个文件的功能，先别改代码」 | **部分满足**：研究真做了、路径与行号都有，但五类面不齐（缺显式的上游 / 下游 / 数据层 / 验证）；不推荐 `/plan`；没把假设当发现 | [session-b1.md](session-b1.md) |
-| B2 小改：「把这个 typo 修掉：README.en.md 第 3 行的 termianl 应为 terminal。」 | **通过**：先 `read` 再 `edit`，没有五类面仪式，不推荐 `/plan`，修完 `git status` 为空 | [session-b2.md](session-b2.md) |
+| B1 非平凡（首版 prompt，1,401 字符） | **部分满足**：研究真做了、路径与行号都有，但五类面缺上游 / 下游 / 数据层 / 验证 | [session-b1-first-run.md](session-b1-first-run.md) |
+| B1 非平凡（改后 prompt，1,579 字符） | **通过**：五条具名面逐项带路径与行号，另写未读 / 未跑项与取舍 | [session-b1.md](session-b1.md) |
+| B2 小改 | **通过**：先 `read` 再 `edit`，没有五类面仪式，不推荐 `/plan`，修完 `git status` 为空 | [session-b2.md](session-b2.md) |
 
-### B1 细节
+### B1 首场（改文案前）
 
 9 个 step / 16 次工具调用：先看 git 状态与仓库结构，读 `AGENTS.md` 与 `package.json`，再定位
 `src/input/keymap.ts`、`src/controls/feature-host.ts`、`src/app/nano-app.ts` 的分发路径，最后用
@@ -103,8 +104,24 @@ implementation prompt evidence passed
 符合「改动落点 + 路径 + 实际读过」，但**没有**逐条写出上游 / 下游 / 数据层 / 验证方式，所以按 spec §7.2
 判**不算通过**。回合停在问卷卡上，PTY 到点 Ctrl+C 收尾，日志里没有 `turn/end`。
 
-这是提示层的软约束漏项，不是运行时回归：spec §4 主路第 3 行对这种情形的要求是「记入 B1/B2，修订提示，不新增机制」。
-要不要现在就改文案（会动到 spec §5.1 的定稿文本）是用户的决定，本次不擅自改。
+按 spec §4 主路第 3 行「记入 B1/B2，修订提示」，用户 2026-11-10 选了「现在就改文案」：把清单改成
+**五类面逐行必答、不适用也要写理由**，§5.1 从 1,401 / 1,579 字符。改后同场景复跑见下一节。
+
+### B1 复跑（改文案后）
+
+32 个 step / 52 次工具调用，输出里出现一段标题为「影响面（逐项读过）」的清单，五条具名面逐条带路径与行号：
+
+| 面 | 实际给出的证据（摘） |
+| --- | --- |
+| 改动位置 | `src/input/keymap.ts:217-232`、`src/app/input-model.ts:102-128`、`src/app/nano-app.ts:338-352` / `:442-454` |
+| 上游 | `src/runtime/terminal.ts:211,228` → `src/main.ts:142` → `handleInput:300` → `handleKey:338`；`features.handleKey` 先截走（`:343-347`） |
+| 下游 | 只改 `InputModel.text`；提交走 `nano-app.ts:354-366` → `conversation.submit`，历史由 `controller.ts:587` 追加 |
+| 数据 | `<dataRoot>/history.jsonl` 字段与读写路径（`history.ts:9-80`），不改 schema、不迁移 |
+| 验证方式 | `tests/unit/composer-submit.test.ts:25-107`、`fixes.test.ts:256`、`input.test.ts:280`；`npm test` / `typecheck` / `lint` / `keymap:docs -- --check` |
+
+另外两处也对上了规矩：**未读 / 未跑**单列（官方 dsh 包、旧 spec 正文、测试未跑及原因），**取舍**单列
+（独立结果列表要改 scene，超出 3 个源文件）。全程不推荐 `/plan`，没有把假设当发现，`git status` 干净。
+回合停在「下一步：你选择入口」，PTY 到点 Ctrl+C 收尾，日志里没有 `turn/end`（问卷在等输入）。
 
 ### B2 细节
 

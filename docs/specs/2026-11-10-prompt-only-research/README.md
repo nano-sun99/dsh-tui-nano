@@ -93,11 +93,11 @@ When the user asks for a change, a feature, or a plan, map the impact surface in
 - Verification: name the tests, typecheck, or commands that would prove the change works.
 - Every item cites paths, and symbols or lines where they matter, that you actually read. Name anything you did not read as unread, with the reason it cannot change the conclusion.
 - Never present an assumption as a finding; "I did not find it" is not "it does not exist".
-- "Non-trivial" means a new feature, a behavior change, a multi-file change, an architectural choice, or unclear scope. For non-trivial work, give the map before proposing and name the trade-off you accepted when genuine alternatives exist. Do not start editing until the map is complete.
+- "Non-trivial" means a new feature, a behavior change, a multi-file change, an architectural choice, or unclear scope. For non-trivial work, write the map as five named lines — change site, upstream, downstream, data, verification — and answer every line before you propose. Mark a line not applicable only together with the reason it cannot apply. Name the trade-off you accepted when genuine alternatives exist, and do not start editing until the map is complete.
 - Skip the full map only for a one-line or other small local fix, a pure fact lookup, or when the user says to start immediately; even then, read the files first.
 ```
 
-字符数 1,401（旧模板展开后 1,171，+230 ≈ +58 tokens/请求）。
+字符数 1,579（旧模板展开后 1,171，+408 ≈ +102 tokens/请求；2026-11-10 按 B1 证据补「五类面逐行必答」后从 1,401 增至 1,579）。
 
 ### 5.2 plan 段
 
@@ -163,11 +163,18 @@ DB 面：本仓没有数据库 fixture，**B1/B2 不覆盖 Data 行**；只由 A
 ## 11. 自定细节
 
 - 正文一律英文，与既有两段一致；界面语言不受影响。
-- 清单不规定格式（表格 / 列表皆可），只要求五类面齐 + 证据 + 未读声明。
+- 清单写成五条具名行（改动落点 / 上游 / 下游 / 数据层 / 验证；表格或列表皆可），逐行必答；不适用也要写理由，不允许整行省略。证据与未读声明照旧。
 - Data 行用 `when storage is involved` 限定，避免无数据库的仓库被迫编造数据层。
 - 不提 `/plan`、不提子代理、不提工具名，避免把提示绑到具体实现。
 - 不设“调研完成”的机械判据：没有运行时校验，写死判据只会制造假通过。
 
 ## 12. 审核修订记录
 
-（待审）
+- **2026-11-10 轻审**（用户选档；1 个只读 agent，由实施方派出，不是用户发起的独立审核）：无阻断 / 高；1 中 2 低。
+  - 中「B1/B2 未执行」：改用本仓 `tests/e2e/pty-start.py` 的无头真 PTY 跑通真实会话后关闭。
+  - 低「新 spec 头部状态未回填」：同日回填状态 / Issue / 下游。
+  - 低「删除 `plan-mode` 补丁没有自动化守卫」：**未处理**，留作开放项（`npm test` 目前拦不住把补丁加回去）。
+- **2026-11-10 按 B1 证据改文案**（用户原话「现在就改文案」）：首场真实会话只给改动落点、漏了上游 / 下游 / 验证，
+  按 §4 主路第 3 行把清单改成「五类具名面逐行必答、不适用也要写理由」，§5.1 正文 1,401 → 1,579 字符；
+  同步 `controller.ts`、单测字面量、§5.1 字符数与 ADR 代价行。改后 A1–A5 复跑全绿，B1 同场景复跑通过
+  （证据见 `docs/evidence/2026-11-10-prompt-only-research/`）。

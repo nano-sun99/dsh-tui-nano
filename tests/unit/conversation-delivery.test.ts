@@ -268,7 +268,7 @@ When the user asks for a change, a feature, or a plan, map the impact surface in
 - Verification: name the tests, typecheck, or commands that would prove the change works.
 - Every item cites paths, and symbols or lines where they matter, that you actually read. Name anything you did not read as unread, with the reason it cannot change the conclusion.
 - Never present an assumption as a finding; "I did not find it" is not "it does not exist".
-- "Non-trivial" means a new feature, a behavior change, a multi-file change, an architectural choice, or unclear scope. For non-trivial work, give the map before proposing and name the trade-off you accepted when genuine alternatives exist. Do not start editing until the map is complete.
+- "Non-trivial" means a new feature, a behavior change, a multi-file change, an architectural choice, or unclear scope. For non-trivial work, write the map as five named lines — change site, upstream, downstream, data, verification — and answer every line before you propose. Mark a line not applicable only together with the reason it cannot apply. Name the trade-off you accepted when genuine alternatives exist, and do not start editing until the map is complete.
 - Skip the full map only for a one-line or other small local fix, a pure fact lookup, or when the user says to start immediately; even then, read the files first.`,
     })
     expect(harness.sections[0].text).not.toContain('/plan')
