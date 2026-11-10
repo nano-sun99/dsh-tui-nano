@@ -2,9 +2,9 @@
 
 **A minimal, restrained terminal interface for DeepSeek Harness.**
 
-[中文](README.md) · [Specs](docs/specs/2026-10-28-nano-ts/README.md) · [Release acceptance](docs/release/0.2.4/README.md)
+[中文](README.md) · [Specs](docs/specs/2026-10-28-nano-ts/README.md) · [Release acceptance](docs/release/0.2.5/README.md)
 
-> **0.2.4.** Not published to the npm registry yet; acceptance and evidence live in `docs/release/0.2.4/`.<br>
+> **0.2.5.** Not published to the npm registry yet; acceptance and evidence live in `docs/release/0.2.5/`.<br>
 > This is an independent project, not an official DeepSeek product.
 
 ![status](https://img.shields.io/badge/status-release--candidate-orange)
@@ -51,7 +51,7 @@ Answers render as Markdown: code blocks, tables and long paragraphs stay structu
 ```sh
 # install / upgrade: not on the registry yet — pack, then install the tarball
 npm pack
-npm install -g ./dsh-tui-nano-0.2.4.tgz
+npm install -g ./dsh-tui-nano-0.2.5.tgz
 # once published: npm install -g dsh-tui-nano
 
 # start a new session
@@ -188,7 +188,7 @@ Ghostty
 
 | Item | State |
 | --- | --- |
-| 0.2.4 release | **not published to the registry**; `npm pack` output installs globally, see `docs/release/0.2.4/` |
+| 0.2.5 release | **not published to the registry**; `npm pack` output installs globally, see `docs/release/0.2.5/` |
 | Platform | macOS arm64 + Ghostty verified by manual interaction |
 | First publish | dist-tag `next`; promote to `latest` after the release conclusion passes |
 
