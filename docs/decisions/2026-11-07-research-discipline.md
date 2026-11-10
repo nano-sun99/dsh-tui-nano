@@ -1,11 +1,11 @@
 # ADR-20261107-research-discipline：需求阶段先出调研清单，非平凡任务先进 plan
 
-- 状态：生效中
+- 状态：已被取代
 - 日期：2026-11-07
 - 决策人：用户
 - 适用范围：模型在需求 / 变更类任务上的调研与计划行为；不适用于工具 schema、plan 模式的命令与审批形态、子代理组合
 - 取代：无
-- 被取代：无
+- 被取代：[ADR-20261110-prompt-only-research](2026-11-10-prompt-only-research.md)
 - 决策来源：用户 2026-11-07 原话「要不我们抄一下claude code的调研机制？」；同日两张选择卡分别选定「T3：连只读研究子代理一起抄」与「分两批：先提示层」；Claude Code 2.1.88 源码（`src/constants/prompts.ts`、`src/tools/AgentTool/built-in/exploreAgent.ts`、`planAgent.ts`、`src/utils/messages.ts:3227`、`src/tools/EnterPlanModeTool/prompt.ts`）
 - 相关：[spec](../specs/2026-11-07-nano-research-discipline/README.md)
 
