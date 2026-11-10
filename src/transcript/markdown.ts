@@ -17,15 +17,73 @@ import 'prismjs/components/prism-markdown.js'
 import 'prismjs/components/prism-diff.js'
 import { displayWidth, graphemes, graphemeWidth, isWideBreakable } from '../render/text.ts'
 import { EDGE, GapRole, INDENT, INLINE, NESTED } from '../theme/spacing.ts'
+import { BlockCache, countDegrade, countParityMismatch, planChunks } from './blocks.ts'
 import { type Row, rowText, type Span, textSpan, wrapSpans } from './spans.ts'
 
 export interface MarkdownOptions {
   readonly indent?: number
   /** 首行前置标记（正文的 `⏺ `）；首元素是块级元素时标记独占一行。 */
   readonly lead?: Span
+  /**
+   * settle 时对全文再校验一次（ADR-20261110 §决定）：分块结果与全文渲染
+   * 逐行比对，不一致就退回全文渲染并计数。只在消息定稿时用一次。
+   */
+  readonly verifyParity?: boolean
 }
 
+interface BlockRender {
+  readonly rows: readonly Row[]
+  /** 块首元素是段落 / 标题 / 纯文本（决定 `lead` 是否与首行同排）。 */
+  readonly inlineFirst: boolean
+}
+
+const blockCache = new BlockCache<BlockRender>()
+
+/**
+ * 分块渲染入口：已稳定块命中缓存，只重排尾块。
+ * 引用式链接定义跨段生效，切块会丢链接目标，因此该文本整体走全量（§5.1 退化）。
+ */
 export function renderMarkdown(text: string, width: number, options: MarkdownOptions = {}): Row[] {
+  const indent = options.indent ?? 0
+  const plan = planChunks(text)
+  if (plan.referenceDefinition) {
+    countDegrade()
+    return renderMarkdownFull(text, width, options)
+  }
+  const inner = Math.max(1, width - indent)
+  const parts: Row[] = []
+  let inlineFirst = false
+  let seenContent = false
+  for (const chunk of plan.chunks) {
+    const block = blockRows(chunk.text, inner, indent)
+    if (!seenContent && block.rows.length > 0) {
+      inlineFirst = block.inlineFirst
+      seenContent = true
+    }
+    // 原文这一块与上一块之间隔着空行：全量渲染在这里正好有一个 `space` 空行。
+    if (chunk.blankBefore) parts.push({ spans: [textSpan('')], indent })
+    parts.push(...edgeRows(block.rows, chunk.seam))
+  }
+  // 块的边界空行不单独裁：整段拼完再按全量路径的规则折叠连续空行、削掉首尾，
+  // 边界的空行才和全文渲染取到同一行（缩进与 tone 都一致）。
+  const rows = trimBlankRows(parts)
+  if (options.verifyParity === true) {
+    const full = renderMarkdownFull(text, width, { indent, verifyParity: false })
+    if (!sameRows(rows, full)) {
+      countParityMismatch()
+      return full
+    }
+  }
+  if (options.lead === undefined) return rows
+  return leadRows(rows, inlineFirst, options.lead, indent)
+}
+
+/** 全量渲染：一次 lex 整段文本。退化路径与 settle 校验的对照基准。 */
+export function renderMarkdownFull(
+  text: string,
+  width: number,
+  options: MarkdownOptions = {},
+): Row[] {
   const indent = options.indent ?? 0
   const tokens = new Lexer({ gfm: true }).lex(text)
   const rows = trimBlankRows(renderBlocks(tokens, Math.max(1, width - indent))).map((row) => ({
@@ -33,21 +91,90 @@ export function renderMarkdown(text: string, width: number, options: MarkdownOpt
     indent: (row.indent ?? 0) + indent,
   }))
   if (options.lead === undefined) return rows
-  return leadRows(rows, tokens, options.lead, indent)
+  const first = tokens.find((token) => token.type !== 'space')
+  return leadRows(
+    rows,
+    first !== undefined &&
+      (first.type === 'paragraph' || first.type === 'heading' || first.type === 'text'),
+    options.lead,
+    indent,
+  )
+}
+
+/** 一块的渲染结果按 `宽度|缩进|块原文` 缓存（spec §5.1）。 */
+function blockRows(text: string, width: number, indent: number): BlockRender {
+  const key = `${width}|${indent}|${text}`
+  const hit = blockCache.get(key)
+  if (hit !== undefined) return hit
+  const tokens = new Lexer({ gfm: true }).lex(text)
+  const first = tokens.find((token) => token.type !== 'space')
+  const value: BlockRender = {
+    inlineFirst:
+      first !== undefined &&
+      (first.type === 'paragraph' || first.type === 'heading' || first.type === 'text'),
+    // 不在这里裁首尾空行：整段拼完统一折叠，块边界才和全文渲染取到同一行。
+    rows: renderBlocks(tokens, width).map((row) => ({
+      ...row,
+      indent: (row.indent ?? 0) + indent,
+    })),
+  }
+  blockCache.set(key, value)
+  return value
+}
+
+/** 冻结接缝两侧不要代码块自带的边距空行：全文里它们是同一段代码的两行。 */
+function edgeRows(rows: readonly Row[], seam: 'start' | 'end' | undefined): readonly Row[] {
+  if (seam === undefined) return rows
+  if (seam === 'start') {
+    let start = 0
+    while (start < rows.length && isBlankRow(rows[start])) start++
+    return rows.slice(start)
+  }
+  let end = rows.length
+  while (end > 0 && isBlankRow(rows[end - 1])) end--
+  return rows.slice(0, end)
+}
+
+function isBlankRow(row: Row | undefined): boolean {
+  if (!row) return true
+  return row.spans.every((span) => span.text.trim() === '')
+}
+
+/** 逐行比对：行文本、缩进、tone（ADR 不变式的可判定形式）。 */
+function sameRows(left: readonly Row[], right: readonly Row[]): boolean {
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index++) {
+    const a = left[index] as Row
+    const b = right[index] as Row
+    if ((a.indent ?? 0) !== (b.indent ?? 0)) return false
+    if (rowText(a) !== rowText(b)) return false
+    if (a.spans.length !== b.spans.length) return false
+    for (let span = 0; span < a.spans.length; span++) {
+      const leftSpan = a.spans[span] as Span
+      const rightSpan = b.spans[span] as Span
+      if (
+        leftSpan.text !== rightSpan.text ||
+        leftSpan.tone !== rightSpan.tone ||
+        leftSpan.bold !== rightSpan.bold ||
+        leftSpan.italic !== rightSpan.italic ||
+        leftSpan.underline !== rightSpan.underline ||
+        leftSpan.strike !== rightSpan.strike
+      ) {
+        return false
+      }
+    }
+  }
+  return true
 }
 
 /**
  * 正文首行与 `⏺ ` 同排；段落 / 标题 / 纯文本之外的首元素（代码块、列表、
  * 表格、引用、分隔线）按块级处理，标记单独占一行（ADR-20261103 §5）。
  */
-function leadRows(rows: Row[], tokens: readonly Token[], lead: Span, indent: number): Row[] {
+function leadRows(rows: Row[], inlineFirst: boolean, lead: Span, indent: number): Row[] {
   // 标记比正文左移一档：正文 2ch 时标记回到行首，正文 4ch 时标记在 2ch。
   const leadIndent = Math.max(0, indent - 2)
   if (rows.length === 0) return [{ spans: [lead], indent: leadIndent }]
-  const first = tokens.find((token) => token.type !== 'space')
-  const inlineFirst =
-    first !== undefined &&
-    (first.type === 'paragraph' || first.type === 'heading' || first.type === 'text')
   const firstRow = rows[0] as Row
   if (!inlineFirst || rowText(firstRow) === '') {
     return [{ spans: [lead], indent: leadIndent }, ...rows]
@@ -538,13 +665,55 @@ function tokenTone(type: string, fallback: Span['tone']): Span['tone'] {
 function renderCode(code: string, language: string | undefined, width: number): Row[] {
   const rows: Row[] = []
   rows.push(blank())
+  const columns = Math.max(1, width - EDGE)
   for (const line of highlightCode(code, language)) {
     const spans = line.length > 0 ? line : [textSpan('', 'code')]
-    const wrapped = wrapSpans(spans, Math.max(1, width - EDGE))
+    // 代码行绝大多数不超过一行：先量宽度，能放下就直接成行。
+    // `wrapSpans` 会为每个 grapheme 分配一个对象再合并回来，短行上是纯开销
+    // （实测 190 行高亮代码 wrap 2.3ms → 直接成行 0.5ms）。
+    const wrapped =
+      displayWidth(rowText({ spans })) <= columns ? [codeLine(spans)] : wrapSpans(spans, columns)
     for (const row of wrapped) rows.push({ ...row, indent: EDGE })
   }
   rows.push(blank())
   return rows
+}
+
+/** 放得下的一行代码：只做 `wrapSpans` 的收尾（去行尾空格 + 合并同款 span）。 */
+function codeLine(spans: readonly Span[]): Row {
+  const kept = [...spans]
+  while (kept.length > 0) {
+    const last = kept[kept.length - 1] as Span
+    const text = last.text.replace(/ +$/u, '')
+    if (text !== '') {
+      if (text !== last.text) kept[kept.length - 1] = { ...last, text }
+      break
+    }
+    kept.pop()
+  }
+  return { spans: mergeSpans(kept) }
+}
+
+function mergeSpans(spans: readonly Span[]): Span[] {
+  const merged: Span[] = []
+  for (const span of spans) {
+    const last = merged[merged.length - 1]
+    if (
+      last !== undefined &&
+      last.tone === span.tone &&
+      last.bold === span.bold &&
+      last.italic === span.italic &&
+      last.underline === span.underline &&
+      last.strike === span.strike &&
+      last.reverse === span.reverse &&
+      last.caret === span.caret
+    ) {
+      merged[merged.length - 1] = { ...last, text: last.text + span.text }
+      continue
+    }
+    merged.push(span)
+  }
+  return merged
 }
 
 function blank(): Row {

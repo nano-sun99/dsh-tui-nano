@@ -498,6 +498,8 @@ export class TranscriptModel {
             renderMarkdown(text, options.width, {
               indent: NESTED,
               lead: textSpan(`${ASSISTANT_MARK} `, 'normal'),
+              // 消息定稿时对全文校验一次（ADR-20261110）：分块结果必须与全文相等。
+              verifyParity: true,
             }),
           ),
         }
