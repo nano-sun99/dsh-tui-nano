@@ -4,10 +4,12 @@
 
 [中文](README.md) · [Specs](docs/specs/2026-10-28-nano-ts/README.md) · [Release acceptance](docs/release/0.2.5/README.md)
 
+> **⚠️ Retired (2026-11-11).** This project is no longer maintained; the repository is archived and read-only. Rationale: with the same model, DeepSeek Harness felt behind mainstream harnesses in research depth, plan design and execution efficiency, leaving no maintenance value. See [ADR-20261111-retire-project](docs/decisions/2026-11-11-retire-project.md). Specs, decisions and history are kept for reference.
+
 > **0.2.5.** Not published to the npm registry yet; acceptance and evidence live in `docs/release/0.2.5/`.<br>
 > This is an independent project, not an official DeepSeek product.
 
-![status](https://img.shields.io/badge/status-release--candidate-orange)
+![status](https://img.shields.io/badge/status-archived-red)
 ![platform](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)
 ![node](https://img.shields.io/badge/node-%3E%3D24.9-blue)
 ![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1-blue)
