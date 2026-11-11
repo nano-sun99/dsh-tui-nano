@@ -4,10 +4,12 @@
 
 [English](README.en.md) · [规格](docs/specs/2026-10-28-nano-ts/README.md) · [发布验收](docs/release/0.2.5/README.md)
 
+> **⚠️ 已作废（2026-11-11）。** 本项目停止维护，仓库已归档、只读。理由：同一模型下 DeepSeek Harness 在调研深度、方案设计与执行效率上的体感落后于主流 harness，项目不再有维护价值。详见 [ADR-20261111-retire-project](docs/decisions/2026-11-11-retire-project.md)。规格、决策与提交历史保留供查阅。
+
 > **0.2.5。** 当前尚未发布到 npm registry；发布验收与证据见 `docs/release/0.2.5/`。<br>
 > 这是独立项目，不是 DeepSeek 官方产品。
 
-![status](https://img.shields.io/badge/status-release--candidate-orange)
+![status](https://img.shields.io/badge/status-archived-red)
 ![platform](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)
 ![node](https://img.shields.io/badge/node-%3E%3D24.9-blue)
 ![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1-blue)
